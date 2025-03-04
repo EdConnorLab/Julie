@@ -10,7 +10,7 @@ from excel_data_reader import ExcelDataReader
 class RecordingMetadataReader(ExcelDataReader):
 
     def __init__(self):
-        super().__init__(file_name='Cortana_Recording_Metadata.xlsx')
+        super().__init__(subfolder='recording_metadata', file_name='Cortana_Recording_Metadata.xlsx')
         self.recording_metadata = self.get_metadata()
 
     def get_metadata(self):

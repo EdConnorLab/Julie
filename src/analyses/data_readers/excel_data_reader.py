@@ -6,15 +6,17 @@ import pandas as pd
 
 class ExcelDataReader:
 
-    def __init__(self, file_name=None):
-        self.file_name = file_name
-        self.resource_dir_path = '/home/connorlab/Documents/GitHub/Julie/recording_metadata/'
-        if self.file_name is not None:
-            self.file_path = Path(os.path.join(self.resource_dir_path, self.file_name))
-        else:
-            self.file_path = None
+    BASE_DIR = '/home/connorlab/Documents/GitHub/Julie/'
 
-        self.xl = pd.ExcelFile(self.file_path) if self.file_path is not None else None
+    def __init__(self, subfolder, file_name):
+        self.subfolder = subfolder
+        self.file_name = file_name
+        self.file_path = Path(self.BASE_DIR) / self.subfolder / self.file_name
+
+        if not self.file_path.exists():
+            raise FileNotFoundError(f"File not found: {self.file_path}")
+
+        self.xl = pd.ExcelFile(self.file_path)
 
     def get_raw_data(self):
         return self.xl
