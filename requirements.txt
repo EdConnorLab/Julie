@@ -1,4 +1,4 @@
-ConnorLabAnalysisTools>=0.1.14
+ConnorLabAnalysisTools>=1.0.0
 matplotlib==3.6.3
 numpy==1.26.1
 pandas==2.1.1
