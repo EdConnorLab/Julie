@@ -2,8 +2,10 @@ import os
 from datetime import datetime, time, date
 
 import pytz
+from clat.compile.task.cached_task_fields import CachedTaskFieldList
+from clat.compile.task.classic_database_task_fields import TaskIdField
 from clat.compile.task.compile_task_id import PngSlideIdCollector
-from clat.compile.task.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
+from src.compile.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
 from julie_intan_file_per_experiment_fields import SpikeTimesForChannelsField_Experiment, \
     EpochStartStopField_Experiment, PeriStimulusSpikeTimesForChannelsField_Experiment
 from julie_intan_file_per_trial_fields import SpikeTimesForChannelsField, EpochStartStopField
@@ -81,17 +83,17 @@ def collect_raw_data_single_file_for_experiment(*, day: date, start_time: time, 
     unfiltered_spike_tstamps_for_channels_by_task_id, spike_tstamps_for_channels_by_task_id, epoch_start_stop_by_task_id, sample_rate = parser.parse_with_peristimulus_spikes(intan_file_path)
 
     # Task Fields
-    fields = TaskFieldList()
-    fields.append(TaskField())
+    fields = CachedTaskFieldList()
+    fields.append(TaskIdField(conn_xper))
     fields.append(FileNameField(conn_xper=conn_xper))
     fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
     fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
     fields.append(MonkeyGroupField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(SpikeTimesForChannelsField_Experiment(spike_tstamps_for_channels_by_task_id))
-    fields.append(PeriStimulusSpikeTimesForChannelsField_Experiment(unfiltered_spike_tstamps_for_channels_by_task_id))
-    fields.append(EpochStartStopField_Experiment(epoch_start_stop_by_task_id))
+    fields.append(SpikeTimesForChannelsField_Experiment(conn_xper, spike_tstamps_for_channels_by_task_id))
+    fields.append(PeriStimulusSpikeTimesForChannelsField_Experiment(conn_xper, unfiltered_spike_tstamps_for_channels_by_task_id))
+    fields.append(EpochStartStopField_Experiment(conn_xper, epoch_start_stop_by_task_id))
     # Get data
-    data = get_data_from_tasks(fields, task_ids)
+    data = fields.to_data(task_ids)
     return data
 
 
