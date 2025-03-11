@@ -120,7 +120,7 @@ class SortedSpikeTStampField(EpochStartStopTimesField):
         return spikes_tstamps_by_unit
 
     def get_name(self):
-        return "SpikeTimes"
+        return "SortedSpikeTimes"
 
 def read_pickle(path: str):
     try:

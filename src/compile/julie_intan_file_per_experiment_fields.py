@@ -13,7 +13,7 @@ class SpikeTimesForChannelsField_Experiment(CachedTaskDatabaseField):
         return self.spike_times_for_channels_by_task_id[task_id]
 
     def get_name(self):
-        return "SpikeTimes"
+        return "RawSpikeTimes"
 
 
 class EpochStartStopField_Experiment(CachedTaskDatabaseField):
@@ -32,8 +32,8 @@ class EpochStartStopField_Experiment(CachedTaskDatabaseField):
 
 class PeriStimulusSpikeTimesForChannelsField_Experiment(CachedTaskDatabaseField):
     def __init__(self, conn, peristimulus_spike_times_for_channels_by_task_id):
-        super().__init__(conn)
         self.peristimulus_spike_times_for_channels_by_task_id = peristimulus_spike_times_for_channels_by_task_id
+        super().__init__(conn)
 
     def get(self, task_id: int):
         if task_id not in self.peristimulus_spike_times_for_channels_by_task_id:

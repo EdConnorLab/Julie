@@ -48,7 +48,7 @@ def compile_data(day: date = None,
         filename = f"{day.strftime('%Y-%m-%d')}_{start_time.strftime('%H-%M-%S')}_to_{end_time.strftime('%H-%M-%S')}.pkl"
 
     # Clean rows with empty SpikeTimes
-    data = data[data['SpikeTimes'].notna()]
+    data = data[data['RawSpikeTimes'].notna()]
 
     # Save Data
     # save_dir = "/"
@@ -128,8 +128,8 @@ def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time:
     task_ids = task_id_collector.collect_complete_task_ids(time_range)
 
     # Task Fields
-    fields = TaskFieldList()
-    fields.append(TaskField())
+    fields = CachedTaskFieldList()
+    fields.append(TaskIdField(conn_xper))
     fields.append(FileNameField(conn_xper=conn_xper))
     fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
     fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
@@ -137,7 +137,7 @@ def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time:
     fields.append(SpikeTimesForChannelsField(intan_data_path=intan_data_path))
     fields.append(EpochStartStopField(intan_data_path=intan_data_path))
     # Get data
-    data = get_data_from_tasks(fields, task_ids)
+    data = fields.to_data(task_ids)
     print(data.to_string())
     return data
 
