@@ -8,39 +8,56 @@ from matplotlib import pyplot as plt
 from clat.intan.channels import Channel
 
 from monkey_names import get_monkeys_by_rank
+from recording_metadata_reader import RecordingMetadataReader
 
 matplotlib.use("Qt5Agg")
 
 
 def main():
-    experiment_data_filename = "../../../Cortana/compiled/1702587195889919_231214_155316_round4.pkl"
-    # base_path = "/home/r2_allen/git/EStimShape/EStimShapeAnalysis/compiled/analyses/"
+    date = "2023-10-04"
+    round_no = 2
+    metadata_reader = RecordingMetadataReader()
+    experiment_data_filename = metadata_reader.get_pickle_filename_for_specific_round(date, round_no)
+    print(f"reading pkl file: {experiment_data_filename}")
+    channels = metadata_reader.get_valid_channels(date, round_no)
     # Get the current script directory
     script_dir = Path(__file__).parent
-
-    # Construct the path from the script directory
-    file_path = (script_dir / '..' / '..' / 'julie'/ 'compiled' / experiment_data_filename).resolve()
-    print(file_path)
+    file_path = (script_dir / '..' / '..' / '..' / 'Cortana' / 'compiled' / experiment_data_filename).resolve()
+    print(f" in {file_path}")
     raw_data = read_pickle(file_path)
-    #   plot_channel_histograms(raw_data, channel=Channel.C_013)
-
-    channels = [
-        Channel.C_006
-        ]
-
-    experiment_name = experiment_data_filename.split(".")[0]
+    print(f"channels to be read: {channels}")
+    # plot_channel_histograms(raw_data, channel=Channel.C_013)
+    #
+    # channels = [
+    #     Channel.C_002,
+    #     Channel.C_017,
+    #     Channel.C_018
+    #     ]
+    # experiment_name = experiment_data_filename.split(".")[0]
     for channel in channels:
         print("Working on channel %s" % channel)
-        plot_raster_for_monkeys_by_rank(raw_data, channel=channel,
-                                        experiment_name=experiment_name)
+        plot_raster_for_monkeys_by_rank(raw_data, channel, date, round_no, save = True)
 
+def save_raster_plots(fig, date, round_no, channel):
+    base_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/raster_plots"
+    date_formatted = date.replace('-', '')[2:]
+    folder_name = f"{date_formatted}_round{round_no}_new"
+    # Full path to the new directory
+    save_folder_path = os.path.join(base_dir, folder_name)
+    # Check if the directory exists, and create it if it doesn't
+    if not os.path.exists(save_folder_path):
+        os.makedirs(save_folder_path)
+    individual_save_path_png = os.path.join(save_folder_path, f"{date}_round{round_no}_{channel}.png")
+    fig.savefig(individual_save_path_png)
+    print("plot saved to %s" % individual_save_path_png)
+    plt.close(fig)
 
 def read_pickle(file_path):
     unpacked_pickle = pd.read_pickle(file_path)
     return unpacked_pickle
 
 
-def plot_raster_for_monkeys_by_rank(raw_data, channel, experiment_name=None):
+def plot_raster_for_monkeys_by_rank(raw_data, channel, date, round_no, save=False):
     channel_data = extract_target_channel_data(channel, raw_data)
     unique_monkey_groups = channel_data['MonkeyGroup'].dropna().unique().tolist()
     N = len(channel_data)
@@ -74,7 +91,7 @@ def plot_raster_for_monkeys_by_rank(raw_data, channel, experiment_name=None):
                 filtered_spike_times_list.append(filtered_spike_times)
 
             ax.eventplot(filtered_spike_times_list, color='black', linewidths=0.5)
-            ax.set_xlim(0, 2.0)
+            ax.set_xlim(0, 2.2)
             ax.set_yticks([len(filtered_spike_times_list)])
             # Place the title text to the right of the subplot
             ax.text(1.05, 0.5, f"{monkey_name}", transform=ax.transAxes, ha='left', va='center', fontsize=14)
@@ -85,11 +102,12 @@ def plot_raster_for_monkeys_by_rank(raw_data, channel, experiment_name=None):
     # fig.text(0.5, 0.01, 'Monkey Groups', ha='center', va='center')
     fig.text(0.5, 0.05, 'Time (s)', ha='center', va='center', rotation='horizontal')
     fig.text(0.99, 0.95, f'N: {N}', ha='right', va='bottom')
-    fig.suptitle(f'Raster Plots for Individual Monkeys (by Rank): Channel: {channel.value}')
+    fig.suptitle(f'Raster Plots for Individual Monkeys (by Rank): {date} Round {round_no}: {channel.value}')
 
     plt.subplots_adjust(hspace=1.0, wspace=1.0)
     plt.show()
-
+    if save:
+        save_raster_plots(fig, date, round_no, channel)
     return fig
 
 def plot_raster_for_monkeys(raw_data, channel, experiment_name=None):
