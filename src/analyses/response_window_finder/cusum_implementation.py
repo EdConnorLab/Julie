@@ -31,8 +31,8 @@ if __name__ == '__main__':
             data = r['total_sum']
             normalized_data = z_score(data)
             # Parameters
-            k = 1.1  # sensitivity parameter
-            h = 1.1 # threshold
+            k = 1.0  # sensitivity parameter
+            h = 1.0 # threshold
             cusum_pos, cusum_neg, change_points = cusum(normalized_data, 0, k, h)
             windows = extract_consecutive_ranges(change_points)
             time_windows = find_corresponding_values_for_index_ranges(windows, rounded_time)
@@ -45,6 +45,8 @@ if __name__ == '__main__':
                     'Cell': str(index),
                     'Time Window': time_windows
                 })
+
     results_df = pd.DataFrame(results)
-    print(results_df)
-    results_df.to_excel('response_windows.xlsx')
+    results_sorted= results_df.sort_values(by = ['Date', 'Round No.', 'Cell'])
+    print(results_sorted)
+    results_sorted.to_excel('response_windows.xlsx')
