@@ -11,7 +11,7 @@ import re
 import math
 
 # trial_responses = pd.read_excel('/Users/charlesconnor/Dropbox/grants/social.memory/selected_cells_time_windowed/spike_count_for_each_trial_windowed.xlsx')
-trial_responses = pd.read_excel('/home/connorlab/Documents/GitHub/Julie/files_for_lin_reg_analysis_by_ed/spike_count_for_each_trial_windowed.xlsx')
+trial_responses = pd.read_excel('/home/connorlab/Documents/GitHub/Julie/Cortana/files_for_lin_reg_analysis_by_ed/spike_count_for_each_trial_windowed.xlsx')
 response_string_array = trial_responses.values
 
 affiliation_to_matrix =np.array([
@@ -126,7 +126,7 @@ for icell in range (0, ncells):
 
         r2_score(y, ypred)
         Rsquared[ibehavior][source_monkey][icell] = explained_variance_score(y, ypred)
-        # if ((icell == 15) and (source_monkey == 4)):
+        # if ((icell == 0) and (source_monkey == 4)):
         #     print('rsquare icell 15 sourcemonkey 4: ', Rsquared[ibehavior][source_monkey][icell])
         #     print('affiliation from frequencies for 94B: ', y)
         if (source_monkey == 6):

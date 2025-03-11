@@ -73,8 +73,6 @@ class RecordingMetadataReader(ExcelDataReader):
 
         return pickle_filepath, valid_channels, round_dir_path
 
-    def get_specific_sheet(self, sheet_name):
-        return self.xl.parse(sheet_name)
 
 #
 # if __name__ == "__main__":
