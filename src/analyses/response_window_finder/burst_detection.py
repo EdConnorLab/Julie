@@ -14,7 +14,6 @@ from clat.intan.channels import Channel
 
 from channel_enum_resolvers import is_channel_in_dict, get_value_from_dict_with_channel
 from monkey_names import Zombies
-from response_window_finder import compute_fractional_and_rate_of_change
 from spike_count import get_spike_counts_for_time_chunks
 from spike_rate_computation import get_raw_data_and_channels_from_files, get_spike_rates_for_each_trial
 
