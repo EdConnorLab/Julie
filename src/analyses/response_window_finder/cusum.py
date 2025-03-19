@@ -256,7 +256,7 @@ if __name__ == '__main__':
 
     print(results_sorted.head())
     results_expanded = results_sorted.explode('Time Window')
-    # results_expanded.to_excel('cusum_window_after_explode.xlsx')
+    # results_expanded.to_excel('CUSUM_window_cells.xlsx')
     # print('cusum results saved!')
     print(results_expanded.shape)
     
@@ -284,6 +284,6 @@ if __name__ == '__main__':
     # print(cusum_anova_results)
     print(cusum_sig_results)
     print(cusum_sig_results.shape)
-    # cusum_anova_results.to_excel('cusum_anova_results.xlsx')
-    # cusum_sig_results.to_excel('cusum_sig_results.xlsx')
+    # cusum_anova_results.to_excel('CUSUM_ANOVA_results.xlsx')
+    # cusum_sig_results.to_excel('CUSUM_window_cells_ANOVA_passed.xlsx')
     '''
