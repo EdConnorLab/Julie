@@ -62,6 +62,8 @@ class RecordingMetadataReader(ExcelDataReader):
             raise ValueError('Brain region should be ER or AMG')
 
     def get_metadata_for_spike_analysis(self, date, round_number, monkey='Cortana'):
+        date = str(date)
+        round_number = int(round_number)
         pickle_filename = self.get_pickle_filename_for_specific_round(date, round_number)
         compiled_dir = (Path(__file__).resolve().parent.parent.parent.parent / monkey / 'compiled')
         pickle_filepath = os.path.join(compiled_dir, pickle_filename)
