@@ -12,6 +12,7 @@ class RecordingMetadataReader(ExcelDataReader):
     def __init__(self):
         super().__init__(subfolder='recording_metadata', file_name='Cortana_Recording_Metadata.xlsx')
         self.recording_metadata = self.get_metadata()
+        self.recording_metadata['Date'] = pd.to_datetime(self.recording_metadata['Date'])
 
     def get_metadata(self):
         if self.xl is None:
@@ -24,7 +25,7 @@ class RecordingMetadataReader(ExcelDataReader):
 
     def get_valid_channels(self, date, round_number) -> list:
         matching_round = self.recording_metadata[
-            (self.recording_metadata['Date'] == date) & (self.recording_metadata['Round No.'] == round_number)]
+            (self.recording_metadata['Date'] == str(date)) & (self.recording_metadata['Round No.'] == int(round_number))]
         channels = matching_round['Channels1'].apply(
             lambda x: [x] if isinstance(x, int) else [int(i.strip()) for i in str(x).split(',')]).tolist()
         enum_channels = [Channel(f'C-{channel:03}') for channel in channels[0]]
@@ -37,7 +38,7 @@ class RecordingMetadataReader(ExcelDataReader):
 
     def get_pickle_filename_for_specific_round(self, date, round_number):
         matching_round = self.recording_metadata[
-            (self.recording_metadata['Date'] == date) & (self.recording_metadata['Round No.'] == round_number)]
+            (self.recording_metadata['Date'] == str(date)) & (self.recording_metadata['Round No.'] == int(round_number))]
         filename = matching_round['Pickle File Name'].iloc[0]
         return str(filename) + ".pkl"
 
@@ -48,7 +49,7 @@ class RecordingMetadataReader(ExcelDataReader):
 
     def get_intan_folder_name_for_specific_round(self, date, round_number):
         matching_round = self.recording_metadata[
-            (self.recording_metadata['Date'] == date) & (self.recording_metadata['Round No.'] == round_number)]
+            (self.recording_metadata['Date'] == str(date)) & (self.recording_metadata['Round No.'] == int(round_number))]
         folder_name = matching_round['Folder Name'].iloc[0]
         return str(folder_name)
 
