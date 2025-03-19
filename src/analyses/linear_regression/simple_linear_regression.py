@@ -62,7 +62,7 @@ if __name__ == "__main__":
     zombies_agonism_from = zombies_agonism_to.T
 
     # Cells
-    cells_with_windows = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/cusum_sig_results.xlsx")
+    cells_with_windows = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/CUSUM_window_cells_ANOVA_passed.xlsx")
     all_spike_counts = get_spike_count_for_single_neuron_with_time_window(cells_with_windows)
     all_spike_counts.columns = all_spike_counts.columns.astype(str)
     subject_monkey_index = 6
