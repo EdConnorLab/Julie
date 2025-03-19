@@ -191,29 +191,29 @@ def get_spike_count_for_single_neuron_with_time_window(cell_metadata):
 
         cells = cell_metadata[((cell_metadata['Date'] == row['Date']) & (cell_metadata['Round No.'] == row['Round No.']))]
         for _, cell in cells.iterrows():
+            if isinstance(cell['Time Window'], str):
+                time_window = tuple(float(num) for num in cell['Time Window'].strip('()').split(','))
+            else:
+                time_window = cell['Time Window']
             if 'Unit' not in cell['Cell']:  # unsorted cells
                 cell['Cell'] = channel_enum_resolvers.convert_to_enum(cell['Cell'])
-                if isinstance(cell['Time Window'], str):
-                    time_window = tuple(float(num) for num in cell['Time Window'].strip('()').split(','))
-                else:
-                    time_window = cell['Time Window']
                 unsorted_cells_spike_count = count_spikes_for_specific_cell_time_windowed(raw_trial_data, cell['Cell'],
                                                                                           time_window)
                 unsorted_cells_spike_count_dict = unsorted_cells_spike_count.to_dict(orient='records')[0]
                 unsorted_cells_spike_count_dict['Cell'] = cell['Cell']
                 unsorted_cells_spike_count_dict['Date'] = row['Date']
                 unsorted_cells_spike_count_dict['Round No.'] = row['Round No.']
-                unsorted_cells_spike_count_dict['Time Window'] = cell['Time Window']
+                unsorted_cells_spike_count_dict['Time Window'] = time_window
                 results.append(unsorted_cells_spike_count_dict)
 
             else:  # sorted cells
                 sorted_cells_spike_count = count_spikes_for_specific_cell_time_windowed(
-                    sorted_data, cell['Cell'], cell['Time Window'])
+                    sorted_data, cell['Cell'], time_window)
                 sorted_cells_spike_count_dict = sorted_cells_spike_count.to_dict(orient='records')[0]
                 sorted_cells_spike_count_dict['Cell'] = cell['Cell']
                 sorted_cells_spike_count_dict['Date'] = row['Date']
                 sorted_cells_spike_count_dict['Round No.'] = row['Round No.']
-                sorted_cells_spike_count_dict['Time Window'] = cell['Time Window']
+                sorted_cells_spike_count_dict['Time Window'] = time_window
                 results.append(sorted_cells_spike_count_dict)
 
     all_spike_count = pd.DataFrame(results)
