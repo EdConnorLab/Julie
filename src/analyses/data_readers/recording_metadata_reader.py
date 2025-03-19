@@ -1,10 +1,22 @@
 import os
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 from clat.intan.channels import Channel
 
 from excel_data_reader import ExcelDataReader
+
+def standardize_date(date):
+    if isinstance(date, str):
+        try:
+            return datetime.strptime(date.split(' ')[0], '%Y-%m-%d').date()
+        except ValueError:
+            raise ValueError("Invalid date format. Please use YYYY-MM-DD.")
+    elif isinstance(date, datetime):
+        return date.date()
+    else:
+        raise TypeError("Date must be either a datetime object or a string in YYYY-MM-DD format.")
 
 
 class RecordingMetadataReader(ExcelDataReader):
@@ -62,7 +74,7 @@ class RecordingMetadataReader(ExcelDataReader):
             raise ValueError('Brain region should be ER or AMG')
 
     def get_metadata_for_spike_analysis(self, date, round_number, monkey='Cortana'):
-        date = str(date)
+        date = standardize_date(date)
         round_number = int(round_number)
         pickle_filename = self.get_pickle_filename_for_specific_round(date, round_number)
         compiled_dir = (Path(__file__).resolve().parent.parent.parent.parent / monkey / 'compiled')
@@ -72,7 +84,7 @@ class RecordingMetadataReader(ExcelDataReader):
         # for sorted rounds
         base_dir = Path("/home/connorlab/Documents/IntanData")
         intan_dir = self.get_intan_folder_name_for_specific_round(date, round_number)
-        round_dir_path = base_dir / monkey / date / intan_dir
+        round_dir_path = base_dir / monkey / str(date) / intan_dir
 
         return pickle_filepath, valid_channels, round_dir_path
 
