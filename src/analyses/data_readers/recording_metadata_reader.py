@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 
 import pandas as pd
@@ -7,15 +7,19 @@ from clat.intan.channels import Channel
 
 from excel_data_reader import ExcelDataReader
 
-def standardize_date(date):
-    if isinstance(date, str):
+def standardize_date(date_input):
+    if isinstance(date_input, str):
         try:
-            return datetime.strptime(date.split(' ')[0], '%Y-%m-%d').date()
+            return datetime.strptime(date_input.split(' ')[0], '%Y-%m-%d').date()
         except ValueError:
             raise ValueError("Invalid date format. Please use YYYY-MM-DD.")
-    elif isinstance(date, datetime):
-        return date.date()
+    elif isinstance(date_input, datetime):
+        return date_input.date()
+    elif isinstance(date_input, date):
+        return date_input
     else:
+        print(date_input)
+        print(type(date_input))
         raise TypeError("Date must be either a datetime object or a string in YYYY-MM-DD format.")
 
 
