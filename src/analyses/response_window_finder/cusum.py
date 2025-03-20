@@ -4,13 +4,14 @@ import pandas as pd
 
 from anova_on_spike_counts import perform_anova_on_dataframe_rows_for_time_windowed
 from channel_enum_resolvers import convert_to_enum
+from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
 from monkey_names import Zombies
 from recording_metadata_reader import RecordingMetadataReader
 from spike_count import get_spike_counts_for_time_chunks, get_spike_count_for_single_neuron_with_time_window
 from spike_rate_computation import get_raw_data_and_channels_from_files
 
 
-def cusum(data, mu, k, h):
+def cusum(data, mu, k = 0.9 , h = 1):
     """
     Perform CUSUM change detection.
     """
@@ -98,33 +99,6 @@ def z_score(data):
     else:
         return (data - np.mean(data)) / np.std(data)
 
-def plot_spike_count_with_response_windows(time, normalized_data, data, cusum_pos, cusum_neg, change_points, threshold):
-    # Plotting
-    y_values_at_change_points = [data[i] for i in change_points]
-    t_values_at_change_points = [time[i] for i in change_points]
-
-    plt.figure(figsize=(12, 6))
-    if normalized_data is not None:
-        plt.plot(time[:len(normalized_data)], normalized_data, label='Normalized Data')
-    if data is not None:
-        plt.plot(time[:len(data)], data, label='Data')
-    plt.plot(time[:len(data)], cusum_pos, label='CUSUM+', linestyle='--')
-    plt.plot(time[:len(data)], cusum_neg, label='CUSUM-', linestyle='--')
-    plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
-    plt.axhline(y=threshold, color='green', linestyle='--', label='Threshold')
-    # Using your function to get consecutive ranges
-    consecutive_ranges = extract_consecutive_ranges(change_points)
-    overall_max = np.maximum.reduce([data, cusum_pos, cusum_neg])
-    # max_of_normalized_data = np.maximum.reduce([normalized_data, cusum_pos, cusum_neg])
-    # Shading windows
-    for start, end in consecutive_ranges:
-        plt.fill_betweenx([0, max(overall_max)], time[start], time[end], color='red', alpha=0.4)
-
-    plt.title(f'{date_only} Round {round_no} {index} --- windows based on CUSUM algorithm')
-    plt.xlabel('Time')
-    plt.ylabel('Value')
-    plt.legend()
-    plt.show()
 
 if __name__ == '__main__':
 
@@ -134,23 +108,29 @@ if __name__ == '__main__':
 
     time_chunk_size = 0.05  # in sec
     rounded_time = np.round(np.arange(time_chunk_size, 3.50, time_chunk_size), 2)
+    '''
+    # response_window_test = pd.read_excel('response_window_algorithm_validation_test.xlsx')
+    prelim = get_metadata_for_preliminary_analysis()
+    shuffled_df = prelim.sample(frac=1, random_state=42)
+    shuffled_df = shuffled_df.reset_index(drop=True)
+    results = []
 
-    response_window_test = pd.read_excel('response_window_algorithm_validation_test.xlsx')
-    for _, row in response_window_test.iterrows():
+    for _, row in prelim.iterrows():
         date = str(row['Date'])
         round_no = row['Round No.']
         date_only = row['Date'].strftime('%Y-%m-%d')
-        channels_to_read = convert_to_enum(row['Cell'])
-        raw_unsorted_data, _, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
-        spike_counts = compute_total_sum_of_spikes(raw_unsorted_data, zombies, [channels_to_read], time_chunk_size)
-
-        spike_counts['response_windows'] = None
-        for index, r in spike_counts.iterrows():
+        # channels_to_read = convert_to_enum(row['Cell'])
+        raw_unsorted_data, valid_channels, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
+        spike_counts_unsorted_data = compute_total_sum_of_spikes(raw_unsorted_data, zombies, valid_channels, time_chunk_size)
+        # if sorted_data is not None:
+        #     print(f"sorted data exists for {date}, {round_no}")
+        #     spike_counts_sorted_data = compute_total_sum_of_spikes(sorted_data, zombies, valid_channels, time_chunk_size)
+        for index, r in spike_counts_unsorted_data.iterrows():
             data = r['total_sum']
             normalized_data = z_score(data)
             # Parameters
-            k = 1.1  # sensitivity parameter
-            h = 1.1 # threshold
+            k = 0.9  # sensitivity parameter
+            h = 1 # threshold
             cusum_pos, cusum_neg, change_points = cusum(normalized_data, 0, k, h)
             windows = extract_consecutive_ranges(change_points)
             time_windows = find_corresponding_values_for_index_ranges(windows, rounded_time)
@@ -161,111 +141,53 @@ if __name__ == '__main__':
             y_values_at_change_points = [data[i] for i in change_points]
             t_values_at_change_points = [rounded_time[i] for i in change_points]
 
-            plt.figure(figsize=(12, 6))
-            # Using your function to get consecutive ranges
-            consecutive_ranges = extract_consecutive_ranges(change_points)
-            overall_max_with_data = np.maximum.reduce([data, cusum_pos, cusum_neg])
-            overall_max_with_norm_data = np.maximum.reduce([normalized_data, cusum_pos, cusum_neg])
+            # plt.figure(figsize=(12, 6))
+            # consecutive_ranges = extract_consecutive_ranges(change_points)
+            # overall_max_with_data = np.maximum.reduce([data, cusum_pos, cusum_neg])
+            # overall_max_with_norm_data = np.maximum.reduce([normalized_data, cusum_pos, cusum_neg])
             # if normalized_data is not None:
             #     plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
             #     for start, end in consecutive_ranges:
             #         plt.fill_betweenx([0, max(overall_max_with_norm_data)], rounded_time[start], rounded_time[end], color='red',
             #                           alpha=0.4)
 
-            if data is not None:
-                plt.plot(rounded_time[:len(data)], data, label='Data')
-                for start, end in consecutive_ranges:
-                    plt.fill_betweenx([0, max(overall_max_with_data)], rounded_time[start], rounded_time[end], color='red',
-                                      alpha=0.4)
-                plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
+            # if data is not None:
+            #     plt.plot(rounded_time[:len(data)], data, label='Data')
+            #     for start, end in consecutive_ranges:
+            #         plt.fill_betweenx([0, max(overall_max_with_data)], rounded_time[start], rounded_time[end], color='red',
+            #                           alpha=0.4)
+            #     plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
 
-            plt.plot(rounded_time[:len(data)], cusum_pos, label='CUSUM+', linestyle='--')
-            plt.plot(rounded_time[:len(data)], cusum_neg, label='CUSUM-', linestyle='--')
-            plt.axhline(y=h, color='green', linestyle='--', label='Threshold')
+            # plt.plot(rounded_time[:len(data)], cusum_pos, label='CUSUM+', linestyle='--')
+            # plt.plot(rounded_time[:len(data)], cusum_neg, label='CUSUM-', linestyle='--')
+            # plt.axhline(y=h, color='green', linestyle='--', label='Threshold')
+            #
+            # plt.title(f'{date_only} Round {round_no} {index} --- windows based on CUSUM algorithm')
+            # plt.xlabel('Time')
+            # plt.ylabel('Value')
+            # plt.legend()
+            # plt.show()
 
-
-
-            plt.title(f'{date_only} Round {round_no} {index} --- windows based on CUSUM algorithm')
-            plt.xlabel('Time')
-            plt.ylabel('Value')
-            plt.legend()
-            plt.show()
-
-    '''
-    results = []
-    for _, row in all_rounds.iterrows():
-        date = str(row['Date'])
-        round_no = row['Round No.']
-        date_only = row['Date'].strftime('%Y-%m-%d')
-        raw_unsorted_data, valid_channels, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
-        spike_counts = compute_total_sum_of_spikes(raw_unsorted_data, zombies, valid_channels, time_chunk_size)
-
-        spike_counts['response_windows'] = None
-        for index, r in spike_counts.iterrows():
-            # Monkey-specific windows
-            # for monkey in zombies:
-            #     monkey_specific = r[monkey]
-            #     monkey_std_dev = np.std(monkey_specific)
-            #     if monkey_std_dev > 0 and max(monkey_specific) > 2:
-            #         monkey_mean = np.mean(monkey_specific)  # baseline mean
-            #         normalized_data = (monkey_specific - monkey_mean) / monkey_std_dev
-            #         max_data = max(monkey_specific)
-            #         cusum_pos, cusum_neg, change_points = cusum(normalized_data, max_data, k = 0.9, h = 0.2)
-            #         monkey_windows = extract_consecutive_ranges(change_points)
-            #         monkey_time_windows = extract_values_from_ranges(monkey_windows, rounded_time)
-            #         if len(monkey_time_windows) > 0:
-            #             print(f"{monkey} specific {date_only} round no. {round_no} {index}")
-            #             print(monkey_time_windows)
-
-            total_sum_data = r['total_sum']
-            std_dev = np.std(total_sum_data)
-            if std_dev > 0:
-                mean = np.mean(total_sum_data) # baseline mean
-                # normalized_data = (total_sum_data - mean) / std_dev
-                # max_data = max(total_sum_data)
-                normalized_data = min_max_scale(total_sum_data)
-                max_data = max(normalized_data)
-                # Parameters
-                k = 0.6  # sensitivity parameter
-                h = 0.2  # threshold
-
-                cusum_pos, cusum_neg, change_points = cusum(normalized_data, max_data, k, h)
-                windows = extract_consecutive_ranges(change_points)
-                time_windows = find_corresponding_values_for_index_ranges(windows, rounded_time)
-                spikes_in_window = find_corresponding_values_for_index_ranges(windows, total_sum_data)
-
-                if len(time_windows) > 0:
-                    print(f"---------------- {date_only} round no. {round_no} {index}----------------")
-                    # print(windows)
-                    print(time_windows)
-
-                # Plotting
-                # plot_spike_count_with_response_windows(rounded_time, normalized_data, total_sum_data, cusum_pos, cusum_neg, change_points, h)
-
-                if len(time_windows) > 0:
-                    results.append({
-                        'Date': date_only,
-                        'Round No.': round_no,
-                        'Cell': str(index),
-                        'Time Window': time_windows
-                    })
+            if len(time_windows) > 0:
+                results.append({
+                    'Date': date_only,
+                    'Round No.': round_no,
+                    'Cell': str(index),
+                    'Time Window': time_windows
+                })
 
     results_df = pd.DataFrame(results)
     results_sorted = results_df.sort_values(by=['Date', 'Round No.', 'Cell'])
-    # results_sorted.to_excel('cusum_window_before_explode.xlsx')
-
-    print(results_sorted.head())
     results_expanded = results_sorted.explode('Time Window')
-    # results_expanded.to_excel('CUSUM_window_cells.xlsx')
-    # print('cusum results saved!')
-    print(results_expanded.shape)
-    
+    results_expanded.to_excel('windows.xlsx')
     '''
-        # Date Created: 2025-01-29
-        # ANOVA for windows found from cusum algorithm
-    '''
+    # Date Created: 2025-01-29
+    # ANOVA for windows found from cusum algorithm
+    results_expanded = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/Cortana/CUSUM and ANOVA/Zombies_CUSUM_window_cells.xlsx")
+    results_expanded['Time Window'] = results_expanded['Time Window'].apply(
+        lambda s: tuple(int(float(num) * 1000) for num in s.strip('()').split(',')))
     # results_expanded['Time Window'] = results_expanded['Time Window'].apply(
-    #     lambda s: tuple(int(float(num) * 1000) for num in s.strip('()').split(',')))
+    #     lambda t: tuple(int(num * 1000) for num in t))
 
     print(
         "--------------------------------------------- cusum windows ----------------------------------------------------------")
@@ -284,6 +206,5 @@ if __name__ == '__main__':
     # print(cusum_anova_results)
     print(cusum_sig_results)
     print(cusum_sig_results.shape)
-    # cusum_anova_results.to_excel('CUSUM_ANOVA_results.xlsx')
-    # cusum_sig_results.to_excel('CUSUM_window_cells_ANOVA_passed.xlsx')
-    '''
+    cusum_anova_results.to_excel('CUSUM_ANOVA_results.xlsx')
+    cusum_sig_results.to_excel('CUSUM_window_cells_ANOVA_passed.xlsx')
