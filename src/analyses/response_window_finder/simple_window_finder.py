@@ -13,7 +13,7 @@ from recording_metadata_reader import RecordingMetadataReader
 from spike_rate_computation import get_raw_data_and_channels_from_files
 
 
-def threshold_and_fill(z_scored_data, threshold=0.5):
+def threshold_and_fill_gap(z_scored_data, threshold=0.5):
     # Find change points where the z-score exceeds the threshold
     change_points = []
     for t in range(len(z_scored_data)):
@@ -22,28 +22,17 @@ def threshold_and_fill(z_scored_data, threshold=0.5):
     change_points = sorted(list(set(change_points)))
     print('initial change points')
     print(change_points)
-    fill_missing_ones(change_points)
-    return filled_indices
+    filled = fill_gap_if_one_data_point_away(change_points, z_scored_data)
+    print(filled)
+    return filled
 
 
-def simple_thresholding(z_scored_data, threshold = 0.5):
-    change_points = []
-    for t in range(1, len(data)):
-        if z_scored_data[t] > threshold:
-            change_points.append(t)
-
-    for t in change_points:
-        z_scored_data[t] < z_scored_data[t]
-
-    return change_points
-
-def fill_missing_ones(change_points, norm_data, threshold=0.7):
+def fill_gap_if_one_data_point_away(change_points, norm_data, threshold=0.7):
     if not change_points:
         return []
     filled = []
     i = 0
     while i < len(change_points) - 1:
-        print(i)
         filled.append(change_points[i])
         if change_points[i + 1] == change_points[i] + 2:
             if norm_data[change_points[i]+1] >= (threshold * norm_data[change_points[i+1]]) or norm_data[change_points[i]+1] >= (threshold * norm_data[change_points[i]]):
@@ -79,7 +68,22 @@ def extract_consecutive_ranges(numbers):
                 start = end = numbers[i]
         if start != end:  # Check again for the last range
             result.append((start, end))
+
+    print(result)
     return result
+
+
+def remove_consecutive_tuples(tuples):
+    # List to hold tuples that do not contain consecutive numbers
+    filtered_tuples = []
+
+    # Iterate over each tuple in the input list
+    for start, end in tuples:
+        # Check if the numbers are consecutive
+        if end != start + 1:
+            filtered_tuples.append((start, end))
+
+    return filtered_tuples
 
 def find_corresponding_values_for_index_ranges(index_ranges, values):
     """
@@ -138,38 +142,31 @@ if __name__ == '__main__':
         for index, r in spike_counts_unsorted_data.iterrows():
             data = r['total_sum']
             normalized_data = z_score(data)
-            #raw_filtered = gaussian_filter1d(data, sigma = 0.8)
-            #filtered_data= gaussian_filter1d(normalized_data, sigma=0.8)
 
             thresh = 0.5
-            #change_points = simple_thresholding(normalized_data, thresh)
-            change_points_updated= threshold_and_fill(normalized_data, thresh)
-            windows = extract_consecutive_ranges(change_points_updated)
-            time_windows = find_corresponding_values_for_index_ranges(windows, rounded_time)
+            change_points = threshold_and_fill_gap(normalized_data, thresh)
+            windows = extract_consecutive_ranges(change_points)
+            filtered_windows = remove_consecutive_tuples(windows)
+            time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
             if len(time_windows) > 0:
                 print(f"---------------- {date_only} round no. {round_no} {index}----------------")
                 print(time_windows)
 
             # Plotting
-            # change_points_updated = fill_missing_ones(change_points)
-            # print(change_points)
-            print('updated')
-            print(change_points_updated)
-            y_values_at_change_points = [data[i] for i in change_points_updated]
-            t_values_at_change_points = [rounded_time[i] for i in change_points_updated]
+            y_values_at_change_points = [data[i] for i in change_points]
+            t_values_at_change_points = [rounded_time[i] for i in change_points]
 
             plt.figure(figsize=(12, 6))
-            consecutive_ranges = extract_consecutive_ranges(change_points_updated)
             overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
             if normalized_data is not None:
                 plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
-                for start, end in consecutive_ranges:
+                for start, end in filtered_windows:
                     plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
                                       alpha=0.4)
 
             if data is not None:
                 plt.plot(rounded_time[:len(data)], data, label='Data')
-                for start, end in consecutive_ranges:
+                for start, end in filtered_windows:
                     plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
                                       alpha=0.4)
                 plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
