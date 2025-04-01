@@ -57,7 +57,7 @@ def run_linear_regression_analysis(spike_counts, behavior_table, behavior_name):
                 x = [value for key, value in row.items() if
                      key not in exclude_columns and isinstance(value, (int, float))]
             coeff, intercept, r_squared = run_linear_regression_using_sklearn(x, y)
-            if r_squared > 0.5:
+            if r_squared > 0.25:
                 print("")
                 print(
                     f"-------- Linear Regression Results for {date} Round No.{round_no} {time_window} {index} -------")
@@ -102,10 +102,14 @@ if __name__ == "__main__":
     zombies_agonism_from = zombies_agonism_to.T
 
     # Cells
-    cusum_anova_passed_cells = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/CUSUM_window_cells_ANOVA_passed.xlsx")
+    additional_anova_passed_cells = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/window_cells_ANOVA_passed.xlsx")
     ed_anova_passed_cells = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/Ed_window_cells_ANOVA_passed.xlsx")
-    cells_with_windows = pd.concat([cusum_anova_passed_cells,ed_anova_passed_cells], ignore_index=True)
+    additional_anova_passed_cells['Time Window'] = additional_anova_passed_cells['Time Window'].apply(
+         lambda s: tuple((float(num)) for num in s.strip('()').split(',')))
+    cells_with_windows = pd.concat([additional_anova_passed_cells, ed_anova_passed_cells], ignore_index=True)
     cells_with_windows['Date'] = pd.to_datetime(cells_with_windows['Date']).dt.date
+    cells_with_windows_sorted = cells_with_windows.sort_values(by=['Date', 'Round No.', 'Cell'])
+    cells_with_windows_sorted.to_excel('all_anova_passed_cells.xlsx')
     all_spike_counts = get_spike_count_for_single_neuron_with_time_window(cells_with_windows)
     all_spike_counts.columns = all_spike_counts.columns.astype(str)
     subject_monkey_index = 6

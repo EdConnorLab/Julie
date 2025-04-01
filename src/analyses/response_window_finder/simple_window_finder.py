@@ -27,7 +27,7 @@ def threshold_and_fill_gap(z_scored_data, threshold=0.5):
     return filled
 
 
-def fill_gap_if_one_data_point_away(change_points, norm_data, threshold=0.7):
+def fill_gap_if_one_data_point_away(change_points, norm_data, threshold=0.5):
     if not change_points:
         return []
     filled = []
@@ -143,7 +143,7 @@ if __name__ == '__main__':
             data = r['total_sum']
             normalized_data = z_score(data)
 
-            thresh = 0.5
+            thresh = 0.6
             change_points = threshold_and_fill_gap(normalized_data, thresh)
             windows = extract_consecutive_ranges(change_points)
             filtered_windows = remove_consecutive_tuples(windows)
@@ -153,32 +153,32 @@ if __name__ == '__main__':
                 print(time_windows)
 
             # Plotting
-            y_values_at_change_points = [data[i] for i in change_points]
-            t_values_at_change_points = [rounded_time[i] for i in change_points]
-
-            plt.figure(figsize=(12, 6))
-            overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
-            if normalized_data is not None:
-                plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
-                for start, end in filtered_windows:
-                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
-                                      alpha=0.4)
-
-            if data is not None:
-                plt.plot(rounded_time[:len(data)], data, label='Data')
-                for start, end in filtered_windows:
-                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
-                                      alpha=0.4)
-                plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
-
-            plt.axhline(y=thresh, color='green', linestyle='--', label='Threshold')
-
-            plt.title(f'{date_only} Round {round_no} {index}')
-            plt.xlabel('Time')
-            plt.ylabel('Value')
-            plt.legend()
-            # plt.savefig("hi")
-            plt.show()
+            # y_values_at_change_points = [data[i] for i in change_points]
+            # t_values_at_change_points = [rounded_time[i] for i in change_points]
+            #
+            # plt.figure(figsize=(12, 6))
+            # overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
+            # if normalized_data is not None:
+            #     plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
+            #     for start, end in filtered_windows:
+            #         plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
+            #                           alpha=0.4)
+            #
+            # if data is not None:
+            #     plt.plot(rounded_time[:len(data)], data, label='Data')
+            #     for start, end in filtered_windows:
+            #         plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
+            #                           alpha=0.4)
+            #     plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
+            #
+            # plt.axhline(y=thresh, color='green', linestyle='--', label='Threshold')
+            #
+            # plt.title(f'{date_only} Round {round_no} {index}')
+            # plt.xlabel('Time')
+            # plt.ylabel('Value')
+            # plt.legend()
+            # # plt.savefig("hi")
+            # plt.show()
 
             if len(time_windows) > 0:
                 results.append({
@@ -188,36 +188,38 @@ if __name__ == '__main__':
                     'Time Window': time_windows
                 })
 
-    # results_df = pd.DataFrame(results)
-    # results_sorted = results_df.sort_values(by=['Date', 'Round No.', 'Cell'])
-    # results_expanded = results_sorted.explode('Time Window')
-    # results_expanded.to_excel('windows.xlsx')
-    '''
-    # Date Created: 2025-01-29
-    # ANOVA for windows found 
-    results_expanded = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/Cortana//window_cells.xlsx")
+    results_df = pd.DataFrame(results)
+    results_sorted = results_df.sort_values(by=['Date', 'Round No.', 'Cell'])
+    results_expanded = results_sorted.explode('Time Window')
     results_expanded['Time Window'] = results_expanded['Time Window'].apply(
-        lambda s: tuple(int(float(num) * 1000) for num in s.strip('()').split(',')))
-    # results_expanded['Time Window'] = results_expanded['Time Window'].apply(
-    #     lambda t: tuple(int(num * 1000) for num in t))
+        lambda t: tuple(int(num * 1000) for num in t))
+    results_expanded.to_excel('simple_window_finder_windows.xlsx')
+    print("shape")
+    print(results_expanded.shape)
 
-    # print(
-    #     "--------------------------------------------- cusum windows ----------------------------------------------------------")
-    # print(results_expanded)
-    # 
-    # cusum_spike_count = get_spike_count_for_single_neuron_with_time_window(results_expanded)
-    # print(cusum_spike_count)
-    # 
-    # zombies_columns = [col for col in zombies if col in cusum_spike_count.columns]
-    # additional_columns = ['Date', 'Round No.', 'Time Window']
-    # zombies_cusum_spike_count = cusum_spike_count[zombies_columns + additional_columns]
-    # cusum_anova_results, cusum_sig_results = perform_anova_on_dataframe_rows_for_time_windowed(
-    #     zombies_cusum_spike_count)
-    # 
-    # print('------------------------------------ cusum window results -----------------------------------')
-    # # print(cusum_anova_results)
-    # print(cusum_sig_results)
-    # print(cusum_sig_results.shape)
-    # cusum_anova_results.to_excel('CUSUM_ANOVA_results.xlsx')
-    # cusum_sig_results.to_excel('CUSUM_window_cells_ANOVA_passed.xlsx')
     '''
+    Date Created: 2025-01-29
+    Last Modified: 2025-04-01
+    ANOVA for windows found with simple window finder algorithm
+    '''
+   #  results_expanded = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/Cortana//window_cells.xlsx")
+   #  results_expanded['Time Window'] = results_expanded['Time Window'].apply(
+   #      lambda s: tuple(int(float(num) * 1000) for num in s.strip('()').split(',')))
+    # print(results_expanded)
+
+    spike_count_single_neuron = get_spike_count_for_single_neuron_with_time_window(results_expanded)
+    print(spike_count_single_neuron)
+
+    zombies_columns = [col for col in zombies if col in spike_count_single_neuron.columns]
+    additional_columns = ['Date', 'Round No.', 'Time Window']
+    zombies_cusum_spike_count = spike_count_single_neuron[zombies_columns + additional_columns]
+    anova_results, anova_sig_results = perform_anova_on_dataframe_rows_for_time_windowed(
+        zombies_cusum_spike_count)
+
+    print('------------------------------------anova results -----------------------------------')
+    # print(cusum_anova_results)
+    print("anova sig results shape")
+    # print(anova_sig_results)
+    print(anova_sig_results.shape)
+    anova_sig_results.to_excel('window_cells_ANOVA_passed.xlsx')
+
