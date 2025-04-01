@@ -1,7 +1,7 @@
 import networkx as nx
 import numpy as np
 import pandas as pd
-from monkey_names import Monkey
+from monkey_names import Zombies
 
 
 def create_digraph_with_edge_weights(edge_weights):
@@ -31,8 +31,9 @@ def create_digraph_with_top_70_percent_of_edge_weights(edge_weights):
     all_weights = [d['weight'] for _, _, d in G.edges(data=True)]
 
     # Calculate the 20th percentile
-    threshold = np.percentile(all_weights, 60)
-    print(f"Threshold for bottom 60%: {threshold}")
+    percentile = 0
+    threshold = np.percentile(all_weights, percentile)
+    print(f"Threshold for bottom {percentile}: {threshold}")
 
     # Remove edges with weights below the threshold
     edges_to_remove = [(u, v) for u, v, d in G.edges(data=True) if d['weight'] < threshold]
