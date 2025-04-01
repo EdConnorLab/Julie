@@ -8,7 +8,7 @@ class BestFrans(Enum):
     B_F3 = "101G"
     B_J1 = "19J"
 
-    RANK = [B_M1, B_F1, B_J1, B_F3, B_F2]
+    RANK = [B_M1, B_F1, B_F3, B_F2, B_J1]
 
 
 class Zombies(Enum):
