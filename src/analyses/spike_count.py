@@ -86,31 +86,135 @@ def count_spikes_from_raw_unsorted_data(raw_unsorted_data, valid_channels):
         spike_count_per_channel[monkey] = pd.Series(monkey_specific_spike_counts)
     return spike_count_per_channel
 
-def get_spike_counts_for_time_chunks(monkeys, raw_data, channels, chunk_size):
+def explode_monkey_data(monkey_data):
     """
-    chunk size in seconds
+    Converts wide-form monkey_data into long-form format.
+    Returns a DataFrame with one row per (monkey, trial, channel)
     """
-    monkey_spike_counts = pd.DataFrame()
-    for monkey in monkeys:
-        monkey_data = raw_data[raw_data['MonkeyName'] == monkey]
-        spike_counts_by_channel = {}
-        for index, row in monkey_data.iterrows():
-            for channel in channels:
-                spike_count_for_each_channel = []
-                if is_channel_in_dict(channel, row['SpikeTimes']):
-                    data = get_value_from_dict_with_channel(channel, row['SpikeTimes'])
-                    start_time, end_time = row['EpochStartStop']
-                    time_chunks = [start_time + i * chunk_size for i in
-                                   range(int((end_time - start_time) / chunk_size) + 1)]
-                    for i in range(len(time_chunks) - 1):
-                        time_range = (time_chunks[i], time_chunks[i + 1])
-                        spike_count = get_spike_count(data, time_range)
-                        spike_count_for_each_channel.append(spike_count)
-                else:
-                    print(f"No data for {channel} in row {index}")
-                spike_counts_by_channel[channel] = spike_count_for_each_channel
-            monkey_spike_counts[monkey] = pd.Series(spike_counts_by_channel)
-    return monkey_spike_counts
+    rows = []
+    for _, row in monkey_data.iterrows():
+        spike_dict = row['SpikeTimes']
+        for channel_enum, spike_list in spike_dict.items():
+            rows.append({
+                'MonkeyName': row['MonkeyName'],
+                'TaskFile': row['TaskFile'],
+                'Channel': channel_enum,  # can call `.value` later if needed
+                'SpikeTimes': spike_list,
+                'EpochStartStop': row['EpochStartStop']
+            })
+    print(pd.DataFrame(rows))
+    return pd.DataFrame(rows)
+
+def explode_monkey_data(monkey_data):
+    """
+    Converts wide-form monkey_data into long-form format.
+    Returns a DataFrame with one row per (monkey, trial, channel)
+    """
+    rows = []
+    for _, row in monkey_data.iterrows():
+        spike_dict = row['SpikeTimes']
+        for channel_enum, spike_list in spike_dict.items():
+            rows.append({
+                'MonkeyName': row['MonkeyName'],
+                'TaskField': row['TaskField'],
+                'Channel': channel_enum,  # can call `.value` later if needed
+                'SpikeTimes': spike_list,
+                'EpochStartStop': row['EpochStartStop']
+            })
+    return pd.DataFrame(rows)
+
+def get_spike_counts_for_time_chunks_new(df, chunk_size):
+    all_chunks = []
+
+    for _, row in df.iterrows():
+        start_time, end_time = row['EpochStartStop']
+        spike_times = row['SpikeTimes']
+        time_chunks = [start_time + i * chunk_size for i in range(int((end_time - start_time) / chunk_size) + 1)]
+
+        for i in range(len(time_chunks) - 1):
+            chunk_start = time_chunks[i]
+            chunk_end = time_chunks[i + 1]
+            count = sum(chunk_start <= t < chunk_end for t in spike_times)
+
+            all_chunks.append({
+                'MonkeyName': row['MonkeyName'],
+                'TaskField': row['TaskField'],
+                'Channel': row['Channel'],
+                'ChunkStart': chunk_start,
+                'ChunkEnd': chunk_end,
+                'SpikeCount': count
+            })
+
+    return pd.DataFrame(all_chunks)
+
+
+# def get_spike_counts_for_time_chunks(monkeys, raw_data, channels, chunk_size):
+#     """
+#     chunk size in seconds
+#     """
+#     monkey_spike_counts = pd.DataFrame()
+#     for monkey in monkeys:
+#         monkey_data = raw_data[raw_data['MonkeyName'] == monkey]
+#         spike_counts_by_channel = {}
+#         exploded_monkey_data = explode_monkey_data(monkey_data)
+#         temporary_results = get_spike_counts_for_time_chunks_new(exploded_monkey_data, chunk_size)
+#         print(temporary_results)
+#         for index, row in monkey_data.iterrows():
+#             for channel in channels:
+#                 spike_count_for_each_channel = []
+#                 if is_channel_in_dict(channel, row['SpikeTimes']):
+#                     data = get_value_from_dict_with_channel(channel, row['SpikeTimes'])
+#                     start_time, end_time = row['EpochStartStop']
+#                     time_chunks = [start_time + i * chunk_size for i in
+#                                    range(int((end_time - start_time) / chunk_size) + 1)]
+#                     for i in range(len(time_chunks) - 1):
+#                         time_range = (time_chunks[i], time_chunks[i + 1])
+#                         spike_count = get_spike_count(data, time_range)
+#                         spike_count_for_each_channel.append(spike_count)
+#                 else:
+#                     print(f"No data for {channel} in row {index}")
+#                 spike_counts_by_channel[channel] = spike_count_for_each_channel
+#             monkey_spike_counts[monkey] = pd.Series(spike_counts_by_channel)
+#     return monkey_spike_counts
+
+def get_spike_counts_for_time_chunks_compatible(monkeys, raw_data, channels, chunk_size):
+    # Step 1: explode
+    long_df = explode_monkey_data(raw_data)
+    long_df = long_df[long_df['MonkeyName'].isin(monkeys)]
+
+    # Step 2: normalize channel name (handle Unit suffix)
+    sample_channel = str(long_df['Channel'].iloc[0])
+    has_unit = "_Unit" in sample_channel
+
+    def normalize(ch):
+        ch_str = str(ch) if not hasattr(ch, 'value') else str(ch)
+        return ch_str.split("_Unit")[0] if has_unit else ch_str
+
+    channels_normalized = [normalize(ch) for ch in channels]
+    long_df['ChannelNorm'] = long_df['Channel'].apply(normalize)
+    long_df = long_df[long_df['ChannelNorm'].isin(channels_normalized)]
+
+    # Step 3: chunk spike counts
+    spike_counts_long = get_spike_counts_for_time_chunks_new(long_df, chunk_size)
+    spike_counts_long['ChannelNorm'] = spike_counts_long['Channel'].apply(normalize)
+
+    # Step 4: group by Channel + Monkey + TaskField to get per-trial chunk list
+    per_trial = (
+        spike_counts_long
+        .groupby(['ChannelNorm', 'MonkeyName', 'TaskField'])
+        .apply(lambda g: g.sort_values('ChunkStart')['SpikeCount'].tolist())
+        .reset_index(name='SpikeCounts')
+    )
+
+    # Step 5: now re-group by Channel + Monkey to concatenate all trial chunk lists
+    combined = (
+        per_trial
+        .groupby(['ChannelNorm', 'MonkeyName'])['SpikeCounts']
+        .apply(lambda lists: [val for sublist in lists for val in sublist])  # flatten
+        .unstack()  # ChannelNorm as index, MonkeyName as columns
+    )
+    print(combined)
+    return combined
 
 def get_spike_counts_for_given_time_window(monkeys, raw_data, channels, time_window):
     monkey_spike_counts = pd.DataFrame()

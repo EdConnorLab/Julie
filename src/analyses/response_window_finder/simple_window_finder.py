@@ -4,6 +4,7 @@ import pandas as pd
 from clat.intan.channels import Channel
 from scipy.ndimage import gaussian_filter1d
 
+from spike_count import get_spike_counts_for_time_chunks_compatible, get_spike_count_for_single_neuron_with_time_window
 from anova_on_spike_counts import perform_anova_on_dataframe_rows_for_time_windowed
 from channel_enum_resolvers import convert_to_enum
 from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
@@ -13,7 +14,7 @@ from recording_metadata_reader import RecordingMetadataReader
 from spike_rate_computation import get_raw_data_and_channels_from_files
 
 
-def threshold_and_fill_gap(z_scored_data, threshold=0.5):
+def threshold_and_fill_gap(z_scored_data, threshold=0.6):
     # Find change points where the z-score exceeds the threshold
     change_points = []
     for t in range(len(z_scored_data)):
@@ -43,12 +44,10 @@ def fill_gap_if_one_data_point_away(change_points, norm_data, threshold=0.5):
 
 def compute_total_sum_of_spikes(raw_data, monkeys, channels, chunk_size):
 
-    spike_counts = get_spike_counts_for_time_chunks(monkeys, raw_data, channels, chunk_size)
+    spike_counts = get_spike_counts_for_time_chunks_compatible(monkeys, raw_data, channels, chunk_size)
     spike_counts['total_sum'] = spike_counts.apply(lambda row: [sum(elements) for elements in zip(*row)], axis=1)
 
     return spike_counts
-
-from spike_count import get_spike_counts_for_time_chunks, get_spike_count_for_single_neuron_with_time_window
 
 def extract_consecutive_ranges(numbers):
     """
@@ -136,15 +135,13 @@ if __name__ == '__main__':
         raw_unsorted_data, valid_channels, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
         # valid_channels = [Channel.C_002]
         spike_counts_unsorted_data = compute_total_sum_of_spikes(raw_unsorted_data, zombies, valid_channels, time_chunk_size)
-        # if sorted_data is not None:
-        #     print(f"sorted data exists for {date}, {round_no}")
-        #     spike_counts_sorted_data = compute_total_sum_of_spikes(sorted_data, zombies, valid_channels, time_chunk_size)
+        if sorted_data is not None:
+            print(f"sorted data exists for {date}, {round_no}")
+            spike_counts_sorted_data = compute_total_sum_of_spikes(sorted_data, zombies, valid_channels, time_chunk_size)
         for index, r in spike_counts_unsorted_data.iterrows():
             data = r['total_sum']
             normalized_data = z_score(data)
-
-            thresh = 0.6
-            change_points = threshold_and_fill_gap(normalized_data, thresh)
+            change_points = threshold_and_fill_gap(normalized_data)
             windows = extract_consecutive_ranges(change_points)
             filtered_windows = remove_consecutive_tuples(windows)
             time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
