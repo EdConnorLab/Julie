@@ -1,4 +1,5 @@
 import pandas as pd
+from itertools import zip_longest
 
 import channel_enum_resolvers
 import spike_rate_computation
@@ -86,68 +87,6 @@ def count_spikes_from_raw_unsorted_data(raw_unsorted_data, valid_channels):
         spike_count_per_channel[monkey] = pd.Series(monkey_specific_spike_counts)
     return spike_count_per_channel
 
-def explode_monkey_data(monkey_data):
-    """
-    Converts wide-form monkey_data into long-form format.
-    Returns a DataFrame with one row per (monkey, trial, channel)
-    """
-    rows = []
-    for _, row in monkey_data.iterrows():
-        spike_dict = row['SpikeTimes']
-        for channel_enum, spike_list in spike_dict.items():
-            rows.append({
-                'MonkeyName': row['MonkeyName'],
-                'TaskFile': row['TaskFile'],
-                'Channel': channel_enum,  # can call `.value` later if needed
-                'SpikeTimes': spike_list,
-                'EpochStartStop': row['EpochStartStop']
-            })
-    print(pd.DataFrame(rows))
-    return pd.DataFrame(rows)
-
-def explode_monkey_data(monkey_data):
-    """
-    Converts wide-form monkey_data into long-form format.
-    Returns a DataFrame with one row per (monkey, trial, channel)
-    """
-    rows = []
-    for _, row in monkey_data.iterrows():
-        spike_dict = row['SpikeTimes']
-        for channel_enum, spike_list in spike_dict.items():
-            rows.append({
-                'MonkeyName': row['MonkeyName'],
-                'TaskField': row['TaskField'],
-                'Channel': channel_enum,  # can call `.value` later if needed
-                'SpikeTimes': spike_list,
-                'EpochStartStop': row['EpochStartStop']
-            })
-    return pd.DataFrame(rows)
-
-def get_spike_counts_for_time_chunks_new(df, chunk_size):
-    all_chunks = []
-
-    for _, row in df.iterrows():
-        start_time, end_time = row['EpochStartStop']
-        spike_times = row['SpikeTimes']
-        time_chunks = [start_time + i * chunk_size for i in range(int((end_time - start_time) / chunk_size) + 1)]
-
-        for i in range(len(time_chunks) - 1):
-            chunk_start = time_chunks[i]
-            chunk_end = time_chunks[i + 1]
-            count = sum(chunk_start <= t < chunk_end for t in spike_times)
-
-            all_chunks.append({
-                'MonkeyName': row['MonkeyName'],
-                'TaskField': row['TaskField'],
-                'Channel': row['Channel'],
-                'ChunkStart': chunk_start,
-                'ChunkEnd': chunk_end,
-                'SpikeCount': count
-            })
-
-    return pd.DataFrame(all_chunks)
-
-
 # def get_spike_counts_for_time_chunks(monkeys, raw_data, channels, chunk_size):
 #     """
 #     chunk size in seconds
@@ -177,6 +116,63 @@ def get_spike_counts_for_time_chunks_new(df, chunk_size):
 #             monkey_spike_counts[monkey] = pd.Series(spike_counts_by_channel)
 #     return monkey_spike_counts
 
+def list_addition(lists):
+    return [sum(x) for x in zip_longest(*lists, fillvalue=0)]
+
+def group_and_sum(df):
+    grouped_total = (
+        df.groupby(['ChannelStr', 'MonkeyName'])['SpikeCount']
+        .apply(list_addition)
+        .reset_index(name='TotalSpikeCount')
+    )
+    return grouped_total
+
+def explode_monkey_data(monkey_data):
+    """
+    Converts wide-form monkey_data into long-form format.
+    Returns a DataFrame with one row per (monkey, trial, channel)
+    """
+    rows = []
+    for _, row in monkey_data.iterrows():
+        spike_dict = row['SpikeTimes']
+        for channel_enum, spike_list in spike_dict.items():
+            rows.append({
+                'MonkeyName': row['MonkeyName'],
+                'TaskField': row['TaskField'],
+                'Channel': channel_enum,  # can call `.value` later if needed
+                'SpikeTimes': spike_list,
+                'EpochStartStop': row['EpochStartStop']
+            })
+    print(pd.DataFrame(rows))
+    return pd.DataFrame(rows)
+
+def get_spike_counts_for_time_chunks_new(df, chunk_size):
+    chunk_spike_counts = []
+
+    for _, row in df.iterrows():
+        start_time, end_time = row['EpochStartStop']
+        spike_times = row['SpikeTimes']
+        time_chunks = [start_time + i * chunk_size for i in range(int((end_time - start_time) / chunk_size) + 1)]
+        spike_counts = []
+        for i in range(len(time_chunks) - 1):
+            chunk_start = time_chunks[i]
+            chunk_end = time_chunks[i + 1]
+            count = sum(chunk_start <= t < chunk_end for t in spike_times)
+            spike_counts.append(count)
+        chunk_spike_counts.append({
+            'MonkeyName': row['MonkeyName'],
+            'TaskField': row['TaskField'],
+            'Channel': row['Channel'],
+            'ChannelNorm': row['ChannelNorm'],
+            'EpochStartStop': row['EpochStartStop'],
+            'SpikeCount': spike_counts
+        })
+
+    print(pd.DataFrame(chunk_spike_counts))
+    return pd.DataFrame(chunk_spike_counts)
+
+
+
 def get_spike_counts_for_time_chunks_compatible(monkeys, raw_data, channels, chunk_size):
     # Step 1: explode
     long_df = explode_monkey_data(raw_data)
@@ -196,25 +192,11 @@ def get_spike_counts_for_time_chunks_compatible(monkeys, raw_data, channels, chu
 
     # Step 3: chunk spike counts
     spike_counts_long = get_spike_counts_for_time_chunks_new(long_df, chunk_size)
-    spike_counts_long['ChannelNorm'] = spike_counts_long['Channel'].apply(normalize)
+    spike_counts_long['ChannelStr'] = spike_counts_long['Channel'].apply(lambda ch: str(ch) if not isinstance(ch, str) else ch)
+    final = group_and_sum(spike_counts_long)
+    print(final)
 
-    # Step 4: group by Channel + Monkey + TaskField to get per-trial chunk list
-    per_trial = (
-        spike_counts_long
-        .groupby(['ChannelNorm', 'MonkeyName', 'TaskField'])
-        .apply(lambda g: g.sort_values('ChunkStart')['SpikeCount'].tolist())
-        .reset_index(name='SpikeCounts')
-    )
-
-    # Step 5: now re-group by Channel + Monkey to concatenate all trial chunk lists
-    combined = (
-        per_trial
-        .groupby(['ChannelNorm', 'MonkeyName'])['SpikeCounts']
-        .apply(lambda lists: [val for sublist in lists for val in sublist])  # flatten
-        .unstack()  # ChannelNorm as index, MonkeyName as columns
-    )
-    print(combined)
-    return combined
+    return final
 
 def get_spike_counts_for_given_time_window(monkeys, raw_data, channels, time_window):
     monkey_spike_counts = pd.DataFrame()
