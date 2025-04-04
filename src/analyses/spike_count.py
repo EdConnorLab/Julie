@@ -1,8 +1,6 @@
 import pandas as pd
-from itertools import zip_longest
 
 import channel_enum_resolvers
-import spike_rate_computation
 from channel_enum_resolvers import drop_duplicate_channels, is_channel_in_dict, get_value_from_dict_with_channel
 from single_channel_analysis import read_pickle, get_spike_count
 from data_readers.recording_metadata_reader import RecordingMetadataReader
@@ -123,12 +121,12 @@ def get_spike_counts_for_time_chunks(df, chunk_size):
             'MonkeyName': row['MonkeyName'],
             'TaskField': row['TaskField'],
             'Channel': row['Channel'],
-            'ChannelNorm': row['ChannelNorm'],
+            'BaseChannel': row['BaseChannel'],
             'EpochStartStop': row['EpochStartStop'],
             'SpikeCount': spike_counts
         })
     chunk_spike_counts_df= pd.DataFrame(chunk_spike_counts)
-    print(chunk_spike_counts_df)
+    # print(chunk_spike_counts_df)
     return chunk_spike_counts_df
 
 
@@ -147,8 +145,8 @@ def get_spike_counts_for_time_chunks_compatible(monkeys, raw_data, channels, chu
         return ch_str.split("_Unit")[0] if has_unit else ch_str
 
     channels_normalized = [normalize(ch) for ch in channels]
-    long_df['ChannelNorm'] = long_df['Channel'].apply(normalize)
-    long_df = long_df[long_df['ChannelNorm'].isin(channels_normalized)]
+    long_df['BaseChannel'] = long_df['Channel'].apply(normalize)
+    long_df = long_df[long_df['BaseChannel'].isin(channels_normalized)]
 
     # Step 3: chunk spike counts
     spike_counts_long = get_spike_counts_for_time_chunks(long_df, chunk_size)
@@ -274,3 +272,13 @@ def add_metadata_to_spike_counts(spike_count_df, date, round_number, time_window
     spike_count_df['Round No.'] = round_number
     spike_count_df['Time Window'] = [time_window]  * len(spike_count_df)
     return spike_count_df
+
+if __name__ == '__main__':
+    # Generate
+    all_anova_passed = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/src/analyses/linear_regression/all_anova_passed_cells.xlsx")
+    spike_count_to_be_shared = get_spike_count_for_single_neuron_with_time_window(all_anova_passed)
+
+    print('hi')
+    spike_count_to_be_shared = spike_count_to_be_shared.drop(columns='NewMonkey')
+    spike_count_to_be_shared.to_excel("spike_counts_for_all_anova_passed_time_windowed_cells.xlsx")
+    print(spike_count_to_be_shared)

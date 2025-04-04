@@ -102,7 +102,7 @@ if __name__ == "__main__":
     zombies_agonism_from = zombies_agonism_to.T
 
     # Cells
-    additional_anova_passed_cells = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/window_cells_ANOVA_passed.xlsx")
+    additional_anova_passed_cells = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/window_cells_ANOVA_passed_to_keep.xlsx")
     ed_anova_passed_cells = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/Ed_window_cells_ANOVA_passed.xlsx")
     additional_anova_passed_cells['Time Window'] = additional_anova_passed_cells['Time Window'].apply(
          lambda s: tuple((float(num)) for num in s.strip('()').split(',')))

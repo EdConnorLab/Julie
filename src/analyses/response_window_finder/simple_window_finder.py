@@ -7,10 +7,9 @@ from itertools import zip_longest
 
 from spike_count import get_spike_counts_for_time_chunks_compatible, get_spike_count_for_single_neuron_with_time_window
 from anova_on_spike_counts import perform_anova_on_dataframe_rows_for_time_windowed
-from channel_enum_resolvers import convert_to_enum
+from channel_enum_resolvers import convert_to_enum, drop_duplicate_channels_with_matching_time_window
 from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
 from monkey_names import Zombies
-from recording_metadata_reader import RecordingMetadataReader
 
 from spike_rate_computation import get_raw_data_and_channels_from_files
 
@@ -22,10 +21,7 @@ def threshold_and_fill_gap(z_scored_data, threshold=0.6):
         if z_scored_data[t] > threshold:
             change_points.append(t)
     change_points = sorted(list(set(change_points)))
-    print('initial change points')
-    print(change_points)
     filled = fill_gap_if_one_data_point_away(change_points, z_scored_data)
-    print(filled)
     return filled
 
 
@@ -46,7 +42,7 @@ def fill_gap_if_one_data_point_away(change_points, norm_data, threshold=0.5):
 def list_addition(lists):
     return [sum(x) for x in zip_longest(*lists, fillvalue=0)]
 
-def group_and_sum(df):
+def element_wise_sum_of_spike_counts_over_each_monkey(df):
     grouped_total = (
         df.groupby(['ChannelStr', 'MonkeyName'])['SpikeCount']
         .apply(list_addition)
@@ -54,11 +50,20 @@ def group_and_sum(df):
     )
     return grouped_total
 
+def element_wise_sum_of_spike_counts_over_all_monkeys_for_each_channel(df):
+
+    summed = (
+        df.groupby('ChannelStr')['TotalSpikeCount']
+        .apply(list_addition)
+        .reset_index(name='TotalSpikeCount')
+    )
+    return summed
 def compute_total_sum_of_spikes(raw_data, monkeys, channels, chunk_size):
 
     spike_counts = get_spike_counts_for_time_chunks_compatible(monkeys, raw_data, channels, chunk_size)
-    final = group_and_sum(spike_counts)
-    return final
+    spike_counts_summed_over_each_monkey = element_wise_sum_of_spike_counts_over_each_monkey(spike_counts)
+    spike_counts_summed_across_monkeys = element_wise_sum_of_spike_counts_over_all_monkeys_for_each_channel(spike_counts_summed_over_each_monkey)
+    return spike_counts_summed_across_monkeys
 
 def extract_consecutive_ranges(numbers):
     """
@@ -79,7 +84,7 @@ def extract_consecutive_ranges(numbers):
         if start != end:  # Check again for the last range
             result.append((start, end))
 
-    print(result)
+    # print(result)
     return result
 
 
@@ -146,54 +151,66 @@ if __name__ == '__main__':
         raw_unsorted_data, valid_channels, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
         # valid_channels = [Channel.C_002]
         spike_counts_unsorted_data = compute_total_sum_of_spikes(raw_unsorted_data, zombies, valid_channels, time_chunk_size)
+        spike_counts_sorted_data = pd.DataFrame()
         if sorted_data is not None:
             print(f"sorted data exists for {date}, {round_no}")
             spike_counts_sorted_data = compute_total_sum_of_spikes(sorted_data, zombies, valid_channels, time_chunk_size)
-        for index, r in spike_counts_unsorted_data.iterrows():
+
+            # remove channels from unsorted df if they are sorted
+            sorted_channels = spike_counts_sorted_data['ChannelStr'].apply(
+                lambda x: x.split('_Unit')[0] if 'Unit' in x else x)
+            sorted_channels_list = sorted_channels.unique().tolist()
+            spike_counts_unsorted_data = spike_counts_unsorted_data[
+                ~spike_counts_unsorted_data['ChannelStr'].isin(sorted_channels_list)
+            ]
+        spike_counts_for_all = pd.concat([spike_counts_unsorted_data, spike_counts_sorted_data], ignore_index=True)
+        for _, r in spike_counts_for_all.iterrows():
             data = r['TotalSpikeCount']
+            channelstr = r['ChannelStr']
             normalized_data = z_score(data)
-            thresh = 0.6
+            thresh = 0.5
             change_points = threshold_and_fill_gap(normalized_data, thresh)
             windows = extract_consecutive_ranges(change_points)
             filtered_windows = remove_consecutive_tuples(windows)
             time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
             if len(time_windows) > 0:
-                print(f"---------------- {date_only} round no. {round_no} {index}----------------")
+                print(f"---------------- {date_only} round no. {round_no} {channelstr}----------------")
                 print(time_windows)
 
-            # Plotting
-            y_values_at_change_points = [data[i] for i in change_points]
-            t_values_at_change_points = [rounded_time[i] for i in change_points]
 
-            plt.figure(figsize=(12, 6))
-            overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
-            if normalized_data is not None:
-                plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
-                for start, end in filtered_windows:
-                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
-                                      alpha=0.4)
-
-            if data is not None:
-                plt.plot(rounded_time[:len(data)], data, label='Data')
-                for start, end in filtered_windows:
-                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
-                                      alpha=0.4)
-                plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
-
-            plt.axhline(y=thresh, color='green', linestyle='--', label='Threshold')
-
-            plt.title(f'{date_only} Round {round_no} {index}')
-            plt.xlabel('Time')
-            plt.ylabel('Value')
-            plt.legend()
-            # plt.savefig("hi")
-            plt.show()
+            # # Plotting
+            # y_values_at_change_points = [data[i] for i in change_points]
+            # t_values_at_change_points = [rounded_time[i] for i in change_points]
+            #
+            # plt.figure(figsize=(12, 6))
+            # overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
+            # if normalized_data is not None:
+            #     plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
+            #     for start, end in filtered_windows:
+            #         plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
+            #                           alpha=0.4)
+            #
+            # if data is not None:
+            #     plt.plot(rounded_time[:len(data)], data, label='Data')
+            #     for start, end in filtered_windows:
+            #         plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
+            #                           alpha=0.4)
+            #     plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
+            #
+            # plt.axhline(y=thresh, color='green', linestyle='--', label='Threshold')
+            #
+            # plt.title(f'{date_only} Round {round_no} {index}')
+            # plt.xlabel('Time')
+            # plt.ylabel('Value')
+            # plt.legend()
+            # # plt.savefig("hi")
+            # plt.show()
 
             if len(time_windows) > 0:
                 results.append({
                     'Date': date_only,
                     'Round No.': round_no,
-                    'Cell': str(index),
+                    'Cell': channelstr,
                     'Time Window': time_windows
                 })
 
@@ -231,4 +248,3 @@ if __name__ == '__main__':
     # print(anova_sig_results)
     print(anova_sig_results.shape)
     anova_sig_results.to_excel('window_cells_ANOVA_passed.xlsx')
-

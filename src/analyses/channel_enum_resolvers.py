@@ -43,8 +43,8 @@ def drop_duplicate_channels_with_matching_time_window(df):
 
     """
     df['Cell'] = df['Cell'].astype(str)
-    df['Base Channel'] = df['Cell'].apply(lambda x: x.split('_Unit')[0] if 'Unit' in x else x)
-    mask = df.duplicated(subset=['Base Channel', 'Time Window'], keep=False) & ~df['Cell'].str.contains('Unit')
-    filtered_df = df[~mask].drop(columns='Base Channel')
+    df['BaseChannel'] = df['Cell'].apply(lambda x: x.split('_Unit')[0] if 'Unit' in x else x)
+    mask = df.duplicated(subset=['BaseChannel', 'Time Window'], keep=False) & ~df['Cell'].str.contains('Unit')
+    filtered_df = df[~mask].drop(columns='BaseChannel')
 
     return filtered_df
