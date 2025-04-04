@@ -87,46 +87,6 @@ def count_spikes_from_raw_unsorted_data(raw_unsorted_data, valid_channels):
         spike_count_per_channel[monkey] = pd.Series(monkey_specific_spike_counts)
     return spike_count_per_channel
 
-# def get_spike_counts_for_time_chunks(monkeys, raw_data, channels, chunk_size):
-#     """
-#     chunk size in seconds
-#     """
-#     monkey_spike_counts = pd.DataFrame()
-#     for monkey in monkeys:
-#         monkey_data = raw_data[raw_data['MonkeyName'] == monkey]
-#         spike_counts_by_channel = {}
-#         exploded_monkey_data = explode_monkey_data(monkey_data)
-#         temporary_results = get_spike_counts_for_time_chunks_new(exploded_monkey_data, chunk_size)
-#         print(temporary_results)
-#         for index, row in monkey_data.iterrows():
-#             for channel in channels:
-#                 spike_count_for_each_channel = []
-#                 if is_channel_in_dict(channel, row['SpikeTimes']):
-#                     data = get_value_from_dict_with_channel(channel, row['SpikeTimes'])
-#                     start_time, end_time = row['EpochStartStop']
-#                     time_chunks = [start_time + i * chunk_size for i in
-#                                    range(int((end_time - start_time) / chunk_size) + 1)]
-#                     for i in range(len(time_chunks) - 1):
-#                         time_range = (time_chunks[i], time_chunks[i + 1])
-#                         spike_count = get_spike_count(data, time_range)
-#                         spike_count_for_each_channel.append(spike_count)
-#                 else:
-#                     print(f"No data for {channel} in row {index}")
-#                 spike_counts_by_channel[channel] = spike_count_for_each_channel
-#             monkey_spike_counts[monkey] = pd.Series(spike_counts_by_channel)
-#     return monkey_spike_counts
-
-def list_addition(lists):
-    return [sum(x) for x in zip_longest(*lists, fillvalue=0)]
-
-def group_and_sum(df):
-    grouped_total = (
-        df.groupby(['ChannelStr', 'MonkeyName'])['SpikeCount']
-        .apply(list_addition)
-        .reset_index(name='TotalSpikeCount')
-    )
-    return grouped_total
-
 def explode_monkey_data(monkey_data):
     """
     Converts wide-form monkey_data into long-form format.
