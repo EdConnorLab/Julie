@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from clat.intan.channels import Channel
 from scipy.ndimage import gaussian_filter1d
+from itertools import zip_longest
 
 from spike_count import get_spike_counts_for_time_chunks_compatible, get_spike_count_for_single_neuron_with_time_window
 from anova_on_spike_counts import perform_anova_on_dataframe_rows_for_time_windowed
@@ -42,12 +43,22 @@ def fill_gap_if_one_data_point_away(change_points, norm_data, threshold=0.5):
     filled.append(change_points[len(change_points) - 1])
     return filled
 
+def list_addition(lists):
+    return [sum(x) for x in zip_longest(*lists, fillvalue=0)]
+
+def group_and_sum(df):
+    grouped_total = (
+        df.groupby(['ChannelStr', 'MonkeyName'])['SpikeCount']
+        .apply(list_addition)
+        .reset_index(name='TotalSpikeCount')
+    )
+    return grouped_total
+
 def compute_total_sum_of_spikes(raw_data, monkeys, channels, chunk_size):
 
     spike_counts = get_spike_counts_for_time_chunks_compatible(monkeys, raw_data, channels, chunk_size)
-    spike_counts['total_sum'] = spike_counts.apply(lambda row: [sum(elements) for elements in zip(*row)], axis=1)
-
-    return spike_counts
+    final = group_and_sum(spike_counts)
+    return final
 
 def extract_consecutive_ranges(numbers):
     """
@@ -139,9 +150,10 @@ if __name__ == '__main__':
             print(f"sorted data exists for {date}, {round_no}")
             spike_counts_sorted_data = compute_total_sum_of_spikes(sorted_data, zombies, valid_channels, time_chunk_size)
         for index, r in spike_counts_unsorted_data.iterrows():
-            data = r['total_sum']
+            data = r['TotalSpikeCount']
             normalized_data = z_score(data)
-            change_points = threshold_and_fill_gap(normalized_data)
+            thresh = 0.6
+            change_points = threshold_and_fill_gap(normalized_data, thresh)
             windows = extract_consecutive_ranges(change_points)
             filtered_windows = remove_consecutive_tuples(windows)
             time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
@@ -150,32 +162,32 @@ if __name__ == '__main__':
                 print(time_windows)
 
             # Plotting
-            # y_values_at_change_points = [data[i] for i in change_points]
-            # t_values_at_change_points = [rounded_time[i] for i in change_points]
-            #
-            # plt.figure(figsize=(12, 6))
-            # overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
-            # if normalized_data is not None:
-            #     plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
-            #     for start, end in filtered_windows:
-            #         plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
-            #                           alpha=0.4)
-            #
-            # if data is not None:
-            #     plt.plot(rounded_time[:len(data)], data, label='Data')
-            #     for start, end in filtered_windows:
-            #         plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
-            #                           alpha=0.4)
-            #     plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
-            #
-            # plt.axhline(y=thresh, color='green', linestyle='--', label='Threshold')
-            #
-            # plt.title(f'{date_only} Round {round_no} {index}')
-            # plt.xlabel('Time')
-            # plt.ylabel('Value')
-            # plt.legend()
-            # # plt.savefig("hi")
-            # plt.show()
+            y_values_at_change_points = [data[i] for i in change_points]
+            t_values_at_change_points = [rounded_time[i] for i in change_points]
+
+            plt.figure(figsize=(12, 6))
+            overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
+            if normalized_data is not None:
+                plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
+                for start, end in filtered_windows:
+                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
+                                      alpha=0.4)
+
+            if data is not None:
+                plt.plot(rounded_time[:len(data)], data, label='Data')
+                for start, end in filtered_windows:
+                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
+                                      alpha=0.4)
+                plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
+
+            plt.axhline(y=thresh, color='green', linestyle='--', label='Threshold')
+
+            plt.title(f'{date_only} Round {round_no} {index}')
+            plt.xlabel('Time')
+            plt.ylabel('Value')
+            plt.legend()
+            # plt.savefig("hi")
+            plt.show()
 
             if len(time_windows) > 0:
                 results.append({
