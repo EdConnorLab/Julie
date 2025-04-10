@@ -1,12 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from anova_on_spike_counts import perform_anova_on_dataframe_rows_for_time_windowed
-from channel_enum_resolvers import convert_to_enum
-from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
-from monkey_names import Zombies
-from recording_metadata_reader import RecordingMetadataReader
-from spike_count import count_spikes_per_bin, get_spike_count_for_single_neuron_with_time_window
-from spike_rate_computation import get_raw_data_and_channels_from_files
+
+from analyses.enums.monkey_names import Zombies
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+from analyses.response_window_finder.simple_window_finder import compute_total_sum_of_spikes
+from analyses.spike_count import get_spike_count_for_single_neuron_with_time_window
+from analyses.spike_rate_computation import get_raw_data_and_channels_from_files
 
 
 def cusum(data, mu, k=0.9, h=1):
@@ -79,20 +78,6 @@ def fill_missing_ones(numbers):
     return filled
 
 
-def compute_total_sum_of_spikes(raw_data, monkeys, channels, chunk_size):
-    spike_counts = count_spikes_per_bin(monkeys, raw_data, channels, chunk_size)
-    spike_counts['total_sum'] = spike_counts.apply(lambda row: [sum(elements) for elements in zip(*row)], axis=1)
-
-    return spike_counts
-
-
-def min_max_scale(data):
-    min_val = np.min(data)
-    max_val = np.max(data)
-    scaled_data = (data - min_val) / (max_val - min_val)
-    return scaled_data
-
-
 def z_score(data):
     if np.std(data) == 0:
         return np.zeros(len(data))
@@ -140,7 +125,7 @@ if __name__ == '__main__':
             threshold = 0.5
             # filtered_data= gaussian_filter1d(normalized_data, sigma=0.8)
 
-            # cusum_pos, cusum_neg, change_points = cusum(normalized_data, 0, k, h)
+            cusum_pos, cusum_neg, change_points = cusum(normalized_data, 0, k, h)
             windows = extract_consecutive_ranges(change_points)
             time_windows = find_corresponding_values_for_index_ranges(windows, rounded_time)
             if len(time_windows) > 0:
