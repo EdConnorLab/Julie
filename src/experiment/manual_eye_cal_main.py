@@ -2,31 +2,33 @@ import mysql.connector
 
 from functools import partial
 from numpy import array, searchsorted, unique, stack, asarray, arange, argmin
-import matplotlib
 from matplotlib import pyplot as plt
-
+import matplotlib
+from pandas import DataFrame
 matplotlib.use("Qt5Agg")
+
 db = mysql.connector.connect(
     user='xper_rw',
     password='up2nite',
-    host='172.30.6.59',
+    host='127.0.0.1',
     database='test',
 )
 
-start_time = "2025-03-18 15:50:00"
-stop_time = "2025-03-18 18:00:00"
-eye = "right"
+start_time = "2025-04-10 12:41:00"
+stop_time = "2025-04-10 12:55:00"
+eye = "left"
 iscan_id = eye + "Iscan"
 calibration_degree = 10
 
-slide_on_delay = 20  # I.e. only display data starting 20 ms AFTER slide on time
+slide_on_delay = 10  # I.e. only display data starting 20 ms AFTER slide on time
+slide_on_max = 200
 
 _DEFAULT_FIX_VOLTS = array([
-    [-1, 0],  # left
-    [0, -1],  # down
-    [0, 0],   # center
-    [0, 1],   # up
-    [1, 0],   # right
+    [-1.3883866292598201, -0.06545510829115075],  # left
+    [-0.3863407223080437, 0.4192926746808543],  # down
+    [-0.42828683004090884, -0.09175925155319753],  # center
+    [-0.4236261514039237, -0.5877802387803654],  # up
+    [0.8580604737669533, -0.027877760773940885],  # right
 ])
 
 marker_size = 3
@@ -49,10 +51,9 @@ def get_voltage_data(db, iscan_id, start_time, stop_time):
 
     c = db.cursor()
     c.execute(q, (start_time, stop_time, iscan_id))
-    eye_tstamp, volt_h, volt_v = map(array, zip(*c.fetchall()))
+    tstamp, h, v = map(array, zip(*c.fetchall()))
     c.close()
-    volts = stack([volt_h, volt_v], axis=-1)
-    return eye_tstamp, volts
+    return DataFrame(dict(tstamp=tstamp, h=h, v=v))
 
 
 def get_calibration_data(db, start_time, stop_time):
@@ -68,10 +69,9 @@ def get_calibration_data(db, start_time, stop_time):
     """
     c = db.cursor()
     c.execute(q, (start_time, stop_time))
-    calpoint_tstamp, calpoint_x, calpoint_y = map(array, zip(*c.fetchall()))
+    tstamp, x, y = map(array, zip(*c.fetchall()))
     c.close()
-    calpoints = stack([calpoint_x, calpoint_y], axis=1)
-    return calpoint_tstamp, calpoints
+    return DataFrame(dict(tstamp=tstamp, x=x, y=y))
 
 
 def get_slide_times(db, start_time, stop_time):
@@ -94,34 +94,41 @@ def get_slide_times(db, start_time, stop_time):
     return t_slide_on, t_slide_off
 
 
-def get_eye_cal_data(db, iscan_id, start_time, stop_time):
+def get_eye_cal_data(db, iscan_id, start_time, stop_time, avg=False, stim_on_only=True):
     """
     Returns
         volts: (n_samples, 2) array of voltage data (H, V)
         unq_cal_pos: (5, 2) array of calibration points (x, y)
         eye_cal_pos_idx: (n_samples,) array of indices into the 5 different calibration positions
     """
-    t_eye, volts = get_voltage_data(db, iscan_id, start_time, stop_time)
-    t_cal, calpoints = get_calibration_data(db, start_time, stop_time)
+    volts = get_voltage_data(db, iscan_id, start_time, stop_time)
+    calib = get_calibration_data(db, start_time, stop_time)
 
     # Assign eye data to calibration trial assuming eye timestamps immediately follow calibration timestamps
-    cal_trial_idx = searchsorted(t_cal, t_eye) - 1
-    keep = cal_trial_idx >= 0  # Some eye data precedes calibration timestamps
-    t_eye, cal_trial_idx, volts = t_eye[keep], cal_trial_idx[keep], volts[keep]
+    volts['cal_trial_idx'] = searchsorted(calib.tstamp, volts.tstamp) - 1
+    volts = volts[volts.cal_trial_idx >= 0]  # Some eye data precedes calibration timestamps
 
-    # Ditto slide on/off trial times
-    t_on, t_off = get_slide_times(db, start_time, stop_time)
-    slide_times_idx = searchsorted(t_on, t_eye) - 1
-    keep = (
-        (t_eye >= (t_on[slide_times_idx] + slide_on_delay * 1000))
-        & (t_eye < t_off[slide_times_idx])
-    )
-    t_eye, cal_trial_idx, volts = t_eye[keep], cal_trial_idx[keep], volts[keep]
+    if stim_on_only:
+        # Ditto slide on/off trial times
+        t_on, t_off = get_slide_times(db, start_time, stop_time)
+        slide_times_idx = searchsorted(t_on, volts.tstamp) - 1
 
-    unq_cal_pos, cal_pos_idx = unique(calpoints, axis=0, return_inverse=True)
-    eye_cal_pos_idx = cal_pos_idx[cal_trial_idx]
+        idx = (volts.tstamp >= (t_on[slide_times_idx] + slide_on_delay * 1000))
+        if slide_on_max is not None:
+            idx &= (volts.tstamp <= (t_on[slide_times_idx] + slide_on_max * 1000))
+        else:
+            idx &= (volts.tstamp < t_off[slide_times_idx])
 
-    return volts, unq_cal_pos, eye_cal_pos_idx
+        volts = volts[idx]
+
+    unq_cal_pos, cal_pos_idx = unique(calib[['x', 'y']].values, axis=0, return_inverse=True)
+
+    if avg:
+        volts = volts.groupby('cal_trial_idx', as_index=False).mean()
+
+    eye_cal_pos_idx = cal_pos_idx[volts.cal_trial_idx]
+
+    return volts[['h', 'v']].values, unq_cal_pos, eye_cal_pos_idx
 
 
 def volt2degree(volts, sx, sy, center=None):
@@ -135,20 +142,33 @@ def volt2degree(volts, sx, sy, center=None):
     return stack([x, y], axis=1)
 
 
-def plot_volt_data(ax, volts, unq_cal_pos, eye_cal_pos_idx):
+def plot_volt_data(ax, volts, unq_cal_pos, eye_cal_pos_idx, cmap):
     ax.set_xlabel('Volts')
     ax.set_ylabel('Volts')
-    scatter = ax.scatter(volts[:, 0], volts[:, 1], s=marker_size, c=eye_cal_pos_idx, alpha=marker_alpha)
+    scatter = ax.scatter(
+        volts[:, 0], volts[:, 1],
+        s=marker_size,
+        c=eye_cal_pos_idx,
+        alpha=marker_alpha,
+        cmap=cmap,
+    )
     items, _ = scatter.legend_elements(alpha=1)
     labels = [f'({x}, {y})' for (x, y) in unq_cal_pos]
     legend = ax.legend(items, labels, loc="lower left", title="Calibration position")
     ax.add_artist(legend)
 
 
-def plot_degree_data(ax, degrees, eye_cal_pos_idx):
+def plot_degree_data(ax, degrees, eye_cal_pos_idx, cmap):
     ax.set_xlabel('Degrees')
     ax.set_ylabel('Degrees')
-    scatter = ax.scatter(degrees[:, 0], degrees[:, 1], s=marker_size, c=eye_cal_pos_idx, alpha=marker_alpha)
+    scatter = ax.scatter(
+        degrees[:, 0],
+        degrees[:, 1],
+        s=marker_size,
+        c=eye_cal_pos_idx,
+        alpha=marker_alpha,
+        cmap=cmap,
+    )
     return scatter
 
 
@@ -168,13 +188,13 @@ class DraggableMarkers:
     def __init__(
             self, fig, ax, points, eps=0.1,
             marker_size=24, marker_style='x',
-            alpha=1.0, edge_color='black', callback=None
+            alpha=1.0, edge_color='black', callback=None, cmap=None,
     ):
         self.fig = fig
         self.ax = ax
         self.scatter = ax.scatter(
             *points.T, s=marker_size, c=arange(len(points)),
-            marker=marker_style, alpha=alpha, edgecolors=edge_color)
+            marker=marker_style, alpha=alpha, edgecolors=edge_color, cmap=cmap)
         fig.canvas.mpl_connect('button_press_event', self._on_click)
         fig.canvas.mpl_connect('button_release_event', self._on_release)
         fig.canvas.mpl_connect('motion_notify_event', self._on_motion)
@@ -217,7 +237,7 @@ class DraggableMarkers:
         self._update_plot(event)
 
 
-def on_update_points(fix_markers: DraggableMarkers, volts, degree_ax, eye_cal_pos_idx):
+def on_update_points(fix_markers: DraggableMarkers, volts, degree_ax, eye_cal_pos_idx, cmap):
     points = fix_markers.points()
     center, sx, sy = calc_parameters(points)
     print(f"""\n
@@ -230,24 +250,26 @@ INSERT INTO SystemVar (name, arr_ind, tstamp, val) VALUES
     ("xper_{eye}_iscan_mapping_algorithm_parameter", 3, unix_timestamp() * 1000000, {sy[1]})
     """)
 
-    lines = [f'    {p.tolist()}  # {dir}' for p, dir in zip(points, ('left', 'down', 'center', 'up', 'right'))]
-    print(f"_DEFAULT_FIX_POINTS = array([\n" + '\n'.join(lines) + '\n])')
+    lines = [f'    {p.tolist()},  # {dir}' for p, dir in zip(points, ('left', 'down', 'center', 'up', 'right'))]
+    print(f"_DEFAULT_FIX_VOLTS = array([\n" + '\n'.join(lines) + '\n])')
 
     degrees = volt2degree(volts, sx, sy, center=center)
     degree_ax.clear()
-    plot_degree_data(degree_ax, degrees, eye_cal_pos_idx)
+    plot_degree_data(degree_ax, degrees, eye_cal_pos_idx, cmap)
 
 
 def main():
+    cmap = plt.cm.tab10
     fig, axs = plt.subplots(1, 2, figsize=figsize, squeeze=False)
     volts, unq_cal_pos, eye_cal_pos_idx = get_eye_cal_data(
         db, iscan_id, start_time, stop_time)
-    plot_volt_data(axs[0, 0], volts, unq_cal_pos, eye_cal_pos_idx)
+    plot_volt_data(axs[0, 0], volts, unq_cal_pos, eye_cal_pos_idx, cmap=cmap)
 
     center, sx, sy = calc_parameters(_DEFAULT_FIX_VOLTS)
     degrees = volt2degree(volts, sx, sy, center=center)
-    plot_degree_data(axs[0, 1], degrees, eye_cal_pos_idx)
-    callback = partial(on_update_points, degree_ax=axs[0, 1], volts=volts, eye_cal_pos_idx=eye_cal_pos_idx)
+    plot_degree_data(axs[0, 1], degrees, eye_cal_pos_idx, cmap=cmap)
+    callback = partial(
+        on_update_points, degree_ax=axs[0, 1], volts=volts, eye_cal_pos_idx=eye_cal_pos_idx, cmap=cmap)
 
     fix_markers = DraggableMarkers(
         fig=fig,
@@ -257,6 +279,7 @@ def main():
         alpha=0.5,
         marker_size=128,
         marker_style='D',
+        cmap=cmap,
     )
 
     plt.show()
