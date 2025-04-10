@@ -7,7 +7,7 @@ from channel_enum_resolvers import convert_to_enum
 from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
 from monkey_names import Zombies
 from recording_metadata_reader import RecordingMetadataReader
-from spike_count import get_spike_counts_for_time_chunks, get_spike_count_for_single_neuron_with_time_window
+from spike_count import count_spikes_per_bin, get_spike_count_for_single_neuron_with_time_window
 from spike_rate_computation import get_raw_data_and_channels_from_files
 
 
@@ -81,7 +81,7 @@ def fill_missing_ones(numbers):
 
 def compute_total_sum_of_spikes(raw_data, monkeys, channels, chunk_size):
 
-    spike_counts = get_spike_counts_for_time_chunks(monkeys, raw_data, channels, chunk_size)
+    spike_counts = count_spikes_per_bin(monkeys, raw_data, channels, chunk_size)
     spike_counts['total_sum'] = spike_counts.apply(lambda row: [sum(elements) for elements in zip(*row)], axis=1)
 
     return spike_counts
