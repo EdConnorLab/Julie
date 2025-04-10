@@ -1,12 +1,12 @@
-import pandas as pd
-from intan.spike_file import fetch_spike_tstamps_from_file
 import os
 
-import channel_enum_resolvers
-from channel_enum_resolvers import is_channel_in_dict, get_value_from_dict_with_channel, drop_duplicate_channels
-from single_channel_analysis import read_pickle, calculate_spike_rate
-from single_unit_analysis import read_sorted_data
-from data_readers.recording_metadata_reader import RecordingMetadataReader
+import pandas as pd
+from intan.spike_file import fetch_spike_tstamps_from_file
+from analyses.intan_data_processor.single_channel_analysis import read_pickle, calculate_spike_rate
+from analyses.intan_data_processor.single_unit_analysis import read_sorted_data
+
+from analyses.channel_enum_resolvers import is_channel_in_dict, get_value_from_dict_with_channel, drop_duplicate_channels
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 
 """
 
@@ -44,12 +44,14 @@ raw_unsorted_data is a pandas dataframe with the following columns:
 
 """
 
+
 def get_raw_spike_tstamp_data(date, round_number):
     reader = RecordingMetadataReader()
     _, valid_channels, round_dir_path = reader.get_metadata_for_spike_analysis(date, round_number)
     spike_path = os.path.join(round_dir_path, "spike.dat")
     spike_tstamps_for_channels, sample_rate = fetch_spike_tstamps_from_file(spike_path)
     return spike_tstamps_for_channels, sample_rate
+
 
 def get_raw_data_and_channels_from_files(date, round_number):
     reader = RecordingMetadataReader()
@@ -167,7 +169,7 @@ def compute_spike_rates_from_sorted_data(sorted_data):
                     data = get_value_from_dict_with_channel(channel, row['SpikeTimes'])
                     spike_rates.append(calculate_spike_rate(data, row['EpochStartStop']))
                 else:
-                   print(f"No data for {channel} in row {index}")
+                    print(f"No data for {channel} in row {index}")
             monkey_specific_spike_rate[channel] = spike_rates
         spike_rate_by_unit[monkey] = pd.Series(monkey_specific_spike_rate)
     return spike_rate_by_unit
@@ -192,7 +194,7 @@ def compute_average_spike_rates_from_sorted_data(sorted_data):
                     spike_rates.append(calculate_spike_rate(data, row['EpochStartStop']))
 
                 else:
-                   print(f"No data for {channel} in row {index}")
+                    print(f"No data for {channel} in row {index}")
 
             avg_spike_rate = sum(spike_rates) / len(spike_rates) if spike_rates else 0
             monkey_specific_spike_rate[channel] = avg_spike_rate
@@ -229,7 +231,7 @@ def compute_average_spike_rate_for_single_neuron_for_specific_time_window(raw_un
             avg_spike_rate = sum(spike_rates) / len(spike_rates) if spike_rates else None
             monkey_specific_spike_rate[cell] = avg_spike_rate
 
-    # Add monkey-specific spike rates to the DataFrame
+        # Add monkey-specific spike rates to the DataFrame
         avg_spike_rate_by_unit[monkey] = pd.Series(monkey_specific_spike_rate)
     if spike_rates is None:
         avg_spike_rate_by_unit = None
@@ -244,21 +246,22 @@ def compute_average_spike_rates_for_list_of_cells_with_time_windows(cell_metadat
 
     results = []
     for _, row in experimental_rounds.iterrows():
-        pickle_filepath, _, round_dir_path = reader.get_metadata_for_spike_analysis(row['Date'].strftime("%Y-%m-%d"), row['Round No.'])
+        pickle_filepath, _, round_dir_path = reader.get_metadata_for_spike_analysis(row['Date'].strftime("%Y-%m-%d"),
+                                                                                    row['Round No.'])
         raw_trial_data = read_pickle(pickle_filepath)
 
         sorted_file = round_dir_path / 'sorted_spikes.pkl'
         if sorted_file.exists():
             sorted_data = read_sorted_data(round_dir_path)
 
-        cells = cell_metadata[((cell_metadata['Date'] == row['Date']) & (cell_metadata['Round No.'] == row['Round No.']))]
+        cells = cell_metadata[
+            ((cell_metadata['Date'] == row['Date']) & (cell_metadata['Round No.'] == row['Round No.']))]
 
         for _, cell in cells.iterrows():
             if 'Unit' not in cell['Cell']:  # unsorted cells
                 cell['Cell'] = channel_enum_resolvers.convert_to_enum(cell['Cell'])
                 unsorted_cells_spike_rates = compute_average_spike_rate_for_single_neuron_for_specific_time_window(
                     raw_trial_data, cell['Cell'], cell['Time Window'])
-
 
                 unsorted_cells_spike_rates_dict = unsorted_cells_spike_rates.to_dict(orient='records')[0]
                 unsorted_cells_spike_rates_dict['Cell'] = cell['Cell']
@@ -320,7 +323,6 @@ def compute_overall_average_spike_rates_for_each_round(date, round_number):
 
 
 if __name__ == '__main__':
-
     df = get_spike_rates_for_each_trial("2023-10-04", 4)
     dat = compute_overall_average_spike_rates_for_each_round("2023-09-29", 2)
     # ones with errors

@@ -1,10 +1,11 @@
+import os
+import re
+
 from clat.compile.task.task_field import TaskField
 from clat.intan import spike_file
 from clat.intan.channels import Channel
 from clat.intan.livenotes import map_task_id_to_epochs_with_livenotes
 from clat.intan.marker_channels import epoch_using_marker_channels
-import os
-import re
 
 
 class SpikeTimesForChannelsField(TaskField):

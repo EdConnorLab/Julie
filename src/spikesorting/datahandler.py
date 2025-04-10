@@ -5,11 +5,10 @@ from typing import Dict, List
 
 import numpy as np
 from PyQt5.QtWidgets import QFileDialog, QWidget, QInputDialog, QLineEdit
-from scipy.signal import butter, filtfilt
-
 from clat.intan.amplifiers import read_amplifier_data_with_mmap
 from clat.intan.channels import Channel
 from clat.intan.rhd import load_intan_rhd_format
+from scipy.signal import butter, filtfilt
 from windowsort.datahandler import SortingConfigManager
 from windowsort.drift import DriftingTimeAmplitudeWindow
 from windowsort.units import Unit
@@ -270,7 +269,7 @@ class JulieSortingConfigManager(SortingConfigManager):
                 for key, value in all_configs.items():
                     if key.value == channel.value:
                         return value
-                #return all_configs.get(channel, None)
+                # return all_configs.get(channel, None)
             except FileNotFoundError:
                 print(f"Configuration file {filename} not found.")
                 return None

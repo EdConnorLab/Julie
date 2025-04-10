@@ -2,12 +2,10 @@ import os
 
 import matplotlib
 import pandas as pd
-from matplotlib import pyplot as plt
-
 from clat.intan.rhd import load_intan_rhd_format
-
-from monkey_names import get_monkeys_by_rank
-from sorted_units_compilation import read_pickle
+from matplotlib import pyplot as plt
+from analyses.enums.monkey_names import get_monkeys_by_rank
+from compile.sorted_units_compilation import read_pickle
 
 matplotlib.use("Qt5Agg")
 
@@ -45,6 +43,7 @@ def read_sorted_data(round_path, sorted_spikes_filename='sorted_spikes.pkl', com
     sorted_data = calculate_spike_timestamps(raw_trial_data, sorted_spikes, sample_rate)
     return sorted_data
 
+
 def calculate_spike_timestamps(df: pd.DataFrame, spike_indices_by_unit_by_channel: dict, sample_rate: int):
     """
     Calculates spike timestamps for each row in the DataFrame.
@@ -78,6 +77,7 @@ def calculate_spike_timestamps(df: pd.DataFrame, spike_indices_by_unit_by_channe
                 spikes_tstamps_by_unit[new_unit_name] = valid_spike_times
 
         return spikes_tstamps_by_unit
+
     new_df = df.copy(deep=True)
     new_df['SpikeTimes'] = new_df['EpochStartStop'].apply(single_row_calculation)
     return new_df
@@ -153,6 +153,7 @@ def plot_raster_for_monkeys(raw_data, unit, experiment_name=None):
         fig.savefig(individual_save_path_png)
 
     return fig
+
 
 def plot_raster_for_monkeys_by_rank(raw_data, unit, experiment_name=None):
     unit_data = extract_target_unit_data(unit, raw_data)

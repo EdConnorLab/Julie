@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class BestFrans(Enum):
     # Best Frans
     B_M1 = "G701"
@@ -24,7 +25,7 @@ class Zombies(Enum):
     Z_J1 = "87J"
     Z_J2 = "151J"
 
-    RANK = [Z_M1, Z_F3, Z_F1, Z_J1, Z_F2, Z_F7, Z_J2, Z_F4, Z_F5] # excludes 81G
+    RANK = [Z_M1, Z_F3, Z_F1, Z_J1, Z_F2, Z_F7, Z_J2, Z_F4, Z_F5]  # excludes 81G
 
 
 class Instigators(Enum):

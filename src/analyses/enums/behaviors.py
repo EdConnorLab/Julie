@@ -2,7 +2,6 @@ from enum import Enum
 
 
 class AgonisticBehaviors(Enum):
-
     NON_CONTACT_AGGRESSION = "non-contact aggression"
     RESOURCE_TAKEOVER = "resource takeover"
     MILD_AGGRESSION = "mild aggression"
@@ -10,7 +9,6 @@ class AgonisticBehaviors(Enum):
 
 
 class SubmissiveBehaviors(Enum):
-
     SBT = "silent bared-teeth display"
     TURN_AWAY = "turn away"
     MOVE_AWAY = "move away"
@@ -21,7 +19,6 @@ class SubmissiveBehaviors(Enum):
 
 
 class AffiliativeBehaviors(Enum):
-
     GIVE_GROOM = "give groom"
     RECEIVE_GROOM = "receive groom"
     SOCIAL_PLAY = "social play"
@@ -30,7 +27,6 @@ class AffiliativeBehaviors(Enum):
 
 
 class IndividualBehaviors(Enum):
-
     LOCOMOTION = "locomotion"
     FEED_FORAGE = "feed forage"
     DRINK = "drink"

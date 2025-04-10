@@ -4,13 +4,14 @@ from datetime import datetime, time, date
 import pytz
 from clat.compile.task.compile_task_id import PngSlideIdCollector
 from clat.compile.task.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
-from julie_intan_file_per_experiment_fields import SpikeTimesForChannelsField_Experiment, \
-    EpochStartStopField_Experiment, PeriStimulusSpikeTimesForChannelsField_Experiment
-from julie_intan_file_per_trial_fields import SpikeTimesForChannelsField, EpochStartStopField
 from clat.compile.task.task_field import TaskFieldList, get_data_from_tasks, TaskField
-from julie_one_file_spike_parsing import OneFileParser
 from clat.util import time_util
 from clat.util.connection import Connection
+
+from compile.julie_intan_file_per_experiment_fields import SpikeTimesForChannelsField_Experiment, \
+    EpochStartStopField_Experiment, PeriStimulusSpikeTimesForChannelsField_Experiment
+from compile.julie_intan_file_per_trial_fields import SpikeTimesForChannelsField, EpochStartStopField
+from compile.julie_one_file_spike_parsing import OneFileParser
 
 
 def main():
@@ -24,6 +25,7 @@ def main():
     #              start_time=time(17, 0, 0),
     #              end_time=time(17, 59, 0),
     #              )
+
 
 def compile_data(day: date = None,
                  start_time: time = None,
@@ -78,7 +80,8 @@ def collect_raw_data_single_file_for_experiment(*, day: date, start_time: time, 
     # Parse Spikes
     parser = OneFileParser()
     # spike_tstamps_for_channels_by_task_id, epoch_start_stop_by_task_id, sample_rate = parser.parse(intan_file_path)
-    unfiltered_spike_tstamps_for_channels_by_task_id, spike_tstamps_for_channels_by_task_id, epoch_start_stop_by_task_id, sample_rate = parser.parse_with_peristimulus_spikes(intan_file_path)
+    unfiltered_spike_tstamps_for_channels_by_task_id, spike_tstamps_for_channels_by_task_id, epoch_start_stop_by_task_id, sample_rate = parser.parse_with_peristimulus_spikes(
+        intan_file_path)
 
     # Task Fields
     fields = TaskFieldList()
@@ -106,7 +109,8 @@ def calc_start_and_end_unix_times(day, start_time, end_time):
     return start_unix, end_unix
 
 
-def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time: time = time(0, 0, 0), end_time: time = time(23, 59, 59)):
+def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time: time = time(0, 0, 0),
+                                        end_time: time = time(23, 59, 59)):
     # day to string
     day_path = day.strftime("%Y-%m-%d")
 

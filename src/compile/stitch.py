@@ -62,6 +62,7 @@ class IntanFileStitcher:
                 folder_name = os.path.basename(folder)
                 f.write(f"{folder_name}\n")
 
+
 def open_gui():
     root = tk.Tk()
     root.withdraw()  # Hide the main window
@@ -88,8 +89,11 @@ def open_gui():
             # Run the stitcher
             stitcher = IntanFileStitcher(folder_paths)
             stitcher.stitch_files(final_output_folder_path)
+
+
 def main():
     open_gui()
+
 
 if __name__ == '__main__':
     main()

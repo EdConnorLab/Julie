@@ -1,10 +1,11 @@
-import mysql.connector
-
 from functools import partial
-from numpy import array, searchsorted, unique, stack, asarray, arange, argmin
-from matplotlib import pyplot as plt
+
 import matplotlib
+import mysql.connector
+from matplotlib import pyplot as plt
+from numpy import array, searchsorted, unique, stack, asarray, arange, argmin
 from pandas import DataFrame
+
 matplotlib.use("Qt5Agg")
 
 db = mysql.connector.connect(
@@ -287,4 +288,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

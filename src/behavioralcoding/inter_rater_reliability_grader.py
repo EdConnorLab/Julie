@@ -1,16 +1,15 @@
-from sklearn.metrics import cohen_kappa_score
 import pandas as pd
-
 from excel_data_reader import ExcelDataReader
+from sklearn.metrics import cohen_kappa_score
 
-#Cohen's Kappa Scores:
-#<0: Poor agreement
-#0.00 – 0.20: Slight agreement
-#0.21 – 0.40: Fair agreement
-#0.41 – 0.60: Moderate agreement
-#0.61 – 0.80: Substantial agreement
-#0.81 – 1.00: Almost perfect agreement
-#for more info see here: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3900052/
+# Cohen's Kappa Scores:
+# <0: Poor agreement
+# 0.00 – 0.20: Slight agreement
+# 0.21 – 0.40: Fair agreement
+# 0.41 – 0.60: Moderate agreement
+# 0.61 – 0.80: Substantial agreement
+# 0.81 – 1.00: Almost perfect agreement
+# for more info see here: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3900052/
 excel_data_reader = ExcelDataReader(file_name='/reliability_test_results/Instigators_ReliabilityTest.xlsx')
 df = excel_data_reader.get_sheet_by_name('social')
 # df = pd.read_csv("/home/connorlab/Documents/GitHub/Julie/reliability_test_results/juliejerrysocialior.csv")

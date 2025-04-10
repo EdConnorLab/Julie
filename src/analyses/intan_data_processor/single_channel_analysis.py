@@ -4,11 +4,10 @@ from pathlib import Path
 import matplotlib
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 from clat.intan.channels import Channel
-
-from monkey_names import get_monkeys_by_rank
-from recording_metadata_reader import RecordingMetadataReader
+from matplotlib import pyplot as plt
+from analyses.enums.monkey_names import get_monkeys_by_rank
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 
 matplotlib.use("Qt5Agg")
 
@@ -36,7 +35,8 @@ def main():
     # experiment_name = experiment_data_filename.split(".")[0]
     for channel in channels:
         print("Working on channel %s" % channel)
-        plot_raster_for_monkeys_by_rank(raw_data, channel, date, round_no, save = True)
+        plot_raster_for_monkeys_by_rank(raw_data, channel, date, round_no, save=True)
+
 
 def save_raster_plots(fig, date, round_no, channel):
     base_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/raster_plots"
@@ -51,6 +51,7 @@ def save_raster_plots(fig, date, round_no, channel):
     fig.savefig(individual_save_path_png)
     print("plot saved to %s" % individual_save_path_png)
     plt.close(fig)
+
 
 def read_pickle(file_path):
     unpacked_pickle = pd.read_pickle(file_path)
@@ -110,6 +111,7 @@ def plot_raster_for_monkeys_by_rank(raw_data, channel, date, round_no, save=Fals
         save_raster_plots(fig, date, round_no, channel)
     return fig
 
+
 def plot_raster_for_monkeys(raw_data, channel, experiment_name=None):
     channel_data = extract_target_channel_data(channel, raw_data)
     unique_monkey_groups = channel_data['MonkeyGroup'].dropna().unique().tolist()
@@ -160,7 +162,7 @@ def plot_raster_for_monkeys(raw_data, channel, experiment_name=None):
 
     ## SAVE PLOTS
     script_dir = Path(__file__).parent
-    base_save_dir = (script_dir / '..' / '..' / 'raster_plots' ).resolve()
+    base_save_dir = (script_dir / '..' / '..' / 'raster_plots').resolve()
     if experiment_name is not None:
         save_dir = os.path.join(base_save_dir, experiment_name)
         os.makedirs(save_dir, exist_ok=True)
@@ -168,7 +170,7 @@ def plot_raster_for_monkeys(raw_data, channel, experiment_name=None):
         # Save individual plot
         individual_save_path_png = os.path.join(save_dir, f"{channel.name}_raster.png")
         # filename = os.path.join(save_dir, f"{channel.name}_raster.svg")
-        #individual_save_path_svg = filename
+        # individual_save_path_svg = filename
         # print("Saved to : ", os.path.abspath(filename))
         fig.savefig(individual_save_path_png)
         print(f"Saved to {individual_save_path_png}")

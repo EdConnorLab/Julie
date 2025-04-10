@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 from excel_data_reader import ExcelDataReader
 
 
@@ -39,13 +36,15 @@ class SocialDataReader(ExcelDataReader):
             ['Observer', 'Focal Name', 'Behavior', 'Social Modifier', 'Space Use', 'VideoDate', 'Time']].copy()
         # Remove parentheses and extract monkey ids
         self.social_data['Social Modifier'] = self.social_data['Social Modifier'].str.replace(r'^.*?\((.*?)\).*|^(.+)$',
+                                                                                              lambda m: m.group(
+                                                                                                  1) if m.group(
+                                                                                                  1) is not None else m.group(
+                                                                                                  2),
+                                                                                              regex=True)
+        self.social_data['Focal Name'] = self.social_data['Focal Name'].str.replace(r'^.*?\((.*?)\).*|^(.+)$',
                                                                                     lambda m: m.group(1) if m.group(
                                                                                         1) is not None else m.group(2),
                                                                                     regex=True)
-        self.social_data['Focal Name'] = self.social_data['Focal Name'].str.replace(r'^.*?\((.*?)\).*|^(.+)$',
-                                                                          lambda m: m.group(1) if m.group(
-                                                                              1) is not None else m.group(2),
-                                                                          regex=True)
 
         if 'Behavior Abbrev' not in self.social_data.columns:
             self.social_data['Behavior Abbrev'] = self.social_data['Behavior'].str[:4].str.replace(' ', '')
@@ -94,4 +93,3 @@ class SocialDataReader(ExcelDataReader):
         else:
             raise ValueError(f'Invalid number of interval datapoints! : {filtered}')
             raise ValueError(f'Monkey specific interval datapoint count: {filtered_result}')
-

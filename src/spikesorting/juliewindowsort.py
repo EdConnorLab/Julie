@@ -1,22 +1,20 @@
-import sys
-import tkfilebrowser
-import os
 import configparser
+import os
+import sys
+
 import appdirs
-
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QApplication, QHBoxLayout, QFileDialog, QMenuBar, QMenu, \
+import tkfilebrowser
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QApplication, QHBoxLayout, QMenuBar, QMenu, \
     QAction, QDialog, QLabel, QTextBrowser, QPushButton
-
-from windowsort.gui import get_default_directory, save_default_directory, MainWindow
 from windowsort.datahandler import InputDataManager, SortedSpikeExporter
 from windowsort.drift import DriftSpikePlot, WindowMarkedSlider
+from windowsort.gui import get_default_directory, save_default_directory, MainWindow
 from windowsort.snapshot import SnapshotPlot
 from windowsort.spikes import SpikeScrubber
 from windowsort.units import SortPanel
 from windowsort.voltage import VoltageTimePlot, TimeScrubber, ChannelSelectionPanel, ThresholdControlPanel
 
 from spikesorting.datahandler import JulieSortingConfigManager
-
 
 # Use appdirs to get the appropriate user config directory
 app_name = "WindowSort"
@@ -27,6 +25,7 @@ CONFIG_PATH = os.path.join(config_dir, config_file)
 
 # Ensure the config directory exists
 os.makedirs(config_dir, exist_ok=True)
+
 
 def main():
     app = QApplication(sys.argv)
@@ -50,7 +49,6 @@ def main():
     mainWin = MainWindow(data_directory)
     mainWin.showMaximized()
     sys.exit(app.exec_())
-
 
 
 def save_default_directory(directory):
@@ -145,10 +143,10 @@ class MainWindow(QMainWindow):
 
         # Sorting Manager
         self.sorting_config_manager = JulieSortingConfigManager(save_directory=self.data_directory,
-                                                           voltage_time_plot=self.voltage_time_plot,
-                                                           spike_plot=self.spike_plot,
-                                                           sort_panel=self.sort_panel,
-                                                           data_exporter=self.data_exporter)
+                                                                voltage_time_plot=self.voltage_time_plot,
+                                                                spike_plot=self.spike_plot,
+                                                                sort_panel=self.sort_panel,
+                                                                data_exporter=self.data_exporter)
         self.channel_selection_pannel.sorting_config_manager = self.sorting_config_manager
 
         # Add the second column layout to the main layout
@@ -272,7 +270,6 @@ class ControlsDialog(QDialog):
         layout.addWidget(close_button)
 
         self.setLayout(layout)
-
 
 
 if __name__ == '__main__':

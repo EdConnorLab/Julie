@@ -1,7 +1,5 @@
-import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
-
+import numpy as np
 from anova_on_spike_counts import perform_anova_on_dataframe_rows_for_time_windowed
 from channel_enum_resolvers import convert_to_enum
 from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
@@ -11,7 +9,7 @@ from spike_count import count_spikes_per_bin, get_spike_count_for_single_neuron_
 from spike_rate_computation import get_raw_data_and_channels_from_files
 
 
-def cusum(data, mu, k = 0.9 , h = 1):
+def cusum(data, mu, k=0.9, h=1):
     """
     Perform CUSUM change detection.
     """
@@ -40,10 +38,10 @@ def extract_consecutive_ranges(numbers):
                 end = numbers[i]
             else:
                 if start != end:  # Only append if start and end are not the same
-                    result.append((start-1, end))
+                    result.append((start - 1, end))
                 start = end = numbers[i]
         if start != end:  # Check again for the last range
-            result.append((start-1, end))
+            result.append((start - 1, end))
     return result
 
 
@@ -57,12 +55,14 @@ def find_corresponding_values_for_index_ranges(index_ranges, values):
             extracted_values.append((values[start], values[end]))
     return extracted_values
 
+
 def find_all_corresponding_values_falling_within_index_ranges(index_ranges, values):
     all_corresponding_values = []
     for start, end in index_ranges:
         if start <= len(values) and end < len(values):
-            all_corresponding_values.append(values[start:end+1])
+            all_corresponding_values.append(values[start:end + 1])
     return all_corresponding_values
+
 
 def fill_missing_ones(numbers):
     if not numbers:
@@ -80,7 +80,6 @@ def fill_missing_ones(numbers):
 
 
 def compute_total_sum_of_spikes(raw_data, monkeys, channels, chunk_size):
-
     spike_counts = count_spikes_per_bin(monkeys, raw_data, channels, chunk_size)
     spike_counts['total_sum'] = spike_counts.apply(lambda row: [sum(elements) for elements in zip(*row)], axis=1)
 
@@ -92,6 +91,7 @@ def min_max_scale(data):
     max_val = np.max(data)
     scaled_data = (data - min_val) / (max_val - min_val)
     return scaled_data
+
 
 def z_score(data):
     if np.std(data) == 0:
@@ -110,7 +110,8 @@ if __name__ == '__main__':
     rounded_time = np.round(np.arange(time_chunk_size, 3.50, time_chunk_size), 2)
 
     # response_window_test = pd.read_excel('response_window_algorithm_validation_test.xlsx')
-    prelim = get_metadata_for_preliminary_analysis()
+    reader = RecordingMetadataReader()
+    prelim = reader.get_metadata_for_preliminary_analysis()
     shuffled_df = prelim.sample(frac=1, random_state=42)
     shuffled_df = shuffled_df.reset_index(drop=True)
     results = []
@@ -124,19 +125,20 @@ if __name__ == '__main__':
         # round_no = 3
         raw_unsorted_data, valid_channels, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
         # valid_channels = [Channel.C_002]
-        spike_counts_unsorted_data = compute_total_sum_of_spikes(raw_unsorted_data, zombies, valid_channels, time_chunk_size)
+        spike_counts_unsorted_data = compute_total_sum_of_spikes(raw_unsorted_data, zombies, valid_channels,
+                                                                 time_chunk_size)
         # if sorted_data is not None:
         #     print(f"sorted data exists for {date}, {round_no}")
         #     spike_counts_sorted_data = compute_total_sum_of_spikes(sorted_data, zombies, valid_channels, time_chunk_size)
         for index, r in spike_counts_unsorted_data.iterrows():
             data = r['total_sum']
-            #raw_filtered = gaussian_filter1d(data, sigma = 0.8)
+            # raw_filtered = gaussian_filter1d(data, sigma = 0.8)
             normalized_data = z_score(data)
             # Parameters
             k = 0.9  # sensitivity parameter
-            h = 1 # threshold
+            h = 1  # threshold
             threshold = 0.5
-            #filtered_data= gaussian_filter1d(normalized_data, sigma=0.8)
+            # filtered_data= gaussian_filter1d(normalized_data, sigma=0.8)
 
             change_points = simple_thresholding(normalized_data, threshold)
             # cusum_pos, cusum_neg, change_points = cusum(normalized_data, 0, k, h)
@@ -157,13 +159,15 @@ if __name__ == '__main__':
             if normalized_data is not None:
                 plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
                 for start, end in consecutive_ranges:
-                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
+                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
+                                      rounded_time[end], color='red',
                                       alpha=0.4)
 
             if data is not None:
                 plt.plot(rounded_time[:len(data)], data, label='Data')
                 for start, end in consecutive_ranges:
-                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
+                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
+                                      rounded_time[end], color='red',
                                       alpha=0.4)
                 plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
 

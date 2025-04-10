@@ -1,13 +1,11 @@
 import math
+
 import numpy as np
 import pandas as pd
-
-from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
 from scipy.stats import f_oneway, kruskal, mannwhitneyu, ttest_ind
 
-from monkey_names import Zombies
-from spike_count import prepare_binned_spike_data, aggregate_trial_level
-from spike_rate_computation import get_spike_rates_for_each_trial
+from analyses.spike_count import prepare_binned_spike_data, aggregate_trial_level
+
 
 # ================================
 # Core statistical tests
@@ -17,9 +15,11 @@ def anova_test(groups):
     """Standard one-way ANOVA."""
     return f_oneway(*groups)
 
+
 def kruskal_test(groups):
     """Non-parametric Kruskal-Wallis test."""
     return kruskal(*groups)
+
 
 def u_test(groups):
     """
@@ -34,6 +34,7 @@ def u_test(groups):
     stat, p_val = mannwhitneyu(group1, group2, alternative='two-sided')
     return stat, p_val
 
+
 def t_test(groups):
     """
     Perform independent two-sample t-test.
@@ -45,6 +46,7 @@ def t_test(groups):
     group1, group2 = groups
     stat, p_val = ttest_ind(group1, group2, equal_var=False)  # Welch’s t-test, safer for unequal variances
     return stat, p_val
+
 
 def permutation_anova_test(groups, num_permutations=1000):
     """Permutation-based one-way ANOVA."""
@@ -61,6 +63,7 @@ def permutation_anova_test(groups, num_permutations=1000):
 
     p_value = np.mean([f_stat >= observed_f_stat for f_stat in permutation_f_stats])
     return observed_f_stat, p_value
+
 
 # ================================
 # Row-wise DataFrame tests
@@ -131,6 +134,7 @@ def perform_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=True
 
     return results, total_significant
 
+
 # ================================
 # Everything below this line needs to be refactored
 # ================================
@@ -152,7 +156,6 @@ def perform_anova_on_dataframe_rows_for_time_windowed(df):
                         'Time Window': row['Time Window'],
                         'Cell': index, 'F Value': f_val, 'P Value': p_val})
         if p_val < 0.05:
-
             # Collect significant result data
             significant_results.append({
                 'Date': row['Date'],
@@ -174,14 +177,6 @@ def two_sample_t_test(df):
     Use this for comparing if there is a differential response
     for one group (i.e. Zombies) vs rest of the groups (i.e. Best Frans, Instigators, etc.)
     '''
-    cells = get_metadata_for_preliminary_analysis()
-    neural_population = cells[cells['Location'] == 'ER']
-    stat_param_list = []
-    for index, row in neural_population.iterrows():
-        date = row['Date'].strftime('%Y-%m-%d')
-        round_no = row['Round No.']
-        spike_rates = get_spike_rates_for_each_trial(date, round_no)
-        print(spike_rates)
 
 
 def generate_sliding_time_windows(window_size, step_size, total_duration=2000):
@@ -317,7 +312,8 @@ if __name__ == '__main__':
     Last Updated: 2024-??-??
     ANOVA or PermANOVA on all rounds from metadata
     '''
-    # metadata_for_analysis = get_metadata_for_preliminary_analysis()
+    # reader = RecordingMetadataReader()
+    # metadata_for_analysis = reader.get_metadata_for_preliminary_analysis()
     # total_sig_cells = 0
     # all_significant_results = []
     # for _, row in metadata_for_analysis.iterrows():

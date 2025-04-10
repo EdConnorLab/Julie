@@ -1,11 +1,9 @@
-import os
 from pathlib import Path
 
 import pandas as pd
 
 
 class ExcelDataReader:
-
     BASE_DIR = '/home/connorlab/Documents/GitHub/Julie/'
 
     def __init__(self, subfolder, file_name):

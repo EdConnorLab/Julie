@@ -1,14 +1,13 @@
-import pandas as pd
-from sklearn.linear_model import LassoCV, MultiTaskLassoCV, Lasso
 import numpy as np
+import pandas as pd
 import statsmodels.api as sm
-import matplotlib.pyplot as plt
+from monkey_names import Zombies
+from sklearn.linear_model import LassoCV, Lasso
 from sklearn.preprocessing import StandardScaler
 
+import social_data_processor
 from initial_4feature_lin_reg import construct_feature_matrix_from_behavior_data, \
     get_metadata_for_ANOVA_passed_cells_time_windowed, compute_average_spike_rates_for_list_of_cells_with_time_windows
-from monkey_names import Zombies
-import social_data_processor
 
 '''
 Perform LassoCV (since there are only 9 data points, rather than doing Lasso) 
@@ -35,7 +34,6 @@ sub_beh, Sm_arrow_sub, Sarrow_m_sub = social_data_processor.partition_behavior_v
 aff_beh, Sm_arrow_aff, Sarrow_m_aff = social_data_processor.partition_behavior_variance_from_excel_file(
     'feature_df_affiliation.xlsx')
 
-
 all_arrays = []
 specific_feature_names = []
 for zombie in zombies:
@@ -52,8 +50,8 @@ for zombie in zombies:
     all_arrays.append(arrays)
 
     feature_names_for_zombie = [f'{zombie}\'s attraction to Agonism', f'Agonism by the {zombie}',
-                              f'{zombie}\'s attraction to Submission', f'Submission by the {zombie}',
-                              f'{zombie}\'s attraction to Affiliation', f'Affiliation by the {zombie}']
+                                f'{zombie}\'s attraction to Submission', f'Submission by the {zombie}',
+                                f'{zombie}\'s attraction to Affiliation', f'Affiliation by the {zombie}']
     specific_feature_names.extend(feature_names_for_zombie)
 
 subject_specific = np.hstack(all_arrays)
@@ -78,10 +76,9 @@ time_windowed_cells = get_metadata_for_ANOVA_passed_cells_time_windowed()
 
 # Names of features assuming you have them as a list or from a DataFrame
 general_feature_names = ['General Agonism', 'General Attraction to Agonism', 'General Submission',
-    'General Attraction to Submission', 'General Affiliation', 'General Attraction to Affiliation']
+                         'General Attraction to Submission', 'General Affiliation', 'General Attraction to Affiliation']
 
 general_feature_names.extend(specific_feature_names)
-
 
 for index, row in zombies_spike_rates.iterrows():
     y = row.values.flatten()
@@ -112,5 +109,3 @@ for index, row in zombies_spike_rates.iterrows():
     model = sm.GLM(y, X_adj, family=sm.families.Gaussian())
     results = model.fit()
     print(results.summary())
-
-

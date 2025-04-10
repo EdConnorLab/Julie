@@ -1,12 +1,10 @@
-import pandas as pd
 import numpy as np
-
-from excel_data_reader import ExcelDataReader
-from data_readers.recording_metadata_reader import RecordingMetadataReader
-from statsmodels.regression.linear_model import OLS
-
-from monkey_names import Monkey
+import pandas as pd
 import spike_rate_analysis
+from data_readers.recording_metadata_reader import RecordingMetadataReader
+from excel_data_reader import ExcelDataReader
+from monkey_names import Monkey
+from statsmodels.regression.linear_model import OLS
 
 if __name__ == '__main__':
 

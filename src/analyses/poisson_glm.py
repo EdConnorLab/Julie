@@ -1,17 +1,14 @@
-from sklearn.linear_model import LassoCV, MultiTaskLassoCV
 import numpy as np
-import pandas as pd
 import statsmodels.api as sm
-import statsmodels.formula.api as smf
+from excel_data_reader import ExcelDataReader
+from monkey_names import Monkey
+from sklearn.linear_model import LassoCV
+from sklearn.model_selection import train_test_split
 from sklearn.multioutput import MultiOutputRegressor
 
 import social_data_processor
 import spike_count
-from excel_data_reader import ExcelDataReader
 from initial_4feature_lin_reg import construct_feature_matrix_from_behavior_data
-from monkey_names import Monkey
-from sklearn.model_selection import train_test_split
-
 from spike_rate_computation import get_average_spike_rates_for_each_monkey
 
 """
@@ -66,7 +63,6 @@ Y_pred_rounded = np.ceil(Y_pred).astype(int)
 print("Predictions:\n", Y_pred)
 print("Actual values:\n", Y_test)
 
-
 # Let me try with average spike count and then simple LassoCV
 spike_rates = get_average_spike_rates_for_each_monkey("2023-10-04", 1)
 neuron = spike_rates.iloc[2, :]
@@ -75,7 +71,6 @@ Y_avg = neuron.loc[zombies_columns]
 lasso = LassoCV(cv=9).fit(X_aug, Y_avg)
 betas = lasso.coef_
 print("betas: ", betas)
-
 
 ######
 # Split the data into training and testing sets
@@ -86,7 +81,6 @@ multi_output_lasso.fit(X_train, Y_train)
 Y_pred = multi_output_lasso.predict(X_test)
 print("Predictions for agon:\n", Y_pred)
 print("Actual values for agon:\n", Y_test)
-
 
 spike_rates = get_average_spike_rates_for_each_monkey("2023-10-04", 1)
 spike_rates.to_csv('sample_spike_rates_for_poisson_glm.csv', index=False)

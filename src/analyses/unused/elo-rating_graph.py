@@ -1,6 +1,7 @@
-import networkx as nx
 import matplotlib.pyplot as plt
+import networkx as nx
 import pandas as pd
+
 
 def main():
     file_path = '/social_data/Zombies_Elo_Ratings.csv'
@@ -26,7 +27,7 @@ def main():
     # Draw the graph without default labels and using a smaller node size
     plt.figure(figsize=(8, 6))  # Adjust figure size to be taller for vertical layout
     nx.draw(G, pos, with_labels=False, node_size=800, font_size=10, node_color="tomato",
-            arrowsize= 20, edge_color="dimgray", arrows=True)
+            arrowsize=20, edge_color="dimgray", arrows=True)
 
     # Draw edges with same thickness and color
     nx.draw_networkx_edges(G, pos, edge_color='gray', width=2)
@@ -41,6 +42,7 @@ def main():
     # Display the graph in a new window
     plt.show()
     plt.savefig('elo-rating.png')
+
 
 if __name__ == '__main__':
     main()

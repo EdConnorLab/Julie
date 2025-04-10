@@ -1,12 +1,11 @@
 import pandas as pd
+from analyses.enums.monkey_names import Zombies
+from analyses.intan_data_processor.single_channel_analysis import read_pickle, get_spike_count
 
-import channel_enum_resolvers
-from channel_enum_resolvers import drop_duplicate_channels, is_channel_in_dict, get_value_from_dict_with_channel
-from data_loader import load_raw_data, combine_unsorted_with_sorted
-from monkey_names import Zombies
-from single_channel_analysis import read_pickle, get_spike_count
-from data_readers.recording_metadata_reader import RecordingMetadataReader
-from spike_rate_computation import read_sorted_data, get_raw_data_and_channels_from_files
+from analyses.channel_enum_resolvers import is_channel_in_dict, get_value_from_dict_with_channel, convert_to_enum
+from analyses.data_loader import load_raw_data, combine_unsorted_with_sorted
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+from analyses.intan_data_processor.single_unit_analysis import read_sorted_data
 
 """
 Data Preparation Module for Spike Data Analysis
@@ -41,11 +40,13 @@ Usage notes:
 
 """
 
+
 def load_and_combine_data(date, round_no):
     """Load and combine raw unsorted and sorted spike data."""
     raw_unsorted_data, _, sorted_data = load_raw_data(date, round_no)
     combined_data = combine_unsorted_with_sorted(raw_unsorted_data, sorted_data)
     return combined_data
+
 
 # --- Data explosion (wide → long format) ---
 def explode_spike_data(combined_data, date, round_no):
@@ -75,9 +76,9 @@ def explode_spike_data(combined_data, date, round_no):
     exploded_df['Date'] = date
     exploded_df['Round No.'] = round_no
     exploded_df['NeuronID'] = (
-        exploded_df['Date'].astype(str) + "_" +
-        exploded_df['Round No.'].astype(str) + "_" +
-        exploded_df['Channel'].astype(str)
+            exploded_df['Date'].astype(str) + "_" +
+            exploded_df['Round No.'].astype(str) + "_" +
+            exploded_df['Channel'].astype(str)
     )
 
     return exploded_df
@@ -130,6 +131,7 @@ def aggregate_trial_level(df):
     """Collapse spike counts across time bins per trial (trial-level total spike count)."""
     return df.groupby(['NeuronID', 'TaskField', 'MonkeyName', 'MonkeyGroup'], as_index=False)['SpikeCount'].sum()
 
+
 def aggregate_bin_level(df):
     """Aggregate spike counts at bin level across trials (for time-resolved analysis)."""
     return df.groupby(['MonkeyGroup', 'TimeBinIndex'], as_index=False)['SpikeCount'].mean()
@@ -150,7 +152,7 @@ def get_spike_counts_for_given_time_window(monkeys, raw_data, channels, time_win
                     window_start_sec = window_start_micro * 0.001
                     window_end_sec = window_end_micro * 0.001
                     spike_count_for_each_channel.append(get_spike_count(data, (start_time + window_start_sec,
-                                                               start_time + window_end_sec)))
+                                                                               start_time + window_end_sec)))
                 else:
                     print(f"No data for {channel} in row {index}")
             spike_counts_by_channel[channel] = spike_count_for_each_channel
@@ -212,14 +214,15 @@ def get_spike_count_for_single_neuron_with_time_window(cell_metadata):
         if sorted_file.exists():
             sorted_data = read_sorted_data(round_dir_path)
 
-        cells = cell_metadata[((cell_metadata['Date'] == row['Date']) & (cell_metadata['Round No.'] == row['Round No.']))]
+        cells = cell_metadata[
+            ((cell_metadata['Date'] == row['Date']) & (cell_metadata['Round No.'] == row['Round No.']))]
         for _, cell in cells.iterrows():
             if isinstance(cell['Time Window'], str):
                 time_window = tuple(float(num) for num in cell['Time Window'].strip('()').split(','))
             else:
                 time_window = cell['Time Window']
             if 'Unit' not in cell['Cell']:  # unsorted cells
-                cell['Cell'] = channel_enum_resolvers.convert_to_enum(cell['Cell'])
+                cell['Cell'] = convert_to_enum(cell['Cell'])
                 unsorted_cells_spike_count = count_spikes_for_specific_cell_time_windowed(raw_trial_data, cell['Cell'],
                                                                                           time_window)
                 unsorted_cells_spike_count_dict = unsorted_cells_spike_count.to_dict(orient='records')[0]
@@ -251,9 +254,8 @@ def add_metadata_to_spike_counts(spike_count_df, date, round_number, time_window
     """
     spike_count_df['Date'] = date
     spike_count_df['Round No.'] = round_number
-    spike_count_df['Time Window'] = [time_window]  * len(spike_count_df)
+    spike_count_df['Time Window'] = [time_window] * len(spike_count_df)
     return spike_count_df
-
 
 
 if __name__ == '__main__':
@@ -263,6 +265,3 @@ if __name__ == '__main__':
 
     date = '2023-09-26'
     round_no = 1
-
-    analysis_df = prepare_combined_spike_data(date, round_no, 0.05)
-    print(analysis_df)

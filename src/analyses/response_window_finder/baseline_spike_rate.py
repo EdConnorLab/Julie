@@ -1,13 +1,12 @@
-import os
 from typing import List, Tuple
 
 import numpy as np
-
 from channel_enum_resolvers import get_value_from_dict_with_channel
 from single_channel_analysis import get_spike_count
 from spike_rate_computation import get_raw_data_and_channels_from_files, get_raw_spike_tstamp_data
 
-def get_inter_trial_intervals(trial_epochs: List[Tuple[float, float]])-> Tuple[List[Tuple[float, float]], float]:
+
+def get_inter_trial_intervals(trial_epochs: List[Tuple[float, float]]) -> Tuple[List[Tuple[float, float]], float]:
     inter_trial_intervals = []
     total_inter_trial_duration = 0
     for i in range(0, len(trial_epochs)):
@@ -25,20 +24,23 @@ def get_inter_trial_intervals(trial_epochs: List[Tuple[float, float]])-> Tuple[L
             inter_trial_intervals.append(inter_trial_interval)
     return inter_trial_intervals, total_inter_trial_duration
 
+
 def get_all_spikes_within_interval_by_channel(spike_timestamps_by_channel, intervals: list) -> dict:
-   spikes_by_channel = {}
-   for channel, timestamps in spike_timestamps_by_channel.items():
-       spike_times = []
-       for interval in intervals:
-           start, stop = interval
-           for timestamp in timestamps:
-               if start < timestamp < stop:
-                   spike_times.append(timestamp)
-       spikes_by_channel[channel] = spike_times
+    spikes_by_channel = {}
+    for channel, timestamps in spike_timestamps_by_channel.items():
+        spike_times = []
+        for interval in intervals:
+            start, stop = interval
+            for timestamp in timestamps:
+                if start < timestamp < stop:
+                    spike_times.append(timestamp)
+        spikes_by_channel[channel] = spike_times
 
-   return spikes_by_channel
+    return spikes_by_channel
 
-def compute_spontaneous_firing_rate_by_channel(spontaneous_spikes_by_channel, total_inter_trial_duration, valid_channels):
+
+def compute_spontaneous_firing_rate_by_channel(spontaneous_spikes_by_channel, total_inter_trial_duration,
+                                               valid_channels):
     spontaneous_firing_rate_by_channel = {}
     for channel in valid_channels:
         spikes = get_value_from_dict_with_channel(channel, spontaneous_spikes_by_channel)
@@ -52,6 +54,7 @@ def compute_spontaneous_firing_rate_by_channel(spontaneous_spikes_by_channel, to
             spontaneous_firing_rate_by_channel[channel] = 0
     return spontaneous_firing_rate_by_channel
 
+
 def get_average_spontaneous_firing_rate(date, round_no):
     # Get raw spike data
     raw_spike_timestamp_data, sample_rate = get_raw_spike_tstamp_data(date, round_no)
@@ -59,12 +62,16 @@ def get_average_spontaneous_firing_rate(date, round_no):
     raw_unsorted_data, valid_channels, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
     trial_intervals = raw_unsorted_data['EpochStartStop']
     inter_trial_intervals, total_duration = get_inter_trial_intervals(trial_intervals.tolist())
-    spontaneous_spikes_by_channel = get_all_spikes_within_interval_by_channel(raw_spike_timestamp_data, inter_trial_intervals)
-    average_spontaneous_firing_rate_by_channel = compute_spontaneous_firing_rate_by_channel(spontaneous_spikes_by_channel, total_duration,
-                                                                             valid_channels)
+    spontaneous_spikes_by_channel = get_all_spikes_within_interval_by_channel(raw_spike_timestamp_data,
+                                                                              inter_trial_intervals)
+    average_spontaneous_firing_rate_by_channel = compute_spontaneous_firing_rate_by_channel(
+        spontaneous_spikes_by_channel, total_duration,
+        valid_channels)
     return average_spontaneous_firing_rate_by_channel
 
-def compute_standard_deviation_of_spontaneous_spike_count_for_time_chunk(inter_trial_intervals, valid_channels, raw_spike_tstamp_data, chunk_size):
+
+def compute_standard_deviation_of_spontaneous_spike_count_for_time_chunk(inter_trial_intervals, valid_channels,
+                                                                         raw_spike_tstamp_data, chunk_size):
     spike_count_std_dev_by_channel = {}
     for channel in valid_channels:
         data = get_value_from_dict_with_channel(channel, raw_spike_tstamp_data)
@@ -79,7 +86,7 @@ def compute_standard_deviation_of_spontaneous_spike_count_for_time_chunk(inter_t
                 spike_count_for_each_channel.append(spike_count)
         std_dev = np.std(spike_count_for_each_channel)
         spike_count_std_dev_by_channel[channel] = std_dev
-    #print(f"{spike_count_std_dev_by_channel}")
+    # print(f"{spike_count_std_dev_by_channel}")
 
     return spike_count_std_dev_by_channel
 
@@ -139,4 +146,3 @@ if __name__ == "__main__":
             else:
                 pass
     '''
-

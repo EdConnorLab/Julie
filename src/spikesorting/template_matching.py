@@ -1,11 +1,10 @@
 import random
 
-from windowsort.datahandler import InputDataManager, SortedSpikeExporter, SortingConfigManager
-from windowsort.threshold import threshold_spikes_absolute
 import matplotlib.pyplot as plt
-from scipy.signal import correlate, find_peaks
 import numpy as np
 from clat.intan.channels import Channel
+from windowsort.datahandler import InputDataManager
+
 
 def min_in_chunks(data, chunk_size_samples):
     """
@@ -26,6 +25,7 @@ def min_in_chunks(data, chunk_size_samples):
     min_values = reshaped_data.min(axis=1)
     return min_values
 
+
 def max_in_chunks(data, chunk_size_samples):
     """
     Calculate the maximum value in each chunk of the data.
@@ -45,6 +45,7 @@ def max_in_chunks(data, chunk_size_samples):
     max_values = reshaped_data.max(axis=1)
     return max_values
 
+
 data_handler = InputDataManager("/home/connorlab/Documents/IntanData/Cortana/2023-09-26/230926_round3")
 data_handler.read_data()
 channel = Channel.C_027
@@ -57,7 +58,7 @@ voltages = data_handler.voltages_by_channel.get(channel)
 
 # sampling rate = 20,000 Hz
 sampling_rate = 20000
-time_chunk = 0.005 # 5ms
+time_chunk = 0.005  # 5ms
 chunk_size_samples = int(sampling_rate * time_chunk)
 min_values = min_in_chunks(voltages, chunk_size_samples)
 print(min_values)
@@ -77,7 +78,7 @@ print(f"Q1: {np.percentile(min_values, 25)}")
 threshold = -40
 milliseconds_before = 0.8
 milliseconds_after = 1.4
-data_points_before = int(milliseconds_before / 1000 * sampling_rate) # sampling rate is 20000 Hz
+data_points_before = int(milliseconds_before / 1000 * sampling_rate)  # sampling rate is 20000 Hz
 data_points_after = int(milliseconds_after / 1000 * sampling_rate)
 
 supra_threshold_indices = np.where(voltages < threshold)[0]
@@ -161,7 +162,7 @@ if len(collected_segments) >= 9:
     for i, ax in enumerate(axes.flatten()):
         spike_data = collected_segments[selected_indices[i]]
         ax.plot(x_axis, spike_data)
-        #ax.axvline(x=0, color='red', linestyle='--')  # Add a vertical line at the threshold crossing
+        # ax.axvline(x=0, color='red', linestyle='--')  # Add a vertical line at the threshold crossing
 
         # Only set x and y labels on the edges
         if i % 3 == 0:  # First column
@@ -177,13 +178,12 @@ if len(collected_segments) >= 9:
     fig.tight_layout()  # Adjust layout to prevent overlapping
     plt.show()
 
-
 plt.figure(figsize=(10, 6))
 # Initialize the list to keep track of segments plotted to avoid overlap
 plotted_segments = []
 
 # Loop through each threshold crossing index
-random_indices= random.sample(range(len(supra_threshold_indices)), 100)
+random_indices = random.sample(range(len(supra_threshold_indices)), 100)
 unique_indices = [supra_threshold_indices[i] for i in random_indices]
 for index in unique_indices:
     if not any((seg[0] <= index <= seg[1]) for seg in plotted_segments):
@@ -210,7 +210,7 @@ plt.xlabel('Time (ms)')
 plt.ylabel('Voltage')
 # plt.title('Non-overlapping Voltage Threshold Crossings Aligned at 0 ms')
 plt.title('Thresholded Spikes (Randomly Selected for Plot)')
-plt.axvline(x=0, color='red', linestyle='--', alpha = 0.3)  # Add a vertical line at the crossing point
+plt.axvline(x=0, color='red', linestyle='--', alpha=0.3)  # Add a vertical line at the crossing point
 plt.show()
 
 template_spike = collected_segments[selected_indices[0]]
@@ -230,7 +230,6 @@ plt.title('Correlation of Each Spike with the Template Spike')
 plt.axhline(y=0, color='gray', linestyle='--')  # Add a horizontal line at zero correlation for reference
 plt.grid(True)
 plt.show()
-
 
 # Assume 'correlations' is already defined, as well as 'plotted_segments' and 'voltages'
 correlation_threshold = 0.5  # Set the correlation threshold, adjust this as needed
@@ -293,8 +292,6 @@ else:
 
 # for channel, voltages in data_handler.voltages_by_channel.items():
 '''
-
-
 
 ''' 
 Example code for using PCA for spike waveform feature extraction

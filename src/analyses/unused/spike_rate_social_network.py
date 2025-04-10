@@ -1,14 +1,13 @@
-import networkx as nx
 import matplotlib.pyplot as plt
-
-from monkey_names import Monkey
-from unused.network import create_digraph_with_edge_weights, \
-    create_digraph_with_top_70_percent_of_edge_weights
+import networkx as nx
 from data_readers.social_data_reader import SocialDataReader
-from social_data_processor import extract_specific_social_behavior, generate_edge_list_from_extracted_interactions
+from enums.behaviors import AffiliativeBehaviors as Affiliative
 from enums.behaviors import AgonisticBehaviors as Agonistic
 from enums.behaviors import SubmissiveBehaviors as Submissive
-from enums.behaviors import AffiliativeBehaviors as Affiliative
+from monkey_names import Monkey
+from social_data_processor import extract_specific_social_behavior, generate_edge_list_from_extracted_interactions
+from unused.network import create_digraph_with_edge_weights, \
+    create_digraph_with_top_70_percent_of_edge_weights
 
 
 def main():
@@ -38,7 +37,6 @@ def main():
     # random_row = avg_spike_rate.loc["Channel.C_017_Unit 1"]
     # norm_values = ((random_row - random_row.min()) / (random_row.max() - random_row.min())).to_dict()
 
-
     G, adj_matrix, weights = create_digraph_with_top_70_percent_of_edge_weights(edge_list_agon)
     # G, adj_matrix, weights = create_graph_with_edge_weights(edge_list_aff)
     # set_node_attributes_with_default(G, norm_values, 'spike_rate', default_value=0)
@@ -59,7 +57,7 @@ def main():
     G_relabelled = nx.relabel_nodes(G, value_to_name_mapping)
     pos_relabelled = {value_to_name_mapping.get(node, node): position for node, position in pos.items()}
     # Draw nodes
-    nx.draw_networkx_nodes(G,pos, node_size=700, node_color='lightgray')
+    nx.draw_networkx_nodes(G, pos, node_size=700, node_color='lightgray')
 
     # Extract edge weights
     edges = G_relabelled.edges(data=True)
@@ -74,6 +72,7 @@ def main():
 
     # nx.draw(G, pos=pos, with_labels=True, width=weights, font_size=7, node_size=1500)
     plt.show()
+
 
 if __name__ == '__main__':
     main()

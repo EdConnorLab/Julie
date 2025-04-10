@@ -1,9 +1,8 @@
 import pandas as pd
 from pandas import read_pickle
 
-from monkey_names import Zombies
-from recording_metadata_reader import RecordingMetadataReader
-from single_unit_analysis import read_sorted_data
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+from analyses.intan_data_processor.single_unit_analysis import read_sorted_data
 
 
 def load_raw_data(date, round_number):
@@ -18,6 +17,7 @@ def load_raw_data(date, round_number):
         sorted_data = None
 
     return raw_trial_data, valid_channels, sorted_data
+
 
 def combine_unsorted_with_sorted(raw_unsorted_data, sorted_data):
     if sorted_data is None or sorted_data.empty:

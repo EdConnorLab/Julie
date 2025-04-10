@@ -1,16 +1,15 @@
-import ast
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import explained_variance_score
 from monkey_names import Zombies, BestFrans
 from recording_metadata_reader import RecordingMetadataReader
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import explained_variance_score
 from spike_count import get_spike_count_for_single_neuron_with_time_window
 
 
 def run_linear_regression_using_sklearn(x, y):
-    x = np.array(x).reshape(-1,1)
-    y = np.array(y).reshape(-1,1)
+    x = np.array(x).reshape(-1, 1)
+    y = np.array(y).reshape(-1, 1)
     # Model
     model = LinearRegression()
     model.fit(x, y)
@@ -19,6 +18,7 @@ def run_linear_regression_using_sklearn(x, y):
     intercept = model.intercept_
     r_squared = model.score(x, y)
     return coeff, intercept, r_squared
+
 
 def run_linear_regression_manually(x, y):
     x = np.array(x).reshape(-1, 1)
@@ -38,6 +38,7 @@ def run_linear_regression_manually(x, y):
         ypred.append(b_0_ed + b_1_ed * x[ixy])
     r_sq = explained_variance_score(y, ypred)
     return b_1_ed, b_0_ed, r_sq
+
 
 def run_linear_regression_analysis(spike_counts, behavior_table, behavior_name):
     results = []
@@ -78,6 +79,7 @@ def run_linear_regression_analysis(spike_counts, behavior_table, behavior_name):
     results_df.to_excel(behavior_name + '.xlsx')
     return results_df
 
+
 if __name__ == "__main__":
     # Zombies
     zombies = [member.value for name, member in Zombies.__members__.items()]
@@ -102,10 +104,12 @@ if __name__ == "__main__":
     zombies_agonism_from = zombies_agonism_to.T
 
     # Cells
-    additional_anova_passed_cells = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/window_cells_ANOVA_passed_to_keep.xlsx")
-    ed_anova_passed_cells = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/Ed_window_cells_ANOVA_passed.xlsx")
+    additional_anova_passed_cells = pd.read_excel(
+        "/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/window_cells_ANOVA_passed_to_keep.xlsx")
+    ed_anova_passed_cells = pd.read_excel(
+        "/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/Ed_window_cells_ANOVA_passed.xlsx")
     additional_anova_passed_cells['Time Window'] = additional_anova_passed_cells['Time Window'].apply(
-         lambda s: tuple((float(num)) for num in s.strip('()').split(',')))
+        lambda s: tuple((float(num)) for num in s.strip('()').split(',')))
     cells_with_windows = pd.concat([additional_anova_passed_cells, ed_anova_passed_cells], ignore_index=True)
     cells_with_windows['Date'] = pd.to_datetime(cells_with_windows['Date']).dt.date
     cells_with_windows_sorted = cells_with_windows.sort_values(by=['Date', 'Round No.', 'Cell'])
@@ -118,14 +122,14 @@ if __name__ == "__main__":
     experimental_session_details = ['Date', 'Round No.', 'Time Window']
     zombies_spike_counts = all_spike_counts[zombies_without_subject_monkey + experimental_session_details]
     # get mean of spike counts
-    zombies_spike_counts[zombies_without_subject_monkey] = zombies_spike_counts[zombies_without_subject_monkey].map(lambda x: sum(x) / len(x) if x else None)
+    zombies_spike_counts[zombies_without_subject_monkey] = zombies_spike_counts[zombies_without_subject_monkey].map(
+        lambda x: sum(x) / len(x) if x else None)
     run_linear_regression_analysis(zombies_spike_counts, zombies_affiliation_to, "AffliationTo")
     run_linear_regression_analysis(zombies_spike_counts, zombies_affiliation_from, "AffliationFrom")
     run_linear_regression_analysis(zombies_spike_counts, zombies_submission_to, "SubmissionTo")
     run_linear_regression_analysis(zombies_spike_counts, zombies_submission_from, "SubmissionFrom")
     run_linear_regression_analysis(zombies_spike_counts, zombies_agonism_to, "AgonismTo")
     run_linear_regression_analysis(zombies_spike_counts, zombies_agonism_from, "AgonismFrom")
-
 
 '''an example to run for testing -- r squared has to be around 0.5092734647876507'''
 # x = np.array([11.5, 8.444444444444445, 8.0, 8.444444444444445, 7.1, 7.3, 10.5, 5.777777777777778]).reshape(-1, 1)

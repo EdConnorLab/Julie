@@ -1,18 +1,17 @@
-import os
+import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+from analyses.enums.monkey_names import Zombies, BestFrans
+from analyses.intan_data_processor.single_channel_analysis import read_pickle
+from analyses.intan_data_processor.single_unit_analysis import read_sorted_data
 from statsmodels.regression.linear_model import OLS
-import channel_enum_resolvers
-from single_unit_analysis import read_sorted_data
-from spike_count import count_spikes_for_specific_cell_time_windowed, get_spike_count_for_single_neuron_with_time_window
-from spike_rate_computation import compute_average_spike_rate_for_single_neuron_for_specific_time_window, \
-    get_average_spike_rates_for_each_monkey, compute_average_spike_rates_for_list_of_cells_with_time_windows
-from monkey_names import Zombies, BestFrans
-from data_readers.recording_metadata_reader import RecordingMetadataReader
-from single_channel_analysis import read_pickle
+
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+from analyses.spike_count import get_spike_count_for_single_neuron_with_time_window
+from analyses.spike_rate_computation import get_average_spike_rates_for_each_monkey, \
+    compute_average_spike_rates_for_list_of_cells_with_time_windows
 
 
 def construct_feature_matrix_from_behavior_data(monkey_of_interest, behavior_data, Sm_arrow, Sarrow_m, behavior_type):
@@ -35,13 +34,6 @@ def construct_feature_matrix_from_behavior_data(monkey_of_interest, behavior_dat
     return feature_matrix, feature_names
 
 
-def get_metadata_for_preliminary_analysis():
-    metadata_reader = RecordingMetadataReader()
-    raw_metadata = metadata_reader.get_raw_data()
-    metadata_for_prelim_analysis = raw_metadata.parse('InitialRegression')
-    return metadata_for_prelim_analysis
-
-
 def get_metadata_for_list_of_cells_with_time_window(sheet_name: str):
     metadata_reader = RecordingMetadataReader()
     raw_metadata = metadata_reader.get_raw_data()
@@ -58,7 +50,8 @@ def get_metadata_for_ANOVA_passed_cells_time_windowed():
     metadata_reader = RecordingMetadataReader()
     raw_metadata = metadata_reader.get_raw_data()
     metadata_for_anova_passed = raw_metadata.parse('ANOVA_passed_windowed')
-    metadata_for_anova_passed['Time Window'] = metadata_for_anova_passed['Time Window'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+    metadata_for_anova_passed['Time Window'] = metadata_for_anova_passed['Time Window'].apply(
+        lambda x: eval(x) if isinstance(x, str) else x)
     metadata_anova_passed_subset = metadata_for_anova_passed[['Date', 'Round No.', 'Cell', 'Time Window']]
     return metadata_anova_passed_subset
 
@@ -232,7 +225,6 @@ def generate_r_squared_histogram_for_specific_population(X, feature_names, locat
     return results_df
 
 
-
 if __name__ == '__main__':
     '''
     Date: 2024-04-28
@@ -249,7 +241,6 @@ if __name__ == '__main__':
     bestfrans_columns.extend(["Date", "Round No.", "Time Window"])
     bestfrans_spike_rates = spike_rates[bestfrans_columns]
     bestfrans_spike_rates.to_excel('bestfrans_spike_rates_2nd_list_windowed.xlsx')
-
 
     spike_counts = get_spike_count_for_single_neuron_with_time_window(time_windowed_cells)
     bestfrans_columns = [col for col in bestfrans if col in spike_counts.columns]

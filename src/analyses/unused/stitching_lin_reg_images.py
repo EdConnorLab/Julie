@@ -1,4 +1,5 @@
 import os
+
 from PIL import Image
 
 #
@@ -46,5 +47,3 @@ for key, files in images_to_stitch.items():
         # Stitch the images
         stitch_images(files, output_path)
         print(f"Stitched images saved to {output_path}")
-
-

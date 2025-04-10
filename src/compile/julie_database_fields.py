@@ -1,8 +1,8 @@
-import xmltodict
+import re
 
+import xmltodict
 from clat.compile.task.base_database_fields import StimSpecField
 from clat.util.connection import Connection
-import re
 
 
 class FileNameField(StimSpecField):
@@ -15,7 +15,7 @@ class FileNameField(StimSpecField):
         picture_path = stim_spec_dict['StimSpec']['filePath']
         file_name = self.extract_filename_from_filepath(picture_path)
         if self.is_new_monkey_picture(picture_path):
-            #add new_monkey_ to the filename
+            # add new_monkey_ to the filename
             file_name = "new_monkey_" + file_name
 
         return file_name
@@ -73,7 +73,6 @@ class JpgIdField(MonkeyIdField):
     def __init__(self, *, conn_xper: Connection, conn_photo: Connection, name: str = "JpgId"):
         super().__init__(conn_xper=conn_xper, conn_photo=conn_photo, name=name)
 
-
     def get(self, task_id: int) -> int:
         monkey_id = super().get(task_id)
         if monkey_id == -1:
@@ -94,18 +93,17 @@ class JpgIdField(MonkeyIdField):
 
 class MonkeyGroupField(JpgIdField):
 
-        def __init__(self, *, conn_xper: Connection, conn_photo: Connection, name: str = "MonkeyGroup"):
-            super().__init__(conn_xper=conn_xper, conn_photo=conn_photo, name=name)
+    def __init__(self, *, conn_xper: Connection, conn_photo: Connection, name: str = "MonkeyGroup"):
+        super().__init__(conn_xper=conn_xper, conn_photo=conn_photo, name=name)
 
-        def get(self, task_id: int) -> str:
-            jpg_id = super().get(task_id)
-            if jpg_id == -1:
-                return "Zombies"
-            # read monkey_group for jpg_id
-            query = "SELECT monkey_group FROM photo_metadata.photos WHERE jpg_id = %s"
-            params = (jpg_id,)
-            self.conn_photo.execute(query, params)
-            monkey_group = self.conn_photo.fetch_one()
+    def get(self, task_id: int) -> str:
+        jpg_id = super().get(task_id)
+        if jpg_id == -1:
+            return "Zombies"
+        # read monkey_group for jpg_id
+        query = "SELECT monkey_group FROM photo_metadata.photos WHERE jpg_id = %s"
+        params = (jpg_id,)
+        self.conn_photo.execute(query, params)
+        monkey_group = self.conn_photo.fetch_one()
 
-            return monkey_group
-
+        return monkey_group

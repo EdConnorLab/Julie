@@ -1,13 +1,13 @@
+import os
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
-from tqdm import tqdm  # progress bar
 from fpdf import FPDF
-from statsmodels.stats.multitest import multipletests
-import matplotlib.pyplot as plt
-import seaborn as sns
-import os
+from tqdm import tqdm  # progress bar
 
 from spike_count import prepare_binned_spike_data
 
@@ -30,7 +30,9 @@ class PDFReport(FPDF):
         self.image(image_path, w=180)
         self.ln()
 
-def generate_neuron_reports(analysis_df, glm_results, perm_results, output_dir='neuron_pdf_reports', time_bin_size=0.05):
+
+def generate_neuron_reports(analysis_df, glm_results, perm_results, output_dir='neuron_pdf_reports',
+                            time_bin_size=0.05):
     os.makedirs(output_dir, exist_ok=True)
 
     # Merge glm + perm results
@@ -38,7 +40,7 @@ def generate_neuron_reports(analysis_df, glm_results, perm_results, output_dir='
 
     sig_neurons = summary_report[
         (summary_report['GLM_significant'] == True) | (summary_report['Permutation_significant'] == True)
-    ]['NeuronID'].unique()
+        ]['NeuronID'].unique()
 
     for neuron in tqdm(sig_neurons, desc="Generating PDF reports"):
         neuron_df = analysis_df[analysis_df['NeuronID'] == neuron]
@@ -96,6 +98,7 @@ def generate_neuron_reports(analysis_df, glm_results, perm_results, output_dir='
         # Save PDF
         pdf.output(os.path.join(output_dir, f'{neuron}_Report.pdf'))
 
+
 def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
     results = []
 
@@ -125,6 +128,7 @@ def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
     else:
         print("No valid neurons found for GLM.")
         return pd.DataFrame()
+
 
 def permutation_test(df, n_permutations=1000, neuron_col='NeuronID', group_col='MonkeyGroup',
                      count_col='SpikeCount'):
@@ -163,6 +167,7 @@ def permutation_test(df, n_permutations=1000, neuron_col='NeuronID', group_col='
         })
 
     return pd.DataFrame(results)
+
 
 def plot_permutation_results(perm_results):
     plt.figure(figsize=(12, 5))
@@ -237,6 +242,7 @@ def plot_glm_coefficients(glm_results):
     plt.tight_layout()
     plt.show()
 
+
 def plot_significant_neuron_psth(analysis_df, summary_report, time_bin_size=0.05):
     # Filter significant neurons (either GLM or permutation)
     sig_neurons = summary_report[
@@ -264,7 +270,8 @@ def plot_significant_neuron_psth(analysis_df, summary_report, time_bin_size=0.05
         plt.show()
 
 
-def time_resolved_glm(df, neuron_col='NeuronID', time_col='TimeBinIndex', group_col='MonkeyGroup', count_col='SpikeCount'):
+def time_resolved_glm(df, neuron_col='NeuronID', time_col='TimeBinIndex', group_col='MonkeyGroup',
+                      count_col='SpikeCount'):
     results = []
 
     unique_neurons = df[neuron_col].unique()
@@ -328,7 +335,8 @@ def plot_time_resolved_glm(time_glm_results, time_bin_size=0.05):
         plt.show()
 
 
-def time_resolved_permutation_test(df, n_permutations=1000, neuron_col='NeuronID', time_col='TimeBinIndex', group_col='MonkeyGroup', count_col='SpikeCount'):
+def time_resolved_permutation_test(df, n_permutations=1000, neuron_col='NeuronID', time_col='TimeBinIndex',
+                                   group_col='MonkeyGroup', count_col='SpikeCount'):
     results = []
 
     unique_neurons = df[neuron_col].unique()
@@ -369,6 +377,7 @@ def time_resolved_permutation_test(df, n_permutations=1000, neuron_col='NeuronID
 
     return pd.DataFrame(results)
 
+
 def plot_time_resolved_significance(time_glm_results, time_perm_results, neuron_id, time_bin_size=0.05):
     glm_df = time_glm_results[time_glm_results['NeuronID'] == neuron_id]
     perm_df = time_perm_results[time_perm_results['NeuronID'] == neuron_id]
@@ -403,6 +412,7 @@ def plot_time_resolved_significance(time_glm_results, time_perm_results, neuron_
     fig.legend(loc='upper right')
     plt.tight_layout()
     plt.show()
+
 
 def detect_significant_time_windows(time_perm_results, alpha=0.05, time_bin_size=0.05):
     """

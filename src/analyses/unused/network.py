@@ -7,7 +7,8 @@ from monkey_names import Zombies
 def create_digraph_with_edge_weights(edge_weights):
     normalized_edge_weights = normalize_weights_min_max(edge_weights)
     print(normalized_edge_weights)
-    G = nx.from_pandas_edgelist(normalized_edge_weights, source='Focal Name', target='Social Modifier', edge_attr='weight',
+    G = nx.from_pandas_edgelist(normalized_edge_weights, source='Focal Name', target='Social Modifier',
+                                edge_attr='weight',
                                 create_using=nx.DiGraph)
     adj_matrix = nx.to_numpy_array(G, nodelist=sorted(G.nodes()))
     adj_df = pd.DataFrame(adj_matrix, index=sorted(G.nodes()), columns=sorted(G.nodes()))
@@ -52,14 +53,16 @@ def create_digraph_with_top_70_percent_of_edge_weights(edge_weights):
 
 def normalize_weights_min_max(edgelist):
     normalized_edgelist = edgelist[['Focal Name', 'Social Modifier']]
-    normalized_edgelist['weight'] = (edgelist['weight'] - edgelist['weight'].min()) / (edgelist['weight'].max() - edgelist['weight'].min())
+    normalized_edgelist['weight'] = (edgelist['weight'] - edgelist['weight'].min()) / (
+            edgelist['weight'].max() - edgelist['weight'].min())
     normalized_edgelist['weight'] = normalized_edgelist['weight'] * 8
     return normalized_edgelist
 
 
 def create_graph_with_edge_weights(edge_weights):
     normalized_edge_weights = normalize_weights_min_max(edge_weights)
-    G = nx.from_pandas_edgelist(normalized_edge_weights, source='Focal Name', target='Social Modifier', edge_attr='weight',
+    G = nx.from_pandas_edgelist(normalized_edge_weights, source='Focal Name', target='Social Modifier',
+                                edge_attr='weight',
                                 create_using=nx.Graph)
     adj_matrix = nx.to_numpy_array(G, nodelist=sorted(G.nodes()))
     adj_df = pd.DataFrame(adj_matrix, index=sorted(G.nodes()), columns=sorted(G.nodes()))
@@ -69,9 +72,11 @@ def create_graph_with_edge_weights(edge_weights):
     print(weights)
     return G, adj_matrix, weights
 
+
 def create_graph_with_top_60_percent_of_edge_weights(edge_weights):
     normalized_edge_weights = normalize_weights_min_max(edge_weights)
-    G = nx.from_pandas_edgelist(normalized_edge_weights, source='Focal Name', target='Social Modifier', edge_attr='weight',
+    G = nx.from_pandas_edgelist(normalized_edge_weights, source='Focal Name', target='Social Modifier',
+                                edge_attr='weight',
                                 create_using=nx.Graph)
 
     # Extract all edge weights
@@ -94,4 +99,3 @@ def create_graph_with_top_60_percent_of_edge_weights(edge_weights):
     print(remaining_weights)
 
     return G, adj_matrix, remaining_weights
-

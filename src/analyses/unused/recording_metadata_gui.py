@@ -1,8 +1,9 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import pandas as pd
 import os
+import tkinter as tk
 from datetime import date
+from tkinter import ttk, messagebox
+
+import pandas as pd
 
 # CSV file name
 CSV_FILE = "data_records.csv"
@@ -12,6 +13,7 @@ channel_order = [
     15, 16, 1, 30, 8, 23, 0, 31, 14, 17, 2, 29, 13, 18, 7, 24,
     3, 28, 12, 19, 4, 27, 9, 22, 11, 20, 5, 26, 10, 21, 6, 25
 ]
+
 
 # Reset all fields to defaults
 def reset_to_defaults():
@@ -27,6 +29,7 @@ def reset_to_defaults():
     region_var.set("ER")
     for ch in channel_order:
         channel_vars[ch].set("No spikes")
+
 
 # Save to CSV functionality
 def save_to_csv():
@@ -78,10 +81,10 @@ def save_to_csv():
     else:
         # Create a new DataFrame with required columns
         data = pd.DataFrame(columns=[
-            "Date", "Round No", "Target AP Location", "Target ML Location",
-            "Target DV Location", "Absolute Depth (µm)", "Azimuth (°)",
-            "Elevation (°)", "Region"
-        ] + [f"Channel {ch}" for ch in channel_order])
+                                        "Date", "Round No", "Target AP Location", "Target ML Location",
+                                        "Target DV Location", "Absolute Depth (µm)", "Azimuth (°)",
+                                        "Elevation (°)", "Region"
+                                    ] + [f"Channel {ch}" for ch in channel_order])
 
     # Check for duplicate Date and Round No
     duplicate = data[(data["Date"] == date_value) & (data["Round No"] == round_no)]
@@ -112,6 +115,7 @@ def save_to_csv():
     data = pd.concat([data, new_data_df], ignore_index=True)
     data.to_csv(CSV_FILE, index=False)
     messagebox.showinfo("Success", "Data saved successfully!")
+
 
 # Create the main window
 root = tk.Tk()
@@ -183,7 +187,8 @@ for ch in channel_order:
     row_frame.pack(fill="x", pady=2)
     tk.Label(row_frame, text=f"Channel {ch}:").pack(side="left")
     channel_vars[ch] = tk.StringVar(value="No spikes")
-    ttk.Combobox(row_frame, textvariable=channel_vars[ch], values=categories, state="readonly", width=15).pack(side="right")
+    ttk.Combobox(row_frame, textvariable=channel_vars[ch], values=categories, state="readonly", width=15).pack(
+        side="right")
 
 # Buttons for saving and resetting
 save_button = tk.Button(root, text="Save", command=save_to_csv)
@@ -194,5 +199,3 @@ reset_button.grid(row=10, column=1, pady=10)
 
 # Run the application
 root.mainloop()
-
-

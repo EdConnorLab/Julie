@@ -1,15 +1,13 @@
-import pandas as pd
 import numpy as np
-
+import pandas as pd
 from excel_data_reader import ExcelDataReader
-from data_readers.social_data_reader import SocialDataReader
-
-from enums.behaviors import AgonisticBehaviors as Agonistic
-from enums.behaviors import SubmissiveBehaviors as Submissive
-from enums.behaviors import AffiliativeBehaviors as Affiliative
-from enums.behaviors import IndividualBehaviors as Individual
 from monkey_names import Zombies, BestFrans
-import spike_rate_computation
+
+from data_readers.social_data_reader import SocialDataReader
+from enums.behaviors import AffiliativeBehaviors as Affiliative
+from enums.behaviors import AgonisticBehaviors as Agonistic
+from enums.behaviors import IndividualBehaviors as Individual
+from enums.behaviors import SubmissiveBehaviors as Submissive
 
 
 def extract_specific_social_behavior(social_data, social_behavior):
@@ -143,7 +141,7 @@ if __name__ == '__main__':
     edge_list_sub = generate_edge_list_from_extracted_interactions(sub)
     submissive_feature_df = generate_feature_matrix_from_edge_list(edge_list_sub, bestfrans)
     submissive_feature_df.to_excel('bestfrans_feature_df_submission_updated.xlsx')
-#
+    #
     # Affiliative
     affiliative_behaviors = list(Affiliative)
     aff = extract_specific_social_behavior(social_data, affiliative_behaviors)

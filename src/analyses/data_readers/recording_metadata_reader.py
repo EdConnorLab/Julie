@@ -5,7 +5,8 @@ from pathlib import Path
 import pandas as pd
 from clat.intan.channels import Channel
 
-from excel_data_reader import ExcelDataReader
+from analyses.data_readers.excel_data_reader import ExcelDataReader
+
 
 def standardize_date(date_input):
     if isinstance(date_input, str):
@@ -41,7 +42,8 @@ class RecordingMetadataReader(ExcelDataReader):
 
     def get_valid_channels(self, date, round_number) -> list:
         matching_round = self.recording_metadata[
-            (self.recording_metadata['Date'] == str(date)) & (self.recording_metadata['Round No.'] == int(round_number))]
+            (self.recording_metadata['Date'] == str(date)) & (
+                    self.recording_metadata['Round No.'] == int(round_number))]
         channels = matching_round['Channels1'].apply(
             lambda x: [x] if isinstance(x, int) else [int(i.strip()) for i in str(x).split(',')]).tolist()
         enum_channels = [Channel(f'C-{channel:03}') for channel in channels[0]]
@@ -54,7 +56,8 @@ class RecordingMetadataReader(ExcelDataReader):
 
     def get_pickle_filename_for_specific_round(self, date, round_number):
         matching_round = self.recording_metadata[
-            (self.recording_metadata['Date'] == str(date)) & (self.recording_metadata['Round No.'] == int(round_number))]
+            (self.recording_metadata['Date'] == str(date)) & (
+                    self.recording_metadata['Round No.'] == int(round_number))]
         filename = matching_round['Pickle File Name'].iloc[0]
         return str(filename) + ".pkl"
 
@@ -65,7 +68,8 @@ class RecordingMetadataReader(ExcelDataReader):
 
     def get_intan_folder_name_for_specific_round(self, date, round_number):
         matching_round = self.recording_metadata[
-            (self.recording_metadata['Date'] == str(date)) & (self.recording_metadata['Round No.'] == int(round_number))]
+            (self.recording_metadata['Date'] == str(date)) & (
+                    self.recording_metadata['Round No.'] == int(round_number))]
         folder_name = matching_round['Folder Name'].iloc[0]
         return str(folder_name)
 
@@ -91,6 +95,9 @@ class RecordingMetadataReader(ExcelDataReader):
         round_dir_path = base_dir / monkey / str(date) / intan_dir
 
         return pickle_filepath, valid_channels, round_dir_path
+
+    def get_metadata_for_preliminary_analysis(self):
+        return self.xl.parse('InitialRegression')
 
 
 #
