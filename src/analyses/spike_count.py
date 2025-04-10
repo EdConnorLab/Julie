@@ -73,10 +73,10 @@ def explode_spike_data(combined_data, date, round_no):
 
     exploded_df['BaseChannel'] = exploded_df['Channel'].apply(normalize_channel)
     exploded_df['Date'] = date
-    exploded_df['RoundNo'] = round_no
+    exploded_df['Round No.'] = round_no
     exploded_df['NeuronID'] = (
         exploded_df['Date'].astype(str) + "_" +
-        exploded_df['RoundNo'].astype(str) + "_" +
+        exploded_df['Round No.'].astype(str) + "_" +
         exploded_df['Channel'].astype(str)
     )
 

@@ -6,7 +6,7 @@ from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
 from scipy.stats import f_oneway, kruskal, mannwhitneyu, ttest_ind
 
 from monkey_names import Zombies
-from spike_count import prepare_combined_spike_data
+from spike_count import prepare_binned_spike_data, aggregate_trial_level
 from spike_rate_computation import get_spike_rates_for_each_trial
 
 # ================================
@@ -183,25 +183,108 @@ def two_sample_t_test(df):
         spike_rates = get_spike_rates_for_each_trial(date, round_no)
         print(spike_rates)
 
+
+def generate_sliding_time_windows(window_size, step_size, total_duration=2000):
+    """
+    Generate a list of time windows (tuples) using numpy for efficient computation.
+    The windows are sliding across a specified total duration with overlap.
+
+    Parameters:
+    window_size (int): The size of each time window in milliseconds.
+    step_size (int): The step size in milliseconds by which the window slides.
+    total_duration (int): Total duration in milliseconds over which to generate windows (default 2000 ms).
+
+    Returns:
+    numpy.ndarray: Array of tuples, each representing a time window with a start and end time.
+    """
+    # Validate inputs
+    if window_size <= 0 or step_size <= 0 or window_size > total_duration:
+        raise ValueError("Invalid window size, step size, or total duration.")
+
+    # Create start points using np.arange
+    start_points = np.arange(0, total_duration - window_size + 1, step_size)
+
+    # Create an array of windows using start points
+    windows = np.array(list(zip(start_points, start_points + window_size)))
+
+    return windows
+
+
+def generate_time_windows_for_given_window_size(window_size):
+    """
+    Generate a list of time windows (tuples) representing ranges with a specified window size using numpy.
+
+    Parameters:
+    window_size (int): Must be a positive integer and should not exceed 2000 ms.
+
+    Returns:
+    numpy.ndarray: Array of tuples, each tuple represents a range.
+
+    Raises:
+    ValueError:
+        If the window_size is not a positive integer or exceeds 2000 ms.
+    """
+    if not isinstance(window_size, int) or window_size <= 0 or window_size > 2000:
+        raise ValueError("Window size must be a positive integer and not exceed 2000 ms.")
+
+    starts = np.arange(0, 2000, window_size)
+    ends = starts + window_size
+    return np.array(list(zip(starts, ends)))
+
+
 if __name__ == '__main__':
-    zombies = [member.value for name, member in Zombies.__members__.items()]
-    del zombies[6]
-    del zombies[-1]
     date = "2023-09-26"
     round_no = 1
-    analysis_df = prepare_combined_spike_data(zombies, date, round_no, 0.05)
-    neuron_id = analysis_df['NeuronID'].unique()[0]  # or pick any neuron you like
-    neuron_df = analysis_df[analysis_df['NeuronID'] == neuron_id]
-    # Group by TimeBinIndex and StimulusGroup
-    grouped = neuron_df.groupby(['TimeBinIndex', 'StimulusGroup'])['SpikeCount'].apply(list)
+    analysis_df = prepare_binned_spike_data(date, round_no, 0.05)
+    filtered_df = analysis_df[analysis_df['MonkeyGroup'] == 'Zombies']
+    trial_level_df = aggregate_trial_level(filtered_df)
 
-    # Pivot table: rows = time bins, columns = stimulus groups, values = lists of spike counts
-    anova_input_df = grouped.unstack(fill_value=[]).reset_index(drop=True)
-    results, total_significant = perform_test_on_dataframe_rows(
-        anova_input_df,
-        test_func=permutation_anova_test,
-        num_permutations=1000
-    )
+    all_results = []
+    unique_neurons = trial_level_df['NeuronID'].unique()
+    for neuron_id in unique_neurons:
+        neuron_df = trial_level_df[trial_level_df['NeuronID'] == neuron_id]
+        grouped = neuron_df.groupby('MonkeyName')['SpikeCount'].apply(list)
+        # Safety check: skip neurons with fewer than 2 monkeys in data
+        if len(grouped) < 2:
+            print(f"Neuron {neuron_id}: Skipped — fewer than 2 monkeys.")
+            continue
+
+        anova_input_df = pd.DataFrame([grouped])
+
+        # Run permutation ANOVA
+        results, total_significant = perform_test_on_dataframe_rows(
+            anova_input_df,
+            test_func=permutation_anova_test,
+            num_permutations=1000
+        )
+
+        for result in results:
+            index, f_stat, p_value = result
+            all_results.append({
+                'NeuronID': neuron_id,
+                'F-statistic': f_stat,
+                'p-value': p_value
+            })
+
+    results_df = pd.DataFrame(all_results)
+    print(results_df)
+
+    significant_df = results_df[results_df['p-value'] < 0.05]
+    print("\nSignificant neurons (p < 0.05):")
+    print(significant_df)
+    # neuron_id = analysis_df['NeuronID'].unique()[0]  # or pick any neuron you like
+    # neuron_df = analysis_df[analysis_df['NeuronID'] == neuron_id]
+    # # Group by TimeBinIndex and StimulusGroup
+    # grouped = neuron_df.groupby(['TimeBinIndex', 'MonkeyName'])['SpikeCount'].apply(list)
+    # # Pivot table: rows = time bins, columns = stimulus groups, values = lists of spike counts
+    # anova_input_df = grouped.unstack(fill_value=[]).reset_index(drop=True)
+    # results, total_significant = perform_test_on_dataframe_rows(
+    #     anova_input_df,
+    #     test_func=permutation_anova_test,
+    #     num_permutations=1000
+    # )
+    # print(results)
+    # print(total_significant)
 
     '''
     Date Created : 2024-04-29
