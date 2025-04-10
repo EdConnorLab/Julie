@@ -9,14 +9,49 @@ from data_readers.recording_metadata_reader import RecordingMetadataReader
 from spike_rate_computation import read_sorted_data, get_raw_data_and_channels_from_files
 
 """
+Data Preparation Module for Spike Data Analysis
+-----------------------------------------------
+
+This module contains functions for loading, exploding, binning, 
+and aggregating spike data for downstream analyses (e.g., permutation ANOVA).
+
+Function structure:
+
+1. Data Loading and Combination
+   - load_and_combine_data(): Load raw unsorted and sorted spike data, and combine.
+
+2. Data Explosion (Wide → Long Format)
+   - explode_spike_data(): Explode spike times into long-format DataFrame with metadata.
+
+3. Spike Time Binning
+   - bin_spike_times(): Bin spike times into spike counts per time bin.
+
+4. Pipeline Helpers
+   - prepare_exploded_spike_data(): Prepare exploded spike data (pre-binning).
+   - prepare_binned_spike_data(): Prepare binned spike data with spike counts.
+
+5. Data Aggregation
+   - aggregate_trial_level(): Aggregate spike counts across time bins per trial.
+   - aggregate_bin_level(): Aggregate spike counts at bin level across trials.
+
+Usage notes:
+- Use `prepare_exploded_spike_data()` when you need spike times for flexible analyses.
+- Use `prepare_binned_spike_data()` when you need binned spike counts for statistical tests.
+- Aggregation functions are optional helpers for trial-level or time-resolved analysis.
 
 """
 
+def load_and_combine_data(date, round_no):
+    """Load and combine raw unsorted and sorted spike data."""
+    raw_unsorted_data, _, sorted_data = load_raw_data(date, round_no)
+    combined_data = combine_unsorted_with_sorted(raw_unsorted_data, sorted_data)
+    return combined_data
 
 # --- Data explosion (wide → long format) ---
-def explode_monkey_data(monkey_data):
+def explode_spike_data(combined_data, date, round_no):
+    """Explode spike times into long-format DataFrame with metadata."""
     rows = []
-    for _, row in monkey_data.iterrows():
+    for _, row in combined_data.iterrows():
         for channel_enum, spike_list in row['SpikeTimes'].items():
             rows.append({
                 'TaskField': row['TaskField'],
@@ -27,34 +62,46 @@ def explode_monkey_data(monkey_data):
                 'SpikeTimes': spike_list,
                 'EpochStartStop': row['EpochStartStop']
             })
+    exploded_df = pd.DataFrame(rows)
 
-    return pd.DataFrame(rows)
-
-
-# --- Channel normalization ---
-def normalize_channel_names(df):
-    sample_channel = str(df['Channel'].iloc[0])
+    sample_channel = str(exploded_df['Channel'].iloc[0])
     has_unit = "_Unit" in sample_channel
 
-    def normalize(ch):
+    def normalize_channel(ch):
         ch_str = str(ch) if not hasattr(ch, 'value') else str(ch)
         return ch_str.split("_Unit")[0] if has_unit else ch_str
 
-    df['BaseChannel'] = df['Channel'].apply(normalize)
-    return df
+    exploded_df['BaseChannel'] = exploded_df['Channel'].apply(normalize_channel)
+    exploded_df['Date'] = date
+    exploded_df['RoundNo'] = round_no
+    exploded_df['NeuronID'] = (
+        exploded_df['Date'].astype(str) + "_" +
+        exploded_df['RoundNo'].astype(str) + "_" +
+        exploded_df['Channel'].astype(str)
+    )
+
+    return exploded_df
 
 
-# --- Spike count binning ---
-def count_spikes_per_bin(df, bin_size):
-    chunk_spike_counts = []
-    for _, row in df.iterrows():
+def prepare_exploded_spike_data(date, round_no):
+    """Prepare exploded spike data (pre-binning)."""
+    combined_data = load_and_combine_data(date, round_no)
+    exploded_df = explode_spike_data(combined_data, date, round_no)
+    return exploded_df
+
+
+def bin_spike_times(exploded_df, bin_size):
+    """Bin spike times into spike counts per time bin."""
+    binned_rows = []
+
+    for _, row in exploded_df.iterrows():
         start_time, end_time = row['EpochStartStop']
         spike_times = row['SpikeTimes']
-        time_chunks = [start_time + i * bin_size for i in range(int((end_time - start_time) / bin_size) + 1)]
+        time_bins = [start_time + i * bin_size for i in range(int((end_time - start_time) / bin_size) + 1)]
 
-        for bin_index in range(len(time_chunks) - 1):
-            count = sum(time_chunks[bin_index] <= t < time_chunks[bin_index + 1] for t in spike_times)
-            chunk_spike_counts.append({
+        for bin_index in range(len(time_bins) - 1):
+            count = sum(time_bins[bin_index] <= t < time_bins[bin_index + 1] for t in spike_times)
+            binned_rows.append({
                 'MonkeyGroup': row['MonkeyGroup'],
                 'MonkeyName': row['MonkeyName'],
                 'TaskField': row['TaskField'],
@@ -62,59 +109,30 @@ def count_spikes_per_bin(df, bin_size):
                 'BaseChannel': row['BaseChannel'],
                 'EpochStartStop': row['EpochStartStop'],
                 'TimeBinIndex': bin_index,
-                'SpikeCount': count
+                'SpikeCount': count,
+                'Date': row['Date'],
+                'Round No.': row['Round No.'],
+                'NeuronID': row['NeuronID']
             })
 
-    return pd.DataFrame(chunk_spike_counts)
+    return pd.DataFrame(binned_rows)
 
 
-# --- Add neuron ID ---
-def add_neuron_id(df):
-    df['NeuronID'] = df['TaskField'].astype(str) + "_" + df['BaseChannel'].astype(str)
-    return df
+def prepare_binned_spike_data(date, round_no, bin_size):
+    """Prepare binned spike data with spike counts."""
+    exploded_df = prepare_exploded_spike_data(date, round_no)
+    binned_df = bin_spike_times(exploded_df, bin_size)
+    return binned_df
 
 
 # --- Aggregate ---
 def aggregate_trial_level(df):
     """Collapse spike counts across time bins per trial (trial-level total spike count)."""
-    return df.groupby(['NeuronID', 'TaskField', 'MonkeyName', 'StimulusGroup'], as_index=False)['SpikeCount'].sum()
-
+    return df.groupby(['NeuronID', 'TaskField', 'MonkeyName', 'MonkeyGroup'], as_index=False)['SpikeCount'].sum()
 
 def aggregate_bin_level(df):
     """Aggregate spike counts at bin level across trials (for time-resolved analysis)."""
-    return df.groupby(['StimulusGroup', 'TimeBinIndex'], as_index=False)['SpikeCount'].mean()
-
-
-def prepare_combined_spike_data(monkeys, date, round_no, bin_size):
-    # Step 1: Load data
-    raw_unsorted_data, _, sorted_data = load_raw_data(date, round_no)
-
-    # Step 2: Combine unsorted and sorted data safely
-    combined_data = combine_unsorted_with_sorted(raw_unsorted_data, sorted_data)
-
-    # Step 3: Explode spike times into long format
-    exploded_df = explode_monkey_data(combined_data)
-    if monkeys is not None:
-        exploded_df = exploded_df[exploded_df['MonkeyName'].isin(monkeys)]
-
-    # Step 4: Normalize channels
-    exploded_df = normalize_channel_names(exploded_df)
-
-    # Step 5: Bin spikes
-    binned_df = count_spikes_per_bin(exploded_df, bin_size)
-
-    # Step 6: Add date and round info
-    binned_df['Date'] = date
-    binned_df['RoundNo'] = round_no
-
-    # Step 7: Add NeuronID (Date + RoundNo + full Channel string)
-    binned_df['NeuronID'] = (
-        binned_df['Date'].astype(str) + "_" +
-        binned_df['RoundNo'].astype(str) + "_" +
-        binned_df['Channel'].astype(str)  # Channel includes Unit info if sorted
-    )
-
-    return binned_df
+    return df.groupby(['MonkeyGroup', 'TimeBinIndex'], as_index=False)['SpikeCount'].mean()
 
 
 def get_spike_counts_for_given_time_window(monkeys, raw_data, channels, time_window):
@@ -246,7 +264,5 @@ if __name__ == '__main__':
     date = '2023-09-26'
     round_no = 1
 
-    analysis_df = prepare_combined_spike_data(
-        None, date, round_no, 0.05
-    )
+    analysis_df = prepare_combined_spike_data(date, round_no, 0.05)
     print(analysis_df)
