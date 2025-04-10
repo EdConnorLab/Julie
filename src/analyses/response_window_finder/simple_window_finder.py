@@ -5,7 +5,7 @@ from clat.intan.channels import Channel
 from scipy.ndimage import gaussian_filter1d
 from itertools import zip_longest
 
-from spike_count import get_spike_counts_for_time_chunks_compatible, get_spike_count_for_single_neuron_with_time_window
+from spike_count import process_spike_counts_with_binning, get_spike_count_for_single_neuron_with_time_window
 from anova_on_spike_counts import perform_anova_on_dataframe_rows_for_time_windowed
 from channel_enum_resolvers import convert_to_enum, drop_duplicate_channels_with_matching_time_window
 from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
@@ -60,7 +60,7 @@ def element_wise_sum_of_spike_counts_over_all_monkeys_for_each_channel(df):
     return summed
 def compute_total_sum_of_spikes(raw_data, monkeys, channels, chunk_size):
 
-    spike_counts = get_spike_counts_for_time_chunks_compatible(monkeys, raw_data, channels, chunk_size)
+    spike_counts = process_spike_counts_with_binning(monkeys, raw_data, channels, chunk_size)
     spike_counts_summed_over_each_monkey = element_wise_sum_of_spike_counts_over_each_monkey(spike_counts)
     spike_counts_summed_across_monkeys = element_wise_sum_of_spike_counts_over_all_monkeys_for_each_channel(spike_counts_summed_over_each_monkey)
     return spike_counts_summed_across_monkeys
