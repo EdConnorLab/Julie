@@ -199,7 +199,8 @@ def run_single_feature_linear_regression_analysis(X, metadata_for_regression, fe
 
 
 def generate_r_squared_histogram_for_specific_population(X, feature_names, location):
-    metadata = get_metadata_for_preliminary_analysis()
+    reader = RecordingMetadataReader()
+    metadata = reader.get_metadata_for_preliminary_analysis()
     neural_population = metadata[metadata['Location'] == location]
     stat_param_list = []
     for index, row in neural_population.iterrows():
@@ -254,7 +255,7 @@ if __name__ == '__main__':
     """
     '''
     # Get all experimental round information
-    metadata_for_regression = get_metadata_for_preliminary_analysis()
+    metadata_for_regression = RecordingMetadataReader().get_metadata_for_preliminary_analysis()
 
     monkey = "81G"
     agon_beh, Sm_arrow_agon, Sarrow_m_agon = social_data_processor.partition_behavior_variance_from_excel_file(

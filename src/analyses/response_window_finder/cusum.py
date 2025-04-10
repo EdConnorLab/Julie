@@ -140,7 +140,6 @@ if __name__ == '__main__':
             threshold = 0.5
             # filtered_data= gaussian_filter1d(normalized_data, sigma=0.8)
 
-            change_points = simple_thresholding(normalized_data, threshold)
             # cusum_pos, cusum_neg, change_points = cusum(normalized_data, 0, k, h)
             windows = extract_consecutive_ranges(change_points)
             time_windows = find_corresponding_values_for_index_ranges(windows, rounded_time)
