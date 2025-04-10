@@ -2,32 +2,138 @@ import math
 import numpy as np
 import pandas as pd
 
-from channel_enum_resolvers import is_channel_in_dict, get_value_from_dict_with_channel
-from initial_4feature_lin_reg import get_spike_count_for_single_neuron_with_time_window, \
-    get_metadata_for_list_of_cells_with_time_window, get_metadata_for_preliminary_analysis
-from monkey_names import Zombies, BestFrans
-from data_readers.recording_metadata_reader import RecordingMetadataReader
-from scipy.stats import f_oneway, kruskal
+from initial_4feature_lin_reg import get_metadata_for_preliminary_analysis
+from scipy.stats import f_oneway, kruskal, mannwhitneyu, ttest_ind
 
-from single_channel_analysis import get_spike_count
-from spike_rate_computation import get_average_spike_rates_for_each_monkey, get_spike_rates_for_each_trial
+from monkey_names import Zombies
+from spike_count import prepare_combined_spike_data
+from spike_rate_computation import get_spike_rates_for_each_trial
 
-def perform_statistical_test_on_dataframe_rows(df, test_name='anova'):
+# ================================
+# Core statistical tests
+# ================================
+
+def anova_test(groups):
+    """Standard one-way ANOVA."""
+    return f_oneway(*groups)
+
+def kruskal_test(groups):
+    """Non-parametric Kruskal-Wallis test."""
+    return kruskal(*groups)
+
+def u_test(groups):
+    """
+    Perform Mann-Whitney U test (non-parametric test for two independent samples).
+    (non-parametric alternative to t-test)
+    Assumes two groups only.
+    """
+    if len(groups) != 2:
+        raise ValueError(f"Mann-Whitney U test requires exactly 2 groups, but got {len(groups)}.")
+
+    group1, group2 = groups
+    stat, p_val = mannwhitneyu(group1, group2, alternative='two-sided')
+    return stat, p_val
+
+def t_test(groups):
+    """
+    Perform independent two-sample t-test.
+    Assumes two groups only.
+    """
+    if len(groups) != 2:
+        raise ValueError(f"T-test requires exactly 2 groups, but got {len(groups)}.")
+
+    group1, group2 = groups
+    stat, p_val = ttest_ind(group1, group2, equal_var=False)  # Welch’s t-test, safer for unequal variances
+    return stat, p_val
+
+def permutation_anova_test(groups, num_permutations=1000):
+    """Permutation-based one-way ANOVA."""
+    data = np.concatenate(groups)
+    original_group_sizes = [len(group) for group in groups]
+    observed_f_stat, _ = f_oneway(*groups)
+
+    permutation_f_stats = []
+    for _ in range(num_permutations):
+        np.random.shuffle(data)
+        new_groups = np.split(data, np.cumsum(original_group_sizes)[:-1])
+        f_stat, _ = f_oneway(*new_groups)
+        permutation_f_stats.append(f_stat)
+
+    p_value = np.mean([f_stat >= observed_f_stat for f_stat in permutation_f_stats])
+    return observed_f_stat, p_value
+
+# ================================
+# Row-wise DataFrame tests
+# ================================
+
+def perform_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=True, **kwargs):
+    """
+    General-purpose function to apply a statistical test to each row of a DataFrame.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame where each row contains lists or arrays of values for each group.
+    test_func : function
+        The statistical test function to apply. Must accept a list of groups as the first argument.
+    alpha : float, optional
+        Significance threshold for counting significant results.
+    print_results : bool, optional
+        Whether to print results row by row.
+    **kwargs :
+        Additional keyword arguments passed to the test function.
+
+    Returns
+    -------
+    results : list of tuples
+        Each tuple contains (row index, test statistic, p-value).
+    total_significant : int
+        Total number of rows with p-value < alpha.
+    """
+
     results = []
-    significant_results = []
-    for index, row in df.iterrows():
-        # Extract groups as lists
-        groups = [group for group in row if isinstance(group, list)]
-        if test_name == 'anova':
-            stat, p_val = f_oneway(*groups)
-            results.append((stat, p_val))
-        if test_name == 'kruskal':
-            stat, p_val = kruskal(*groups)
-            results.append((stat, p_val))
-        # if p_val < 0.05:
-        #     significant_results.append((date, round_no, index, p_val))
-    return results, significant_results
+    total_significant = 0
 
+    for index, row in df.iterrows():
+        # Extract groups: list of non-empty lists or arrays
+        groups = [np.array(cell) for cell in row if isinstance(cell, (list, np.ndarray)) and len(cell) > 0]
+
+        # Safety check: skip if fewer than 2 groups or any empty group
+        if len(groups) < 2:
+            if print_results:
+                print(f"Row {index}: Skipped — less than 2 valid groups.")
+            continue
+
+        try:
+            # Apply test function
+            stat, p_value = test_func(groups, **kwargs)
+
+            # NaN check
+            if math.isnan(stat) or math.isnan(p_value):
+                if print_results:
+                    print(f"Row {index}: Skipped — NaN result.")
+                continue
+
+            # Store result
+            results.append((index, stat, p_value))
+
+            # Count significant
+            if p_value < alpha:
+                total_significant += 1
+                if print_results:
+                    print(f"Row {index}: Stat = {stat:.4f}, p = {p_value:.4f}")
+
+        except ValueError as e:
+            # If test fails (e.g., not enough data points), skip row
+            if print_results:
+                print(f"Row {index}: Error — {e}")
+            continue
+
+    return results, total_significant
+
+# ================================
+# Everything below this line needs to be refactored
+# ================================
 
 
 def perform_anova_on_dataframe_rows_for_time_windowed(df):
@@ -60,36 +166,7 @@ def perform_anova_on_dataframe_rows_for_time_windowed(df):
     return results_df, significant_results_df
 
 
-def anova_permutation_test(groups, num_permutations=1000):
-    data = np.concatenate(groups)
-    original_group_sizes = [len(group) for group in groups]
-    observed_f_stat, _ = f_oneway(*groups)
-
-    permutation_f_stats = []
-    for _ in range(num_permutations):
-        np.random.shuffle(data)
-        new_groups = np.split(data, np.cumsum(original_group_sizes)[:-1])
-        f_stat, _ = f_oneway(*new_groups)
-        permutation_f_stats.append(f_stat)
-
-    p_value = np.mean([f_stat >= observed_f_stat for f_stat in permutation_f_stats])
-    return observed_f_stat, p_value
-
-
-def perform_anova_permutation_test_on_rows(df, num_permutations=1000):
-    results = []
-    total_sig = 0
-    for index, row in df.iterrows():
-        groups = [np.array(cell) for cell in row if isinstance(cell, list)]
-        f_stat, p_value = anova_permutation_test(groups, num_permutations=num_permutations)
-        # results.append((f_stat, p_value))
-        if p_value < 0.05 and not math.isnan(f_stat):
-            results.append((index, f_stat, p_value))
-            print(f"Row {index}: F-statistic = {f_stat}, p-value = {p_value}")
-            total_sig += 1
-    return results, total_sig
-
-
+# TODO: finish writing this function
 def two_sample_t_test(df):
     '''
     Compare if the means of two groups are different
@@ -105,9 +182,26 @@ def two_sample_t_test(df):
         round_no = row['Round No.']
         spike_rates = get_spike_rates_for_each_trial(date, round_no)
         print(spike_rates)
-    # TODO: finish writing this function
 
 if __name__ == '__main__':
+    zombies = [member.value for name, member in Zombies.__members__.items()]
+    del zombies[6]
+    del zombies[-1]
+    date = "2023-09-26"
+    round_no = 1
+    analysis_df = prepare_combined_spike_data(zombies, date, round_no, 0.05)
+    neuron_id = analysis_df['NeuronID'].unique()[0]  # or pick any neuron you like
+    neuron_df = analysis_df[analysis_df['NeuronID'] == neuron_id]
+    # Group by TimeBinIndex and StimulusGroup
+    grouped = neuron_df.groupby(['TimeBinIndex', 'StimulusGroup'])['SpikeCount'].apply(list)
+
+    # Pivot table: rows = time bins, columns = stimulus groups, values = lists of spike counts
+    anova_input_df = grouped.unstack(fill_value=[]).reset_index(drop=True)
+    results, total_significant = perform_test_on_dataframe_rows(
+        anova_input_df,
+        test_func=permutation_anova_test,
+        num_permutations=1000
+    )
 
     '''
     Date Created : 2024-04-29

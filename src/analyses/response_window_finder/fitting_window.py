@@ -6,7 +6,7 @@ from scipy.ndimage import gaussian_filter1d
 from anova_on_spike_counts import perform_anova_on_dataframe_rows_for_time_windowed
 from cusum import extract_consecutive_ranges, find_corresponding_values_for_index_ranges
 from monkey_names import Zombies
-from spike_count import get_spike_counts_for_time_chunks, get_spike_count_for_single_neuron_with_time_window
+from spike_count import count_spikes_per_bin, get_spike_count_for_single_neuron_with_time_window
 from spike_rate_computation import get_raw_data_and_channels_from_files
 
 def unique_elements(list_of_lists):
@@ -141,7 +141,7 @@ if __name__ == '__main__':
 
         time_chunk_size = 0.05  # in sec
 
-        spike_counts = get_spike_counts_for_time_chunks(zombies, raw_unsorted_data, valid_channels, time_chunk_size)
+        spike_counts = count_spikes_per_bin(zombies, raw_unsorted_data, valid_channels, time_chunk_size)
         spike_counts['total_sum'] = spike_counts.apply(lambda row: [sum(elements) for elements in zip(*row)], axis=1)
         total_sum = spike_counts['total_sum']
         # print(total_sum)
