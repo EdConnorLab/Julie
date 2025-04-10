@@ -11,7 +11,7 @@ import spike_rate_analysis
 if __name__ == '__main__':
 
     # Get genealogy matrix
-    excel_data_reader = ExcelDataReader(file_name='../../../behaviors/genealogy_matrix.xlsx')
+    excel_data_reader = ExcelDataReader(file_name='../../../social_data/genealogy_matrix.xlsx')
     genealogy_data = excel_data_reader.get_first_sheet()
     print(genealogy_data)
     genealogy_data['Focal Name'] = genealogy_data['Focal Name'].astype(str)

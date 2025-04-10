@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 def main():
-    file_path = '/behaviors/Combined_Elo_Ratings.csv'
+    file_path = '/social_data/Zombies_Elo_Ratings.csv'
     combined_elo_ratings_sorted = pd.read_csv(file_path)
 
     # Initialize a directed graph

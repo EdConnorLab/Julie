@@ -7,7 +7,7 @@ from excel_data_reader import ExcelDataReader
 class SocialDataReader(ExcelDataReader):
 
     def __init__(self, file_name):
-        super().__init__(subfolder='behaviors', file_name=file_name)
+        super().__init__(subfolder='social_data', file_name=file_name)
         self.raw_social_data = self.get_raw_social_data()
         self.social_data = self.clean_raw_social_data()
 

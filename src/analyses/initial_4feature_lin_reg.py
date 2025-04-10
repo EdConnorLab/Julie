@@ -258,7 +258,7 @@ if __name__ == '__main__':
     bestfrans_spike_counts.to_excel('bestfrans_spike_counts_2nd_list_windowed.xlsx')
     """
     Looking at each neuron using average spikes rate over 10 trials
-    1D analysis for different types of behaviors (affiliation, submission, aggression)
+    1D analysis for different types of social_data (affiliation, submission, aggression)
 
     """
     '''

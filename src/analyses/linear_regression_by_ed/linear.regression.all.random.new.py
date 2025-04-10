@@ -81,7 +81,7 @@ nbehaviors = 6
 
 Rsquared = []    #3-dimensional list of Rsquared values above 0.25; Rsquared[behavior][sourcemonkey][cell]
 for i in range (0, nbehaviors):
-    behavior_list = []    #outer or 1st dimension of list array is behaviors
+    behavior_list = []    #outer or 1st dimension of list array is social_data
     for j in range (0, nmonkeys):
         monkey_list = []    #2nd dimension is source monkeys
         for k in range (0, ncells):
@@ -92,7 +92,7 @@ for i in range (0, nbehaviors):
     
 nless = []    # randomized Rsquared values less than observed out of 1000 randomizations
 for i in range (0, nbehaviors):
-    rand_behavior_list = []    #outer or 1st dimension of list array is behaviors
+    rand_behavior_list = []    #outer or 1st dimension of list array is social_data
     for j in range (0, nmonkeys):
         rand_monkey_list = []    #2nd dimension is source monkeys
         for k in range (0, ncells):

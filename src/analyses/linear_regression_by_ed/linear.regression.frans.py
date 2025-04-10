@@ -88,7 +88,7 @@ nbehaviors = 6
 
 Rsquared = []    #3-dimensional list of Rsquared values above 0.25; Rsquared[behavior][sourcemonkey][cell]
 for i in range (0, nbehaviors):
-    behavior_list = []    #outer or 1st dimension of list array is behaviors
+    behavior_list = []    #outer or 1st dimension of list array is social_data
     for j in range (0, nmonkeys):
         monkey_list = []    #2nd dimension is source monkeys
         for k in range (0, ncells):
@@ -636,7 +636,7 @@ behaviorname = ['AFFILIATION TO', 'AFFILIATION FROM', 'SUBMISSION TO', 'SUBMISSI
 
 Rsquared_total = []    #2-dimensional list of total Rsquared values above 0.25; Rsquared[behavior][monkey]
 for i in range (0, nbehaviors):
-    behavior_list = []    #outer or 1st dimension of list array is behaviors
+    behavior_list = []    #outer or 1st dimension of list array is social_data
     for j in range (0, nmonkeys):
         behavior_list.append(0.0)    #2nd dimension is monkeys
     Rsquared_total.append(behavior_list)

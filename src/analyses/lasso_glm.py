@@ -58,7 +58,7 @@ for zombie in zombies:
 
 subject_specific = np.hstack(all_arrays)
 
-# get general behaviors separately
+# get general social_data separately
 cortana = '81G'
 X_agon, agon_feature_names = construct_feature_matrix_from_behavior_data(cortana, agon_beh, Sm_arrow_agon,
                                                                          Sarrow_m_agon, 'Agonism')

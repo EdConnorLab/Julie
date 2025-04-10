@@ -65,7 +65,7 @@ def generate_edge_list_from_extracted_interactions(interaction_df):
 
 def generate_edge_list_from_pairwise_interactions(interaction_df):
     if (interaction_df['Behavior Abbrev'].isin(['ISU', 'AOS'])).all():
-        # Switch actor and receiver for the submissive behaviors
+        # Switch actor and receiver for the submissive social_data
         temp = interaction_df['Focal Name'].copy()
         interaction_df['Focal Name'] = interaction_df['Social Modifier']
         interaction_df['Social Modifier'] = temp
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     # Agonistic
     agonistic_behaviors = list(Agonistic)
     agon = extract_specific_social_behavior(social_data, agonistic_behaviors)
-    # Counting specific behaviors and saving the data table as excel
+    # Counting specific social_data and saving the data table as excel
     # agon_behavior_specific_count = agon.groupby('Behavior').apply(lambda x: x.groupby(['Focal Name', 'Social Modifier']).size()).reset_index(name='Count')
     # agon_behavior_specific_count.columns = ['Behavior', 'Actor', 'Receiver', 'Count']
     # agon_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_agonism.xlsx')
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     # Submissive
     submissive_behaviors = list(Submissive)
     sub = extract_specific_social_behavior(social_data, submissive_behaviors)
-    # Counting specific behaviors and saving the data table as excel
+    # Counting specific social_data and saving the data table as excel
     # sub_behavior_specific_count = sub.groupby('Behavior').apply(lambda x: x.groupby(['Focal Name', 'Social Modifier']).size()).reset_index(name='Count')
     # sub_behavior_specific_count.columns = ['Behavior', 'Actor', 'Receiver', 'Count']
     # sub_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_submission.xlsx')
@@ -147,7 +147,7 @@ if __name__ == '__main__':
     # Affiliative
     affiliative_behaviors = list(Affiliative)
     aff = extract_specific_social_behavior(social_data, affiliative_behaviors)
-    # Counting specific behaviors and saving the data table as excel
+    # Counting specific social_data and saving the data table as excel
     # aff_behavior_specific_count = aff.groupby('Behavior').apply(lambda x: x.groupby(['Focal Name', 'Social Modifier']).size()).reset_index(name='Count')
     # aff_behavior_specific_count.columns = ['Behavior', 'Actor', 'Receiver', 'Count']
     # aff_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_affiliation.xlsx')

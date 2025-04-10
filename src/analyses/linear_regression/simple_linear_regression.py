@@ -83,7 +83,7 @@ if __name__ == "__main__":
     zombies = [member.value for name, member in Zombies.__members__.items()]
     del zombies[-1]
 
-    base_dir = '/home/connorlab/Documents/GitHub/Julie/behaviors/'
+    base_dir = '/social_data/'
     zombies_affiliation_file_name = 'zombies_feature_df_affiliation.xlsx'
     zombies_submission_file_name = 'zombies_feature_df_submission.xlsx'
     zombies_agonism_file_name = 'zombies_feature_df_agonism.xlsx'

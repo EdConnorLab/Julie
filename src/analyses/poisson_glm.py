@@ -17,7 +17,7 @@ from spike_rate_computation import get_average_spike_rates_for_each_monkey
 """
 Regressors
     1. Regressor group 1: genealogy
-    2. Regressor group 2: frequency of behaviors (affiliative, agonistic, submissive)
+    2. Regressor group 2: frequency of social_data (affiliative, agonistic, submissive)
     standardize behavioral matrix (subtract mean and divide by standard deviation)
 
 Response
@@ -26,7 +26,7 @@ Response
     3. Set time window -- 300 ms to 1000 ms
 
 """
-# Get frequency of behaviors table
+# Get frequency of social_data table
 monkey = "81G"
 agon_beh, Sm_arrow_agon, Sarrow_m_agon = social_data_processor.partition_behavior_variance_from_excel_file(
     'feature_df_agonism.xlsx')

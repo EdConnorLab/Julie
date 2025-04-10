@@ -68,7 +68,7 @@ nbehaviors = 6
 
 Rsquared = []    #2-dimensional list of Rsquared values above 0.25; Rsquared[behavior][cell]
 for i in range (0, nbehaviors):
-    behavior_list = []    #outer or 1st dimension of list array is behaviors
+    behavior_list = []    #outer or 1st dimension of list array is social_data
     for k in range (0, ncells):
         behavior_list.append(0.0)    #2nd dimension is cells
     Rsquared.append(behavior_list)
