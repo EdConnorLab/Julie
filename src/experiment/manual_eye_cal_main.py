@@ -15,14 +15,14 @@ db = mysql.connector.connect(
     database='test',
 )
 
-start_time = "2025-04-10 12:41:00"
-stop_time = "2025-04-10 12:55:00"
-eye = "left"
+start_time = "2025-04-11 11:00:00"
+stop_time = "2025-04-11 11:07:00"
+eye = "right"
 iscan_id = eye + "Iscan"
 calibration_degree = 10
 
-slide_on_delay = 10  # I.e. only display data starting 20 ms AFTER slide on time
-slide_on_max = 200
+slide_on_delay = 20  # I.e. only display data starting 20 ms AFTER slide on time
+slide_on_max = 300
 
 _DEFAULT_FIX_VOLTS = array([
     [-1.3883866292598201, -0.06545510829115075],  # left
