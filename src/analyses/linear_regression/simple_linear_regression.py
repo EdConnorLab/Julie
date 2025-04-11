@@ -1,10 +1,12 @@
 import numpy as np
 import pandas as pd
-from monkey_names import Zombies, BestFrans
-from recording_metadata_reader import RecordingMetadataReader
+import matplotlib.pyplot as plt
+import os
+from analyses.enums.monkey_names import Zombies, BestFrans
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import explained_variance_score
-from spike_count import get_spike_count_for_single_neuron_with_time_window
+from analyses.spike_count import get_spike_count_for_single_neuron_with_time_window
 
 
 def run_linear_regression_using_sklearn(x, y):
@@ -20,25 +22,30 @@ def run_linear_regression_using_sklearn(x, y):
     return coeff, intercept, r_squared
 
 
-def run_linear_regression_manually(x, y):
-    x = np.array(x).reshape(-1, 1)
-    y = np.array(y).reshape(-1, 1)
-    m_y = np.mean(y)
-    m_x = np.mean(x)
-    n = len(x)
-    SS_xy = np.sum((x - m_x) * (y - m_y))
-    SS_xx = np.sum((x - m_x) ** 2)
-    # compute mean of x and y
-    m_y /= float(n)
-    m_x /= float(n)
-    b_1_ed = SS_xy / SS_xx
-    b_0_ed = m_y - b_1_ed * m_x
-    ypred = []
-    for ixy in range(0, len(y)):
-        ypred.append(b_0_ed + b_1_ed * x[ixy])
-    r_sq = explained_variance_score(y, ypred)
-    return b_1_ed, b_0_ed, r_sq
 
+def plot_regression_scatter(x, y, coeff, intercept, r_squared, behavior_name, source_monkey, neuron_id, output_dir="regression_plots"):
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    plt.figure(figsize=(6, 4))
+    plt.scatter(x, y, color='blue', alpha=0.7, label='Data points')
+
+    # Regression line
+    x_vals = np.array(plt.gca().get_xlim())
+    y_vals = intercept + coeff * x_vals
+    plt.plot(x_vals, y_vals, color='red', label=f'Fit: y = {coeff[0]:.2f}x + {intercept[0]:.2f}')
+
+    # Labels and title
+    plt.xlabel('Mean Firing Rate')
+    plt.ylabel(f'{behavior_name} Score')
+    plt.title(f'Neuron {neuron_id} | {behavior_name} | {source_monkey}\nR² = {r_squared:.2f}')
+    plt.legend()
+
+    # Save plot
+    filename = f"{behavior_name}_{source_monkey}_Neuron{neuron_id}.png"
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, filename))
+    plt.close()
 
 def run_linear_regression_analysis(spike_counts, behavior_table, behavior_name):
     results = []
@@ -58,6 +65,16 @@ def run_linear_regression_analysis(spike_counts, behavior_table, behavior_name):
                 x = [value for key, value in row.items() if
                      key not in exclude_columns and isinstance(value, (int, float))]
             coeff, intercept, r_squared = run_linear_regression_using_sklearn(x, y)
+            plot_regression_scatter(
+                x=np.array(x),
+                y=np.array(y),
+                coeff=coeff,
+                intercept=intercept,
+                r_squared=r_squared,
+                behavior_name=behavior_name,
+                source_monkey=zombies[sourcemonkey],
+                neuron_id=index
+            )
             if r_squared > 0.25:
                 print("")
                 print(
