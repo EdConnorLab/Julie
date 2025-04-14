@@ -1,5 +1,7 @@
 import math
+import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import f_oneway, kruskal, mannwhitneyu, ttest_ind
@@ -62,8 +64,24 @@ def permutation_anova_test(groups, num_permutations=1000):
         permutation_f_stats.append(f_stat)
 
     p_value = np.mean([f_stat >= observed_f_stat for f_stat in permutation_f_stats])
-    return observed_f_stat, p_value
+    return observed_f_stat, p_value, permutation_f_stats
 
+def plot_permutation_anova_distribution(perm_f_stats, observed_f_stat, neuron_id, category_name, output_dir="permutation_anova_plots"):
+    os.makedirs(output_dir, exist_ok=True)
+
+    plt.figure(figsize=(6, 4))
+    plt.hist(perm_f_stats, bins=30, color='skyblue', alpha=0.7, label='Permutation null')
+    plt.axvline(observed_f_stat, color='red', linestyle='--', label=f'Observed F = {observed_f_stat:.3f}')
+
+    plt.xlabel('F-statistic')
+    plt.ylabel('Frequency')
+    plt.title(f'Neuron {neuron_id} | {category_name} Permutation ANOVA')
+    plt.legend()
+
+    filename = f"Neuron{neuron_id}_{category_name}_permutation_anova.png"
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, filename))
+    plt.close()
 
 # ================================
 # Row-wise DataFrame tests
@@ -226,31 +244,26 @@ def generate_time_windows_for_given_window_size(window_size):
     ends = starts + window_size
     return np.array(list(zip(starts, ends)))
 
-
-if __name__ == '__main__':
-    date = "2023-09-26"
-    round_no = 1
-    analysis_df = prepare_binned_spike_data(date, round_no, 0.05)
-    filtered_df = analysis_df[analysis_df['MonkeyGroup'] == 'Zombies']
-    trial_level_df = aggregate_trial_level(filtered_df)
-
+def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', count_col='SpikeCount', n_permutations=1000, alpha=0.05, verbose=True):
+    """df has to be trial-level spike counts -- perform aggregate_trial_level before passing it in"""
     all_results = []
-    unique_neurons = trial_level_df['NeuronID'].unique()
+    unique_neurons = df[neuron_col].unique()
     for neuron_id in unique_neurons:
-        neuron_df = trial_level_df[trial_level_df['NeuronID'] == neuron_id]
-        grouped = neuron_df.groupby('MonkeyName')['SpikeCount'].apply(list)
+        neuron_df = df[df[neuron_col] == neuron_id]
+        grouped = neuron_df.groupby(category_col)[count_col].apply(list)
         # Safety check: skip neurons with fewer than 2 monkeys in data
         if len(grouped) < 2:
             print(f"Neuron {neuron_id}: Skipped — fewer than 2 monkeys.")
             continue
 
-        anova_input_df = pd.DataFrame([grouped])
+        permutation_anova_input_df = pd.DataFrame([grouped])
 
         # Run permutation ANOVA
         results, total_significant = perform_test_on_dataframe_rows(
-            anova_input_df,
+            permutation_anova_input_df,
             test_func=permutation_anova_test,
-            num_permutations=1000
+            num_permutations=n_permutations,
+            alpha = alpha
         )
 
         for result in results:
@@ -262,11 +275,43 @@ if __name__ == '__main__':
             })
 
     results_df = pd.DataFrame(all_results)
-    print(results_df)
+    if verbose:
+        significant_df = results_df[results_df['p-value'] < 0.05]
+        print("\nSignificant neurons (p < 0.05):")
+        print(significant_df)
 
-    significant_df = results_df[results_df['p-value'] < 0.05]
-    print("\nSignificant neurons (p < 0.05):")
-    print(significant_df)
+    return results_df
+
+def plot_permutation_anova_results_summary(results_df):
+    plt.figure(figsize=(12, 5))
+
+    # Plot p-value distribution
+    plt.subplot(1, 2, 1)
+    sns.histplot(results_df['p-value'], bins=20, kde=False)
+    plt.title('Permutation ANOVA: P-value Distribution')
+    plt.xlabel('P-value')
+    plt.ylabel('Neuron Count')
+
+    # Plot F-statistic distribution
+    plt.subplot(1, 2, 2)
+    sns.histplot(results_df['F-statistic'], bins=20, kde=False)
+    plt.title('Permutation ANOVA: F-statistic Distribution')
+    plt.xlabel('F-statistic')
+    plt.ylabel('Neuron Count')
+
+    plt.tight_layout()
+    plt.show()
+
+
+if __name__ == '__main__':
+    date = "2023-09-26"
+    round_no = 2
+    analysis_df = prepare_binned_spike_data(date, round_no, 0.05)
+    filtered_df = analysis_df[analysis_df['MonkeyGroup'] == 'Zombies']
+    zombies_trial_df = aggregate_trial_level(filtered_df)
+    results = run_permutation_anova(zombies_trial_df, category_col='MonkeyName', neuron_col='NeuronID', count_col='SpikeCount',
+                          n_permutations=1000, alpha=0.05, verbose=True)
+
     # neuron_id = analysis_df['NeuronID'].unique()[0]  # or pick any neuron you like
     # neuron_df = analysis_df[analysis_df['NeuronID'] == neuron_id]
     # # Group by TimeBinIndex and StimulusGroup

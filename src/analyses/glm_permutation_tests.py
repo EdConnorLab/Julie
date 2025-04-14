@@ -6,98 +6,10 @@ import pandas as pd
 import seaborn as sns
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
-from fpdf import FPDF
 from tqdm import tqdm  # progress bar
+from statsmodels.stats.multitest import multipletests
 
 from spike_count import prepare_binned_spike_data
-
-
-class PDFReport(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, 'Neuron Analysis Report', ln=True, align='C')
-
-    def chapter_title(self, title):
-        self.set_font('Arial', 'B', 11)
-        self.cell(0, 10, title, ln=True)
-
-    def chapter_body(self, text):
-        self.set_font('Arial', '', 10)
-        self.multi_cell(0, 8, text)
-        self.ln()
-
-    def add_image(self, image_path):
-        self.image(image_path, w=180)
-        self.ln()
-
-
-def generate_neuron_reports(analysis_df, glm_results, perm_results, output_dir='neuron_pdf_reports',
-                            time_bin_size=0.05):
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Merge glm + perm results
-    summary_report = merge_glm_and_permutation(glm_results, perm_results)
-
-    sig_neurons = summary_report[
-        (summary_report['GLM_significant'] == True) | (summary_report['Permutation_significant'] == True)
-        ]['NeuronID'].unique()
-
-    for neuron in tqdm(sig_neurons, desc="Generating PDF reports"):
-        neuron_df = analysis_df[analysis_df['NeuronID'] == neuron]
-
-        # Prepare PSTH plot and save as PNG
-        fig_path = os.path.join(output_dir, f'{neuron}_PSTH.png')
-        plt.figure(figsize=(8, 4))
-        sns.lineplot(
-            data=neuron_df,
-            x=neuron_df['TimeBinIndex'] * time_bin_size,
-            y='SpikeCount',
-            hue='MonkeyGroup',
-            estimator='mean',
-            ci='sd'
-        )
-        plt.title(f'Neuron: {neuron} PSTH')
-        plt.xlabel('Time (s)')
-        plt.ylabel('Spike Count')
-        plt.legend(title='Stimulus Group')
-        plt.tight_layout()
-        plt.savefig(fig_path)
-        plt.close()
-
-        # Prepare GLM summary
-        neuron_glm = glm_results[glm_results['NeuronID'] == neuron]
-        glm_text = ""
-        if not neuron_glm.empty:
-            for _, row in neuron_glm.iterrows():
-                glm_text += f"Predictor: {row['index']}, Coef: {row['Coef.']:.3f}, P: {row['P>|z|']:.3f}\n"
-        else:
-            glm_text = "No GLM results."
-
-        # Prepare permutation summary
-        neuron_perm = perm_results[perm_results['NeuronID'] == neuron]
-        if not neuron_perm.empty:
-            perm_row = neuron_perm.iloc[0]
-            perm_text = f"Observed Difference: {perm_row['ObservedDifference']:.3f}, P-value: {perm_row['P-value']:.3f}"
-        else:
-            perm_text = "No permutation results."
-
-        # Create PDF
-        pdf = PDFReport()
-        pdf.add_page()
-
-        pdf.chapter_title(f'Neuron ID: {neuron}')
-        pdf.chapter_title('GLM Summary:')
-        pdf.chapter_body(glm_text)
-
-        pdf.chapter_title('Permutation Test Summary:')
-        pdf.chapter_body(perm_text)
-
-        pdf.chapter_title('PSTH Plot:')
-        pdf.add_image(fig_path)
-
-        # Save PDF
-        pdf.output(os.path.join(output_dir, f'{neuron}_Report.pdf'))
-
 
 def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
     results = []
@@ -130,8 +42,26 @@ def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
         return pd.DataFrame()
 
 
-def permutation_test(df, n_permutations=1000, neuron_col='NeuronID', group_col='MonkeyGroup',
-                     count_col='SpikeCount'):
+def plot_permutation_distribution(perm_diffs, observed_diff, neuron_id, category_name, output_dir="permutation_plots"):
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    plt.figure(figsize=(6, 4))
+    plt.hist(perm_diffs, bins=30, color='skyblue', alpha=0.7, label='Permutation null')
+    plt.axvline(observed_diff, color='red', linestyle='--', label=f'Observed diff = {observed_diff:.3f}')
+
+    plt.xlabel('Difference in Mean Spike Count')
+    plt.ylabel('Frequency')
+    plt.title(f'Neuron {neuron_id} | {category_name} Permutation Test')
+    plt.legend()
+
+    filename = f"Neuron{neuron_id}_{category_name}_permutation.png"
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, filename))
+    plt.close()
+
+def run_permutation_test(df, n_permutations=1000, neuron_col='NeuronID', category_col='MonkeyGroup',
+                         count_col='SpikeCount', plot = False):
     results = []
 
     unique_neurons = df[neuron_col].unique()
@@ -140,7 +70,7 @@ def permutation_test(df, n_permutations=1000, neuron_col='NeuronID', group_col='
         neuron_df = df[df[neuron_col] == neuron]
 
         # Get actual group means
-        group_means = neuron_df.groupby(group_col)[count_col].mean()
+        group_means = neuron_df.groupby(category_col)[count_col].mean()
         if group_means.shape[0] < 2:
             continue  # Skip if not enough groups
 
@@ -151,8 +81,8 @@ def permutation_test(df, n_permutations=1000, neuron_col='NeuronID', group_col='
         perm_diffs = []
         for _ in range(n_permutations):
             shuffled = neuron_df.copy()
-            shuffled[group_col] = np.random.permutation(shuffled[group_col].values)
-            perm_group_means = shuffled.groupby(group_col)[count_col].mean()
+            shuffled[category_col] = np.random.permutation(shuffled[category_col].values)
+            perm_group_means = shuffled.groupby(category_col)[count_col].mean()
             perm_diff = perm_group_means.max() - perm_group_means.min()
             perm_diffs.append(perm_diff)
 
@@ -165,11 +95,18 @@ def permutation_test(df, n_permutations=1000, neuron_col='NeuronID', group_col='
             'ObservedDifference': observed_diff,
             'P-value': p_value
         })
+        if plot:
+            plot_permutation_distribution(
+                perm_diffs=perm_diffs,
+                observed_diff=observed_diff,
+                neuron_id=neuron,
+                category_name=category_col
+            )
 
     return pd.DataFrame(results)
 
 
-def plot_permutation_results(perm_results):
+def plot_permutation_results_summary(perm_results):
     plt.figure(figsize=(12, 5))
 
     # Plot p-value distribution
@@ -199,7 +136,7 @@ def merge_glm_and_permutation(glm_results, perm_results):
     merged = pd.merge(glm_summary, perm_results, on='NeuronID', how='outer')
 
     # Multiple comparison correction (optional)
-    from statsmodels.stats.multitest import multipletests
+
 
     # GLM
     if not merged['GLM_P_value'].isnull().all():
@@ -502,7 +439,7 @@ if __name__ == '__main__':
     #     analysis_df,
     #     n_permutations=1000,
     #     neuron_col='NeuronID',
-    #     group_col='MonkeyGroup',  # stimulus group
+    #     category_col='MonkeyGroup',  # stimulus group
     #     count_col='SpikeCount'
     # )
     #
