@@ -63,7 +63,7 @@ def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', 
     """df has to be trial-level spike counts -- perform aggregate_trial_level before passing it in"""
     all_results = []
     unique_neurons = df[neuron_col].unique()
-    for neuron in unique_neurons:
+    for neuron in tqdm(unique_neurons, desc="Running permutation ANOVA per neuron"):
         neuron_df = df[df[neuron_col] == neuron]
         grouped = neuron_df.groupby(category_col)[count_col].apply(list)
         # Safety check: skip neurons with fewer than 2 monkeys in data
@@ -104,9 +104,9 @@ def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', 
     results_df = pd.DataFrame(all_results)
     significant_df = results_df[results_df['p-value'] < 0.05]
     print("\nResults:")
-    print(results.head())
+    print(results_df)
     print("\nSignificant neurons (p < 0.05):")
-    print(significant_df.head())
+    print(significant_df)
 
 
     return results_df
@@ -125,8 +125,9 @@ def plot_permutation_anova_distribution(perm_f_stats, observed_f_stat, neuron_id
 
     filename = f"Neuron{neuron_id}_{category_name}_permutation_anova.png"
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, filename))
-    plt.close()
+    # plt.savefig(os.path.join(output_dir, filename))
+    plt.show()
+    # plt.close()
 
 def plot_permutation_anova_results_summary(results_df):
     plt.figure(figsize=(12, 5))

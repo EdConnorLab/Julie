@@ -7,7 +7,6 @@ import pandas as pd
 from scipy.stats import f_oneway, kruskal, mannwhitneyu, ttest_ind
 
 from analyses.spike_count import prepare_binned_spike_data, aggregate_trial_level
-from glm_permutation_tests import run_permutation_anova
 
 
 # ================================
@@ -71,7 +70,7 @@ def permutation_anova_test(groups, num_permutations=1000):
 # Row-wise DataFrame tests
 # ================================
 
-def perform_statistical_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=True, **kwargs):
+def perform_statistical_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=False, **kwargs):
     """
     General-purpose function to apply a statistical test to each row of a DataFrame.
 
