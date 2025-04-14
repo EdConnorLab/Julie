@@ -160,6 +160,9 @@ def get_spike_counts_for_given_time_window(monkeys, raw_data, channels, time_win
     return monkey_spike_counts
 
 
+# --- everything below needs refactoring
+
+
 def count_spikes_for_specific_cell_time_windowed(raw_data, cell, time_window):
     unique_monkeys = raw_data['MonkeyName'].dropna().unique().tolist()
     spike_count_per_channel = pd.DataFrame()
@@ -257,11 +260,3 @@ def add_metadata_to_spike_counts(spike_count_df, date, round_number, time_window
     spike_count_df['Time Window'] = [time_window] * len(spike_count_df)
     return spike_count_df
 
-
-if __name__ == '__main__':
-    zombies = [member.value for name, member in Zombies.__members__.items()]
-    del zombies[6]
-    del zombies[-1]
-
-    date = '2023-09-26'
-    round_no = 1

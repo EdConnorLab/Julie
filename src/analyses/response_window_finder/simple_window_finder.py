@@ -213,7 +213,7 @@ if __name__ == '__main__':
     results_expanded = results_sorted.explode('Time Window')
     results_expanded['Time Window'] = results_expanded['Time Window'].apply(
         lambda t: tuple(int(num * 1000) for num in t))
-    # results_expanded.to_excel('simple_window_finder_windows.xlsx')
+    results_expanded.to_excel('simple_window_finder_windows_after_refactoring.xlsx')
     # print("shape")
     print(results_expanded)
     # print(results_expanded.shape)
