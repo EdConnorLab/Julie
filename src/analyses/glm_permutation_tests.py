@@ -10,11 +10,11 @@ from tqdm import tqdm  # progress bar
 from statsmodels.stats.multitest import multipletests
 
 from spike_count import prepare_binned_spike_data
+from statistical_tests import perform_statistical_test_on_dataframe_rows, permutation_anova_test
+
 
 def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
     results = []
-
-    # unique neuron list
     unique_neurons = df[neuron_col].unique()
 
     for neuron in tqdm(unique_neurons, desc="Running GLM per neuron"):
@@ -23,7 +23,6 @@ def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
         # Skip neurons with too few spikes
         if neuron_df['SpikeCount'].sum() == 0:
             continue
-
         try:
             model = smf.glm(formula=formula, data=neuron_df, family=sm.families.Poisson()).fit()
             summary = model.summary2().tables[1].reset_index()
@@ -41,93 +40,115 @@ def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
         print("No valid neurons found for GLM.")
         return pd.DataFrame()
 
+def plot_glm_coefficients(glm_results):
+    coef_df = glm_results[glm_results['index'] != '(Intercept)'].copy()
 
-def plot_permutation_distribution(perm_diffs, observed_diff, neuron_id, category_name, output_dir="permutation_plots"):
-    # Create output directory if it doesn't exist
+    # Clean predictor names
+    coef_df['Predictor'] = coef_df['index'].str.replace('C\\(MonkeyName\\)\\[T\\.', '', regex=True)
+    coef_df['Predictor'] = coef_df['Predictor'].str.replace(']', '')
+
+    # Pivot for heatmap
+    pivot_df = coef_df.pivot(index='NeuronID', columns='Predictor', values='Coef.')
+
+    # Plot
+    plt.figure(figsize=(12, max(6, len(pivot_df) * 0.3)))
+    sns.heatmap(pivot_df, cmap='coolwarm', center=0, annot=False, cbar_kws={'label': 'Coefficient'})
+    plt.title('GLM Coefficients (Stimulus Identity Effect per Neuron)')
+    plt.xlabel('Stimulus Identity (MonkeyName)')
+    plt.ylabel('Neuron ID')
+    plt.tight_layout()
+    plt.show()
+
+def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', count_col='SpikeCount', n_permutations=1000, alpha=0.05, plot=True):
+    """df has to be trial-level spike counts -- perform aggregate_trial_level before passing it in"""
+    all_results = []
+    unique_neurons = df[neuron_col].unique()
+    for neuron in unique_neurons:
+        neuron_df = df[df[neuron_col] == neuron]
+        grouped = neuron_df.groupby(category_col)[count_col].apply(list)
+        # Safety check: skip neurons with fewer than 2 monkeys in data
+        if len(grouped) < 2:
+            print(f"Neuron {neuron}: Skipped — fewer than 2 monkeys.")
+            continue
+
+        permutation_anova_input_df = pd.DataFrame([grouped])
+
+        # Run permutation ANOVA
+        results, total_significant, details = perform_statistical_test_on_dataframe_rows(
+            permutation_anova_input_df,
+            test_func=permutation_anova_test,
+            num_permutations=n_permutations,
+            alpha = alpha
+        )
+
+        for result in results:
+            index, f_stat, p_value = result
+            all_results.append({
+                'NeuronID': neuron,
+                'F-statistic': f_stat,
+                'p-value': p_value
+            })
+
+            if plot:
+                detail = details.get(index, {})
+                extras = detail.get('extras')
+                if extras:
+                    perm_f_stats, = extras
+                    plot_permutation_anova_distribution(
+                        perm_f_stats=perm_f_stats,
+                        observed_f_stat=detail['stat'],
+                        neuron_id=neuron,
+                        category_name=category_col,
+                        output_dir="permutation_anova_plots"
+                    )
+    results_df = pd.DataFrame(all_results)
+    significant_df = results_df[results_df['p-value'] < 0.05]
+    print("\nResults:")
+    print(results.head())
+    print("\nSignificant neurons (p < 0.05):")
+    print(significant_df.head())
+
+
+    return results_df
+
+def plot_permutation_anova_distribution(perm_f_stats, observed_f_stat, neuron_id, category_name, output_dir="permutation_anova_plots"):
     os.makedirs(output_dir, exist_ok=True)
 
     plt.figure(figsize=(6, 4))
-    plt.hist(perm_diffs, bins=30, color='skyblue', alpha=0.7, label='Permutation null')
-    plt.axvline(observed_diff, color='red', linestyle='--', label=f'Observed diff = {observed_diff:.3f}')
+    plt.hist(perm_f_stats, bins=30, color='skyblue', alpha=0.7, label='Permutation null')
+    plt.axvline(observed_f_stat, color='red', linestyle='--', label=f'Observed F = {observed_f_stat:.3f}')
 
-    plt.xlabel('Difference in Mean Spike Count')
+    plt.xlabel('F-statistic')
     plt.ylabel('Frequency')
-    plt.title(f'Neuron {neuron_id} | {category_name} Permutation Test')
+    plt.title(f'Neuron {neuron_id} | {category_name} Permutation ANOVA')
     plt.legend()
 
-    filename = f"Neuron{neuron_id}_{category_name}_permutation.png"
+    filename = f"Neuron{neuron_id}_{category_name}_permutation_anova.png"
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, filename))
     plt.close()
 
-def run_permutation_test(df, n_permutations=1000, neuron_col='NeuronID', category_col='MonkeyGroup',
-                         count_col='SpikeCount', plot = False):
-    results = []
-
-    unique_neurons = df[neuron_col].unique()
-
-    for neuron in tqdm(unique_neurons, desc="Running permutation test per neuron"):
-        neuron_df = df[df[neuron_col] == neuron]
-
-        # Get actual group means
-        group_means = neuron_df.groupby(category_col)[count_col].mean()
-        if group_means.shape[0] < 2:
-            continue  # Skip if not enough groups
-
-        # Actual observed difference (max group - min group mean)
-        observed_diff = group_means.max() - group_means.min()
-
-        # Permutation distribution
-        perm_diffs = []
-        for _ in range(n_permutations):
-            shuffled = neuron_df.copy()
-            shuffled[category_col] = np.random.permutation(shuffled[category_col].values)
-            perm_group_means = shuffled.groupby(category_col)[count_col].mean()
-            perm_diff = perm_group_means.max() - perm_group_means.min()
-            perm_diffs.append(perm_diff)
-
-        # Calculate p-value
-        perm_diffs = np.array(perm_diffs)
-        p_value = np.mean(perm_diffs >= observed_diff)
-
-        results.append({
-            'NeuronID': neuron,
-            'ObservedDifference': observed_diff,
-            'P-value': p_value
-        })
-        if plot:
-            plot_permutation_distribution(
-                perm_diffs=perm_diffs,
-                observed_diff=observed_diff,
-                neuron_id=neuron,
-                category_name=category_col
-            )
-
-    return pd.DataFrame(results)
-
-
-def plot_permutation_results_summary(perm_results):
+def plot_permutation_anova_results_summary(results_df):
     plt.figure(figsize=(12, 5))
 
     # Plot p-value distribution
     plt.subplot(1, 2, 1)
-    sns.histplot(perm_results['P-value'], bins=20, kde=False)
-    plt.title('Permutation Test P-value Distribution')
+    sns.histplot(results_df['p-value'], bins=20, kde=False)
+    plt.title('Permutation ANOVA: P-value Distribution')
     plt.xlabel('P-value')
     plt.ylabel('Neuron Count')
 
-    # Plot observed difference distribution
+    # Plot F-statistic distribution
     plt.subplot(1, 2, 2)
-    sns.histplot(perm_results['ObservedDifference'], bins=20, kde=False)
-    plt.title('Observed Differences in Group Means')
-    plt.xlabel('Observed Difference (Max group - Min group)')
+    sns.histplot(results_df['F-statistic'], bins=20, kde=False)
+    plt.title('Permutation ANOVA: F-statistic Distribution')
+    plt.xlabel('F-statistic')
     plt.ylabel('Neuron Count')
 
     plt.tight_layout()
     plt.show()
 
-
-def merge_glm_and_permutation(glm_results, perm_results):
+def merge_glm_and_permutation_anova(glm_results, perm_results):
     # GLM 결과 neuron 별로 p-value 정리
     glm_summary = glm_results.groupby('NeuronID')['P>|z|'].min().reset_index()
     glm_summary.rename(columns={'P>|z|': 'GLM_P_value'}, inplace=True)
@@ -158,28 +179,6 @@ def merge_glm_and_permutation(glm_results, perm_results):
 
     return merged
 
-
-def plot_glm_coefficients(glm_results):
-    # Prepare data
-    coef_df = glm_results[glm_results['index'] != '(Intercept)'].copy()
-
-    # Clean predictor names
-    coef_df['Predictor'] = coef_df['index'].str.replace('C\\(MonkeyName\\)\\[T\\.', '', regex=True)
-    coef_df['Predictor'] = coef_df['Predictor'].str.replace(']', '')
-
-    # Pivot for heatmap
-    pivot_df = coef_df.pivot(index='NeuronID', columns='Predictor', values='Coef.')
-
-    # Plot
-    plt.figure(figsize=(12, max(6, len(pivot_df) * 0.3)))
-    sns.heatmap(pivot_df, cmap='coolwarm', center=0, annot=False, cbar_kws={'label': 'Coefficient'})
-    plt.title('GLM Coefficients (Stimulus Identity Effect per Neuron)')
-    plt.xlabel('Stimulus Identity (MonkeyName)')
-    plt.ylabel('Neuron ID')
-    plt.tight_layout()
-    plt.show()
-
-
 def plot_significant_neuron_psth(analysis_df, summary_report, time_bin_size=0.05):
     # Filter significant neurons (either GLM or permutation)
     sig_neurons = summary_report[
@@ -205,7 +204,6 @@ def plot_significant_neuron_psth(analysis_df, summary_report, time_bin_size=0.05
         plt.legend(title='Stimulus Group')
         plt.tight_layout()
         plt.show()
-
 
 def time_resolved_glm(df, neuron_col='NeuronID', time_col='TimeBinIndex', group_col='MonkeyGroup',
                       count_col='SpikeCount'):
@@ -248,7 +246,6 @@ def time_resolved_glm(df, neuron_col='NeuronID', time_col='TimeBinIndex', group_
 
     return pd.DataFrame(results)
 
-
 def plot_time_resolved_glm(time_glm_results, time_bin_size=0.05):
     unique_neurons = time_glm_results['NeuronID'].unique()
 
@@ -270,7 +267,6 @@ def plot_time_resolved_glm(time_glm_results, time_bin_size=0.05):
         plt.legend(title='Stimulus Group')
         plt.tight_layout()
         plt.show()
-
 
 def time_resolved_permutation_test(df, n_permutations=1000, neuron_col='NeuronID', time_col='TimeBinIndex',
                                    group_col='MonkeyGroup', count_col='SpikeCount'):
@@ -314,7 +310,6 @@ def time_resolved_permutation_test(df, n_permutations=1000, neuron_col='NeuronID
 
     return pd.DataFrame(results)
 
-
 def plot_time_resolved_significance(time_glm_results, time_perm_results, neuron_id, time_bin_size=0.05):
     glm_df = time_glm_results[time_glm_results['NeuronID'] == neuron_id]
     perm_df = time_perm_results[time_perm_results['NeuronID'] == neuron_id]
@@ -349,7 +344,6 @@ def plot_time_resolved_significance(time_glm_results, time_perm_results, neuron_
     fig.legend(loc='upper right')
     plt.tight_layout()
     plt.show()
-
 
 def detect_significant_time_windows(time_perm_results, alpha=0.05, time_bin_size=0.05):
     """

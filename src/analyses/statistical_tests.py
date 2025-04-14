@@ -7,6 +7,7 @@ import pandas as pd
 from scipy.stats import f_oneway, kruskal, mannwhitneyu, ttest_ind
 
 from analyses.spike_count import prepare_binned_spike_data, aggregate_trial_level
+from glm_permutation_tests import run_permutation_anova
 
 
 # ================================
@@ -66,28 +67,11 @@ def permutation_anova_test(groups, num_permutations=1000):
     p_value = np.mean([f_stat >= observed_f_stat for f_stat in permutation_f_stats])
     return observed_f_stat, p_value, permutation_f_stats
 
-def plot_permutation_anova_distribution(perm_f_stats, observed_f_stat, neuron_id, category_name, output_dir="permutation_anova_plots"):
-    os.makedirs(output_dir, exist_ok=True)
-
-    plt.figure(figsize=(6, 4))
-    plt.hist(perm_f_stats, bins=30, color='skyblue', alpha=0.7, label='Permutation null')
-    plt.axvline(observed_f_stat, color='red', linestyle='--', label=f'Observed F = {observed_f_stat:.3f}')
-
-    plt.xlabel('F-statistic')
-    plt.ylabel('Frequency')
-    plt.title(f'Neuron {neuron_id} | {category_name} Permutation ANOVA')
-    plt.legend()
-
-    filename = f"Neuron{neuron_id}_{category_name}_permutation_anova.png"
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, filename))
-    plt.close()
-
 # ================================
 # Row-wise DataFrame tests
 # ================================
 
-def perform_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=True, **kwargs):
+def perform_statistical_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=True, **kwargs):
     """
     General-purpose function to apply a statistical test to each row of a DataFrame.
 
@@ -114,6 +98,7 @@ def perform_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=True
 
     results = []
     total_significant = 0
+    details = {}  # To store additional outputs per row, if any
 
     for index, row in df.iterrows():
         # Extract groups: list of non-empty lists or arrays
@@ -127,7 +112,12 @@ def perform_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=True
 
         try:
             # Apply test function
-            stat, p_value = test_func(groups, **kwargs)
+            output = test_func(groups, **kwargs)
+            # Support flexible return values
+            if isinstance(output, tuple):
+                stat, p_value, *extras = output
+            else:
+                raise ValueError("test_func must return at least (stat, p_value)")
 
             # NaN check
             if math.isnan(stat) or math.isnan(p_value):
@@ -137,7 +127,13 @@ def perform_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=True
 
             # Store result
             results.append((index, stat, p_value))
-
+            # Store extras if available
+            if extras:
+                details[index] = {
+                    'extras': extras,
+                    'stat': stat,
+                    'p_value': p_value
+                }
             # Count significant
             if p_value < alpha:
                 total_significant += 1
@@ -150,7 +146,7 @@ def perform_test_on_dataframe_rows(df, test_func, alpha=0.05, print_results=True
                 print(f"Row {index}: Error — {e}")
             continue
 
-    return results, total_significant
+    return results, total_significant, details
 
 
 # ================================
@@ -185,16 +181,6 @@ def perform_anova_on_dataframe_rows_for_time_windowed(df):
     results_df = pd.DataFrame(results)
     significant_results_df = pd.DataFrame(significant_results)
     return results_df, significant_results_df
-
-
-# TODO: finish writing this function
-def two_sample_t_test(df):
-    '''
-    Compare if the means of two groups are different
-
-    Use this for comparing if there is a differential response
-    for one group (i.e. Zombies) vs rest of the groups (i.e. Best Frans, Instigators, etc.)
-    '''
 
 
 def generate_sliding_time_windows(window_size, step_size, total_duration=2000):
@@ -243,64 +229,6 @@ def generate_time_windows_for_given_window_size(window_size):
     starts = np.arange(0, 2000, window_size)
     ends = starts + window_size
     return np.array(list(zip(starts, ends)))
-
-def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', count_col='SpikeCount', n_permutations=1000, alpha=0.05, verbose=True):
-    """df has to be trial-level spike counts -- perform aggregate_trial_level before passing it in"""
-    all_results = []
-    unique_neurons = df[neuron_col].unique()
-    for neuron_id in unique_neurons:
-        neuron_df = df[df[neuron_col] == neuron_id]
-        grouped = neuron_df.groupby(category_col)[count_col].apply(list)
-        # Safety check: skip neurons with fewer than 2 monkeys in data
-        if len(grouped) < 2:
-            print(f"Neuron {neuron_id}: Skipped — fewer than 2 monkeys.")
-            continue
-
-        permutation_anova_input_df = pd.DataFrame([grouped])
-
-        # Run permutation ANOVA
-        results, total_significant = perform_test_on_dataframe_rows(
-            permutation_anova_input_df,
-            test_func=permutation_anova_test,
-            num_permutations=n_permutations,
-            alpha = alpha
-        )
-
-        for result in results:
-            index, f_stat, p_value = result
-            all_results.append({
-                'NeuronID': neuron_id,
-                'F-statistic': f_stat,
-                'p-value': p_value
-            })
-
-    results_df = pd.DataFrame(all_results)
-    if verbose:
-        significant_df = results_df[results_df['p-value'] < 0.05]
-        print("\nSignificant neurons (p < 0.05):")
-        print(significant_df)
-
-    return results_df
-
-def plot_permutation_anova_results_summary(results_df):
-    plt.figure(figsize=(12, 5))
-
-    # Plot p-value distribution
-    plt.subplot(1, 2, 1)
-    sns.histplot(results_df['p-value'], bins=20, kde=False)
-    plt.title('Permutation ANOVA: P-value Distribution')
-    plt.xlabel('P-value')
-    plt.ylabel('Neuron Count')
-
-    # Plot F-statistic distribution
-    plt.subplot(1, 2, 2)
-    sns.histplot(results_df['F-statistic'], bins=20, kde=False)
-    plt.title('Permutation ANOVA: F-statistic Distribution')
-    plt.xlabel('F-statistic')
-    plt.ylabel('Neuron Count')
-
-    plt.tight_layout()
-    plt.show()
 
 
 if __name__ == '__main__':
