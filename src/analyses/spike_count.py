@@ -145,10 +145,12 @@ def extract_spike_counts_from_windows(window_df):
          'WindowStart_ms', 'WindowEnd_ms', 'SpikeCount']
     """
     from tqdm import tqdm
+    from collections import defaultdict
 
     spike_count_rows = []
+    cache = {}  # (date, round_no) → exploded_df
 
-    for _, row in tqdm(window_df.iterrows(), total=len(window_df), desc="Extracting spike counts from raw"):
+    for _, row in tqdm(window_df.iterrows(), total=len(window_df), desc="Extracting spike counts"):
         neuron_id = row['NeuronID']
         start_ms = row['WindowStart_ms']
         end_ms = row['WindowEnd_ms']
@@ -157,25 +159,30 @@ def extract_spike_counts_from_windows(window_df):
 
         # Parse date and round_no from NeuronID
         parts = neuron_id.split('_', 3)
-        date_str, round_no = parts[0], parts[1]
-        date = date_str
-        round_no = int(round_no)
+        date_str, round_no = str(parts[0]), int(parts[1])
+        cache_key = (date_str, round_no)
+        # Load + cache exploded data
+        if cache_key not in cache:
+            exploded_df = prepare_exploded_spike_data(date_str, round_no)
+            cache[cache_key] = exploded_df
+        else:
+            exploded_df = cache[cache_key]
 
-        # Load raw spike times (exploded format)
-        exploded_df = prepare_exploded_spike_data(date, round_no)
         neuron_df = exploded_df[exploded_df['NeuronID'] == neuron_id]
-
         for _, trial_row in neuron_df.iterrows():
             spike_times = trial_row['SpikeTimes']
-            count = sum(start_sec <= t < end_sec for t in spike_times)
+            epoch_start, _ = trial_row['EpochStartStop']
+            window_start_abs = epoch_start + start_sec
+            window_end_abs = epoch_start + end_sec
+            count = sum(window_start_abs <= t < window_end_abs for t in spike_times)
 
             spike_count_rows.append({
                 'NeuronID': neuron_id,
                 'MonkeyName': trial_row['MonkeyName'],
                 'MonkeyGroup': trial_row['MonkeyGroup'],
                 'TaskField': trial_row['TaskField'],
-                'WindowStart_ms': start_ms,
-                'WindowEnd_ms': end_ms,
+                'WindowStart_ms': row['WindowStart_ms'],
+                'WindowEnd_ms': row['WindowEnd_ms'],
                 'SpikeCount': count
             })
 

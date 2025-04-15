@@ -4,10 +4,11 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from analyses.response_window_analysis import run_permutation_anova_by_window
 from analyses.statistical_tests import perform_anova_on_dataframe_rows_for_time_windowed
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.enums.monkey_names import Zombies
-from analyses.spike_count import prepare_binned_spike_data, aggregate_timebin_level
+from analyses.spike_count import prepare_binned_spike_data, aggregate_timebin_level, extract_spike_counts_from_windows
 
 
 def threshold_and_fill_gap(z_scored_data, threshold=0.6):
@@ -113,45 +114,85 @@ def z_score(data):
 
 
 if __name__ == '__main__':
-
-    zombies = [member.value for name, member in Zombies.__members__.items()]
-    del zombies[6]
-    del zombies[-1]
-
+    date = "2023-09-26"
+    round_no = 3
     bin_size = 0.05  # in sec
     rounded_time = np.round(np.arange(bin_size, 3.50, bin_size), 2)
     monkey_group = 'Zombies'
-    # response_window_test = pd.read_excel('response_window_algorithm_validation_test.xlsx')
-    reader = RecordingMetadataReader()
-    prelim = reader.get_metadata_for_preliminary_analysis()
-    shuffled_df = prelim.sample(frac=1, random_state=42)
-    shuffled_df = shuffled_df.reset_index(drop=True)
     results = []
-    for _, row in prelim.iterrows():
-        round_no = row['Round No.']
-        date = row['Date'].strftime('%Y-%m-%d')
-        zombies_timebin_spikecount_list= compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group)
-        for _, r in tqdm(zombies_timebin_spikecount_list.iterrows(), total=len(zombies_timebin_spikecount_list), desc="Processing each neuron"):
-            data = r['TotalSpikeCountList']
-            neuron = r['NeuronID']
-            normalized_data = z_score(data)
-            thresh = 0.5
-            change_points = threshold_and_fill_gap(normalized_data, thresh)
-            windows = extract_consecutive_ranges(change_points)
-            filtered_windows = remove_consecutive_tuples(windows)
-            time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
-            if len(time_windows) > 0:
-                print(f"---------------- {neuron} ----------------")
-                print(time_windows)
-                for start_time, end_time in time_windows:
-                    results.append({
-                        'NeuronID': neuron,
-                        'WindowStart_ms': int(start_time * 1000),
-                        'WindowEnd_ms': int(end_time * 1000)
-                    })
+    zombies_timebin_spikecount_list = compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, 'Zombies')
+    for _, r in tqdm(zombies_timebin_spikecount_list.iterrows(), total=len(zombies_timebin_spikecount_list),
+                     desc="Processing each neuron"):
+        data = r['TotalSpikeCountList']
+        neuron = r['NeuronID']
+        normalized_data = z_score(data)
+        thresh = 0.5
+        change_points = threshold_and_fill_gap(normalized_data, thresh)
+        windows = extract_consecutive_ranges(change_points)
+        filtered_windows = remove_consecutive_tuples(windows)
+        time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
+        if len(time_windows) > 0:
+            print(f"---------------- {neuron} ----------------")
+            print(time_windows)
+            for start_time, end_time in time_windows:
+                results.append({
+                    'NeuronID': neuron,
+                    'WindowStart_ms': int(start_time * 1000),
+                    'WindowEnd_ms': int(end_time * 1000)
+                })
 
     results_df = pd.DataFrame(results)
     results_df = results_df.sort_values(by=['NeuronID'])
+    final_df = extract_spike_counts_from_windows(results_df)
+    zombies_df = final_df[final_df['MonkeyGroup'] == 'Zombies']
+    perm_results = run_permutation_anova_by_window(zombies_df,
+                                    category_col='MonkeyName',
+                                    neuron_col='NeuronID',
+                                    count_col='SpikeCount',
+                                    window_start_col='WindowStart_ms',
+                                    window_end_col='WindowEnd_ms',
+                                    n_permutations=1000,
+                                    alpha=0.05,
+                                    plot=True)
+    #
+    # zombies = [member.value for name, member in Zombies.__members__.items()]
+    # del zombies[6]
+    # del zombies[-1]
+    #
+    # bin_size = 0.05  # in sec
+    # rounded_time = np.round(np.arange(bin_size, 3.50, bin_size), 2)
+    # monkey_group = 'Zombies'
+    # # response_window_test = pd.read_excel('response_window_algorithm_validation_test.xlsx')
+    # reader = RecordingMetadataReader()
+    # prelim = reader.get_metadata_for_preliminary_analysis()
+    # shuffled_df = prelim.sample(frac=1, random_state=42)
+    # shuffled_df = shuffled_df.reset_index(drop=True)
+    # results = []
+    # for _, row in prelim.iterrows():
+    #     round_no = row['Round No.']
+    #     date = row['Date'].strftime('%Y-%m-%d')
+    #     zombies_timebin_spikecount_list= compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group)
+    #     for _, r in tqdm(zombies_timebin_spikecount_list.iterrows(), total=len(zombies_timebin_spikecount_list), desc="Processing each neuron"):
+    #         data = r['TotalSpikeCountList']
+    #         neuron = r['NeuronID']
+    #         normalized_data = z_score(data)
+    #         thresh = 0.5
+    #         change_points = threshold_and_fill_gap(normalized_data, thresh)
+    #         windows = extract_consecutive_ranges(change_points)
+    #         filtered_windows = remove_consecutive_tuples(windows)
+    #         time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
+    #         if len(time_windows) > 0:
+    #             print(f"---------------- {neuron} ----------------")
+    #             print(time_windows)
+    #             for start_time, end_time in time_windows:
+    #                 results.append({
+    #                     'NeuronID': neuron,
+    #                     'WindowStart_ms': int(start_time * 1000),
+    #                     'WindowEnd_ms': int(end_time * 1000)
+    #                 })
+    #
+    # results_df = pd.DataFrame(results)
+    # results_df = results_df.sort_values(by=['NeuronID'])
 
             # # Plotting
             # y_values_at_change_points = [data[i] for i in change_points]

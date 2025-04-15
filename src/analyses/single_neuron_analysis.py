@@ -114,6 +114,9 @@ def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', 
 
 def plot_permutation_anova_distribution(perm_f_stats, observed_f_stat, neuron_id, category_name, output_dir="permutation_anova_plots"):
     os.makedirs(output_dir, exist_ok=True)
+    if perm_f_stats is None or observed_f_stat is None or len(perm_f_stats) == 0 or np.isnan(observed_f_stat):
+        print(f"[Plot skipped] Invalid data for {neuron_id}")
+        return
 
     plt.figure(figsize=(6, 4))
     plt.hist(perm_f_stats, bins=30, color='skyblue', alpha=0.7, label='Permutation null')
@@ -124,7 +127,7 @@ def plot_permutation_anova_distribution(perm_f_stats, observed_f_stat, neuron_id
     plt.title(f'Neuron {neuron_id} | {category_name} Permutation ANOVA')
     plt.legend()
 
-    filename = f"Neuron{neuron_id}_{category_name}_permutation_anova.png"
+    filename = f"Neuron {neuron_id}_{category_name}_permutation_anova.png"
     plt.tight_layout()
     # plt.savefig(os.path.join(output_dir, filename))
     plt.show()

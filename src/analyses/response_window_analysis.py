@@ -1,7 +1,7 @@
 import pandas as pd
 from tqdm import tqdm
 
-from analyses.glm_permutation_tests import plot_permutation_anova_distribution
+from analyses.single_neuron_analysis import plot_permutation_anova_distribution
 from analyses.statistical_tests import perform_statistical_test_on_dataframe_rows, permutation_anova_test
 
 
@@ -45,7 +45,7 @@ def run_permutation_anova_by_window(df,
         )
 
         for result in results:
-            _, f_stat, p_value = result
+            index, f_stat, p_value = result
             all_results.append({
                 'NeuronID': neuron,
                 'WindowStart_ms': win_start,
@@ -55,9 +55,10 @@ def run_permutation_anova_by_window(df,
             })
 
             if plot:
-                detail = details.get(0, {})
+                detail = details.get(index, {})
                 extras = detail.get('extras')
                 if extras:
+                    print(extras)
                     perm_f_stats, = extras
                     plot_permutation_anova_distribution(
                         perm_f_stats=perm_f_stats,

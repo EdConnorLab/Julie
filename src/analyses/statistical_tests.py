@@ -107,6 +107,12 @@ def perform_statistical_test_on_dataframe_rows(df, test_func, alpha=0.05, print_
         if len(groups) < 2:
             if print_results:
                 print(f"Row {index}: Skipped — less than 2 valid groups.")
+
+            details[index] = {
+                'extras': [],
+                'stat': np.nan,
+                'p_value': np.nan
+            }
             continue
 
         try:
@@ -122,17 +128,20 @@ def perform_statistical_test_on_dataframe_rows(df, test_func, alpha=0.05, print_
             if math.isnan(stat) or math.isnan(p_value):
                 if print_results:
                     print(f"Row {index}: Skipped — NaN result.")
+                details[index] = {
+                    'extras': [],
+                    'stat': np.nan,
+                    'p_value': np.nan
+                }
                 continue
 
             # Store result
             results.append((index, stat, p_value))
-            # Store extras if available
-            if extras:
-                details[index] = {
-                    'extras': extras,
-                    'stat': stat,
-                    'p_value': p_value
-                }
+            details[index] = {
+                'extras': extras,
+                'stat': stat,
+                'p_value': p_value
+            }
             # Count significant
             if p_value < alpha:
                 total_significant += 1
@@ -143,6 +152,11 @@ def perform_statistical_test_on_dataframe_rows(df, test_func, alpha=0.05, print_
             # If test fails (e.g., not enough data points), skip row
             if print_results:
                 print(f"Row {index}: Error — {e}")
+            details[index] = {
+                'extras': [],
+                'stat': np.nan,
+                'p_value': np.nan
+            }
             continue
 
     return results, total_significant, details
