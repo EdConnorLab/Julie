@@ -6,7 +6,7 @@ from analyses.enums.monkey_names import Zombies, BestFrans
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import explained_variance_score
-from analyses.spike_count import get_spike_count_for_single_neuron_with_time_window
+from analyses.response_window_processing import get_spike_count_for_single_neuron_with_time_window
 
 
 def run_linear_regression_using_sklearn(x, y):

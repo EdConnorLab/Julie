@@ -1,11 +1,6 @@
 import pandas as pd
-from analyses.enums.monkey_names import Zombies
-from analyses.intan_data_processor.single_channel_analysis import read_pickle, get_spike_count
 
-from analyses.channel_enum_resolvers import is_channel_in_dict, get_value_from_dict_with_channel, convert_to_enum
 from analyses.data_loader import load_raw_data, combine_unsorted_with_sorted
-from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from analyses.intan_data_processor.single_unit_analysis import read_sorted_data
 
 """
 Data Preparation Module for Spike Data Analysis
@@ -137,65 +132,12 @@ def aggregate_timebin_level(df):
     return df.groupby(['NeuronID', 'MonkeyGroup', 'TimeBinIndex'], as_index=False)['SpikeCount'].sum()
 
 
-# --- everything below needs refactoring
-
-def get_spike_counts_for_given_time_window(monkeys, raw_data, channels, time_window):
-    monkey_spike_counts = pd.DataFrame()
-    for monkey in monkeys:
-        monkey_data = raw_data[raw_data['MonkeyName'] == monkey]
-        spike_counts_by_channel = {}
-        for channel in channels:
-            spike_count_for_each_channel = []
-            for index, row in monkey_data.iterrows():
-                if is_channel_in_dict(channel, row['SpikeTimes']):
-                    data = get_value_from_dict_with_channel(channel, row['SpikeTimes'])
-                    start_time, _ = row['EpochStartStop']
-                    window_start_micro, window_end_micro = time_window
-                    window_start_sec = window_start_micro * 0.001
-                    window_end_sec = window_end_micro * 0.001
-                    spike_count_for_each_channel.append(get_spike_count(data, (start_time + window_start_sec,
-                                                                               start_time + window_end_sec)))
-                else:
-                    print(f"No data for {channel} in row {index}")
-            spike_counts_by_channel[channel] = spike_count_for_each_channel
-        monkey_spike_counts[monkey] = pd.Series(spike_counts_by_channel)
-    return monkey_spike_counts
-
-
-
-def count_spikes_for_specific_cell_time_windowed(raw_data, cell, time_window):
-    unique_monkeys = raw_data['MonkeyName'].dropna().unique().tolist()
-    spike_count_per_channel = pd.DataFrame()
-    for monkey in unique_monkeys:
-        monkey_data = raw_data[raw_data['MonkeyName'] == monkey]
-        monkey_spike_counts = {}
-        spike_counts = []
-        for index, row in monkey_data.iterrows():
-            if is_channel_in_dict(cell, row['SpikeTimes']):
-                data = get_value_from_dict_with_channel(cell, row['SpikeTimes'])
-                if time_window is not None:
-                    window_start_milli, window_end_milli = time_window
-                    window_start_sec = window_start_milli * 0.001
-                    window_end_sec = window_end_milli * 0.001
-                    start_time, _ = row['EpochStartStop']
-                    spike_counts.append(
-                        get_spike_count(data, (start_time + window_start_sec, start_time + window_end_sec)))
-                else:
-                    spike_counts.append(get_spike_count(data, row['EpochStartStop']))
-            else:
-                print(f"No data for {cell} in row {index}")
-        monkey_spike_counts[cell] = spike_counts
-        spike_count_per_channel[monkey] = pd.Series(monkey_spike_counts)
-    return spike_count_per_channel
-
-
-def extract_spike_counts_from_windows(window_df, bin_size):
+def extract_spike_counts_from_windows(window_df):
     """
-    For each NeuronID and time window, extract trial-level spike counts.
+    Extract spike counts for each neuron and time window directly from raw spike times.
 
     Parameters:
     - window_df: DataFrame with ['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']
-    - bin_size: float (in seconds, e.g., 0.05)
 
     Returns:
     - DataFrame with columns:
@@ -206,91 +148,38 @@ def extract_spike_counts_from_windows(window_df, bin_size):
 
     spike_count_rows = []
 
-    for _, row in tqdm(window_df.iterrows(), total=len(window_df), desc="Extracting windowed spike counts"):
+    for _, row in tqdm(window_df.iterrows(), total=len(window_df), desc="Extracting spike counts from raw"):
         neuron_id = row['NeuronID']
         start_ms = row['WindowStart_ms']
         end_ms = row['WindowEnd_ms']
+        start_sec = start_ms / 1000
+        end_sec = end_ms / 1000
 
         # Parse date and round_no from NeuronID
         parts = neuron_id.split('_', 3)
         date_str, round_no = parts[0], parts[1]
-        date = date_str  # already in 'YYYY-MM-DD' format
+        date = date_str
         round_no = int(round_no)
 
-        # Load binned spike data
-        binned_df = prepare_binned_spike_data(date, round_no, bin_size)
-        neuron_df = binned_df[binned_df['NeuronID'] == neuron_id]
+        # Load raw spike times (exploded format)
+        exploded_df = prepare_exploded_spike_data(date, round_no)
+        neuron_df = exploded_df[exploded_df['NeuronID'] == neuron_id]
 
-        # Compute bin indices corresponding to time window
-        start_bin = int(start_ms / 1000 / bin_size)
-        end_bin = int(end_ms / 1000 / bin_size)
+        for _, trial_row in neuron_df.iterrows():
+            spike_times = trial_row['SpikeTimes']
+            count = sum(start_sec <= t < end_sec for t in spike_times)
 
-        # Subset bins within the window
-        windowed_df = neuron_df[
-            (neuron_df['TimeBinIndex'] >= start_bin) &
-            (neuron_df['TimeBinIndex'] < end_bin)
-            ]
+            spike_count_rows.append({
+                'NeuronID': neuron_id,
+                'MonkeyName': trial_row['MonkeyName'],
+                'MonkeyGroup': trial_row['MonkeyGroup'],
+                'TaskField': trial_row['TaskField'],
+                'WindowStart_ms': start_ms,
+                'WindowEnd_ms': end_ms,
+                'SpikeCount': count
+            })
 
-        # Aggregate per trial (group by TaskField & MonkeyName)
-        trial_spike_counts = windowed_df.groupby(
-            ['TaskField', 'MonkeyName', 'MonkeyGroup'], as_index=False
-        )['SpikeCount'].sum()
-
-        # Attach metadata
-        trial_spike_counts['NeuronID'] = neuron_id
-        trial_spike_counts['WindowStart_ms'] = start_ms
-        trial_spike_counts['WindowEnd_ms'] = end_ms
-
-        spike_count_rows.append(trial_spike_counts)
-
-    final_df = pd.concat(spike_count_rows, ignore_index=True)
-    return final_df
+    return pd.DataFrame(spike_count_rows)
 
 
-def get_spike_count_for_single_neuron_with_time_window(neuron_specific_time_windows):
-    """
-    Spike count for a channel with time window (handles both sorted and unsorted channels)
-
-    Parameters:
-        neuron_specific_time_windows (pandas.DataFrame) contains the following columns:
-            - 'Date': need to convert to YYYY-MM-DD format
-            - 'Round No.': int (i.e. 2)
-            - 'Cell': string (i.e. Channel.C_013 or Channel.C_010_Unit 1)
-            - 'Time Window': in ms (i.e. (250, 750))
-
-    Returns:
-    all_spike_count (pandas.DataFrame)
-
-    """
-    neuron_specific_time_windows[['Date', 'Round No.']] = neuron_specific_time_windows['NeuronID'].apply(
-        lambda x: pd.Series(x.split('_', 2)[:2])
-    )
-    neuron_specific_time_windows['Round No.'] = neuron_specific_time_windows['Round No.'].astype(int)
-    rows_with_unique_rounds = neuron_specific_time_windows.drop_duplicates(subset=['Date', 'Round No.'])
-    experimental_rounds = rows_with_unique_rounds[['Date', 'Round No.']]
-
-    results = []
-    for _, row in experimental_rounds.iterrows():
-        combined_data = load_and_combine_data(row['Date'], row['Round No.'])
-        cells = neuron_specific_time_windows[
-            ((neuron_specific_time_windows['Date'] == row['Date']) & (neuron_specific_time_windows['Round No.'] == row['Round No.']))]
-        for _, cell in cells.iterrows():
-            if isinstance(cell['Time Window'], str):
-                time_window = tuple(float(num) for num in cell['Time Window'].strip('()').split(','))
-            else:
-                time_window = cell['Time Window']
-                cell['Cell'] = convert_to_enum(cell['Cell'])
-                unsorted_cells_spike_count = count_spikes_for_specific_cell_time_windowed(raw_trial_data, cell['Cell'],
-                                                                                          time_window)
-                unsorted_cells_spike_count_dict = unsorted_cells_spike_count.to_dict(orient='records')[0]
-                unsorted_cells_spike_count_dict['Cell'] = cell['Cell']
-                unsorted_cells_spike_count_dict['Date'] = row['Date']
-                unsorted_cells_spike_count_dict['Round No.'] = row['Round No.']
-                unsorted_cells_spike_count_dict['Time Window'] = time_window
-                results.append(unsorted_cells_spike_count_dict)
-
-    all_spike_count = pd.DataFrame(results)
-    all_spike_count.set_index('Cell', inplace=True)
-
-    return all_spike_count
 

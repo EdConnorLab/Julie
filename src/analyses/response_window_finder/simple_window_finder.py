@@ -181,32 +181,4 @@ if __name__ == '__main__':
             # # plt.savefig("hi")
             # plt.show()
 
-    #results_expanded.to_excel('simple_window_finder_windows_after_refactoring.xlsx')
     print(results_df)
-    '''
-    
-    Date Created: 2025-01-29
-    Last Modified: 2025-04-01
-    ANOVA for windows found with simple window finder algorithm
-    
-    #  results_expanded = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/Cortana//window_cells.xlsx")
-    #  results_expanded['Time Window'] = results_expanded['Time Window'].apply(
-    #      lambda s: tuple(int(float(num) * 1000) for num in s.strip('()').split(',')))
-    # print(results_expanded)
-
-    spike_count_single_neuron = get_spike_count_for_single_neuron_with_time_window(results_expanded)
-    print(spike_count_single_neuron)
-
-    zombies_columns = [col for col in zombies if col in spike_count_single_neuron.columns]
-    additional_columns = ['Date', 'Round No.', 'Time Window']
-    zombies_cusum_spike_count = spike_count_single_neuron[zombies_columns + additional_columns]
-    anova_results, anova_sig_results = perform_anova_on_dataframe_rows_for_time_windowed(
-        zombies_cusum_spike_count)
-
-    print('------------------------------------anova results -----------------------------------')
-    # print(cusum_anova_results)
-    print("anova sig results shape")
-    # print(anova_sig_results)
-    print(anova_sig_results.shape)
-    anova_sig_results.to_excel('window_cells_ANOVA_passed.xlsx')
-    '''

@@ -9,7 +9,7 @@ from analyses.intan_data_processor.single_unit_analysis import read_sorted_data
 from statsmodels.regression.linear_model import OLS
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from analyses.spike_count import get_spike_count_for_single_neuron_with_time_window
+from analyses.response_window_processing import get_spike_count_for_single_neuron_with_time_window
 from analyses.spike_rate_computation import get_average_spike_rates_for_each_monkey, \
     compute_average_spike_rates_for_list_of_cells_with_time_windows
 

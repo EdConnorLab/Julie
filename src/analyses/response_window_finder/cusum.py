@@ -4,7 +4,7 @@ import numpy as np
 from analyses.enums.monkey_names import Zombies
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.response_window_finder.simple_window_finder import compute_timebinned_spikecount_per_neuron
-from analyses.spike_count import get_spike_count_for_single_neuron_with_time_window
+from analyses.response_window_processing import get_spike_count_for_single_neuron_with_time_window
 from analyses.spike_rate_computation import get_raw_data_and_channels_from_files
 
 
