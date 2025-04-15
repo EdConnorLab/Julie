@@ -3,7 +3,7 @@ import numpy as np
 
 from analyses.enums.monkey_names import Zombies
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from analyses.response_window_finder.simple_window_finder import compute_total_sum_of_spikes
+from analyses.response_window_finder.simple_window_finder import compute_timebinned_spikecount_per_neuron
 from analyses.spike_count import get_spike_count_for_single_neuron_with_time_window
 from analyses.spike_rate_computation import get_raw_data_and_channels_from_files
 
@@ -110,8 +110,8 @@ if __name__ == '__main__':
         # round_no = 3
         raw_unsorted_data, valid_channels, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
         # valid_channels = [Channel.C_002]
-        spike_counts_unsorted_data = compute_total_sum_of_spikes(raw_unsorted_data, zombies, valid_channels,
-                                                                 time_chunk_size)
+        spike_counts_unsorted_data = compute_timebinned_spikecount_per_neuron(raw_unsorted_data, zombies, valid_channels,
+                                                                              time_chunk_size)
         # if sorted_data is not None:
         #     print(f"sorted data exists for {date}, {round_no}")
         #     spike_counts_sorted_data = compute_total_sum_of_spikes(sorted_data, zombies, valid_channels, time_chunk_size)
