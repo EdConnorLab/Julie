@@ -65,6 +65,7 @@ def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', 
     unique_neurons = df[neuron_col].unique()
     for neuron in tqdm(unique_neurons, desc="Running permutation ANOVA per neuron"):
         neuron_df = df[df[neuron_col] == neuron]
+        # neuron_df = neuron_df.sort_values([neuron_col, 'TimeBinIndex']) ## add this line if you want the list to be
         grouped = neuron_df.groupby(category_col)[count_col].apply(list)
         # Safety check: skip neurons with fewer than 2 monkeys in data
         if len(grouped) < 2:
@@ -152,26 +153,27 @@ def plot_permutation_anova_results_summary(results_df):
 def merge_glm_and_permutation_anova(glm_results, perm_results):
     # GLM 결과 neuron 별로 p-value 정리
     glm_summary = glm_results.groupby('NeuronID')['P>|z|'].min().reset_index()
-    glm_summary.rename(columns={'P>|z|': 'GLM_P_value'}, inplace=True)
+    glm_summary.rename(columns={'P>|z|': 'GLM_p-value'}, inplace=True)
 
     # permutation 결과는 이미 neuron 별로 되어 있음
+    # Just changing the column name
+    perm_results.rename(columns={'p-value': 'PermANOVA_p-value'}, inplace=True)
+
     merged = pd.merge(glm_summary, perm_results, on='NeuronID', how='outer')
 
-    # Multiple comparison correction (optional)
-
-
-    # GLM
-    if not merged['GLM_P_value'].isnull().all():
-        reject_glm, glm_pvals_corrected, _, _ = multipletests(merged['GLM_P_value'].fillna(1), method='fdr_bh')
+    # Multiple comparison correction
+    # for GLM
+    if not merged['GLM_p-value'].isnull().all():
+        reject_glm, glm_pvals_corrected, _, _ = multipletests(merged['GLM_p-value'].fillna(1), method='fdr_bh')
         merged['GLM_pval_corrected'] = glm_pvals_corrected
         merged['GLM_significant'] = reject_glm
     else:
         merged['GLM_pval_corrected'] = None
         merged['GLM_significant'] = None
 
-    # Permutation
-    if not merged['P-value'].isnull().all():
-        reject_perm, perm_pvals_corrected, _, _ = multipletests(merged['P-value'].fillna(1), method='fdr_bh')
+    # for Permutation
+    if not merged['PermANOVA_p-value'].isnull().all():
+        reject_perm, perm_pvals_corrected, _, _ = multipletests(merged['PermANOVA_p-value'].fillna(1), method='fdr_bh')
         merged['Permutation_pval_corrected'] = perm_pvals_corrected
         merged['Permutation_significant'] = reject_perm
     else:

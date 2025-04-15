@@ -132,10 +132,12 @@ def aggregate_trial_level(df):
     return df.groupby(['NeuronID', 'TaskField', 'MonkeyName', 'MonkeyGroup'], as_index=False)['SpikeCount'].sum()
 
 
-def aggregate_bin_level(df):
-    """Aggregate spike counts at bin level across trials (for time-resolved analysis)."""
-    return df.groupby(['MonkeyGroup', 'TimeBinIndex'], as_index=False)['SpikeCount'].mean()
+def aggregate_timebin_level(df):
+    """Aggregate spike counts at bin level across trials (time-resolved spike count per neuron and monkey group)."""
+    return df.groupby(['NeuronID', 'MonkeyGroup', 'TimeBinIndex'], as_index=False)['SpikeCount'].sum()
 
+
+# --- everything below needs refactoring
 
 def get_spike_counts_for_given_time_window(monkeys, raw_data, channels, time_window):
     monkey_spike_counts = pd.DataFrame()
@@ -159,8 +161,6 @@ def get_spike_counts_for_given_time_window(monkeys, raw_data, channels, time_win
         monkey_spike_counts[monkey] = pd.Series(spike_counts_by_channel)
     return monkey_spike_counts
 
-
-# --- everything below needs refactoring
 
 
 def count_spikes_for_specific_cell_time_windowed(raw_data, cell, time_window):

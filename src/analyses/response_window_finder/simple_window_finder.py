@@ -2,10 +2,12 @@ from itertools import zip_longest
 
 import numpy as np
 import pandas as pd
-from analyses.anova_on_spike_counts import perform_anova_on_dataframe_rows_for_time_windowed
+from tqdm import tqdm
+
+from analyses.statistical_tests import perform_anova_on_dataframe_rows_for_time_windowed
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.enums.monkey_names import Zombies
-from analyses.spike_count import prepare_binned_spike_data
+from analyses.spike_count import prepare_binned_spike_data, aggregate_timebin_level
 
 
 def threshold_and_fill_gap(z_scored_data, threshold=0.6):
@@ -38,41 +40,13 @@ def fill_gap_if_one_data_point_away(change_points, norm_data, threshold=0.5):
 def list_addition(lists):
     return [sum(x) for x in zip_longest(*lists, fillvalue=0)]
 
-def element_wise_sum_of_spike_counts_over_each_monkey(df):
-    summed_trials = (
-        df
-        .groupby(['ChannelStr', 'MonkeyName', 'TimeBinIndex'], as_index=False)
-        .agg({'SpikeCount': 'sum'})
-    )
-    return summed_trials
-
-
-def collect_spike_counts_per_monkey_into_lists(df):
-    per_monkey_spike_lists = (
-        df
-        .groupby(['ChannelStr', 'MonkeyName'])['SpikeCount']
-        .apply(list)
-        .reset_index(name='TotalSpikeCount')
-    )
-    return per_monkey_spike_lists
-
-def element_wise_sum_across_monkeys(df):
-    sum_across_monkeys = (
-        df
-        .groupby('ChannelStr')['TotalSpikeCount']
-        .apply(list_addition)
-        .reset_index(name='TotalSpikeCount')
-    )
-    return sum_across_monkeys
-
-def compute_total_sum_of_spikes(date, round_no, bin_size, monkey_group):
-    analysis_df = prepare_binned_spike_data(date,round_no, bin_size)
-    filtered_df = analysis_df[analysis_df['MonkeyGroup'] == monkey_group].copy()
-    filtered_df['ChannelStr'] = filtered_df['Channel'].astype(str)
-    summed_trials = element_wise_sum_of_spike_counts_over_each_monkey(filtered_df)
-    per_monkey_spike_lists = collect_spike_counts_per_monkey_into_lists(summed_trials)
-    summed_over_monkeys = element_wise_sum_across_monkeys(per_monkey_spike_lists)
-    return summed_over_monkeys
+def compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group):
+    binned_spike_data = prepare_binned_spike_data(date, round_no, bin_size)
+    bin_level_spike_data = aggregate_timebin_level(binned_spike_data)
+    group_data = bin_level_spike_data[bin_level_spike_data['MonkeyGroup'] == monkey_group]
+    group_data = group_data.sort_values(['NeuronID', 'TimeBinIndex'])
+    spikecount_df = group_data.groupby('NeuronID')['SpikeCount'].apply(list).reset_index(name='TotalSpikeCountList')
+    return spikecount_df
 
 
 def extract_consecutive_ranges(numbers):
@@ -153,15 +127,13 @@ if __name__ == '__main__':
     shuffled_df = prelim.sample(frac=1, random_state=42)
     shuffled_df = shuffled_df.reset_index(drop=True)
     results = []
-
     for _, row in prelim.iterrows():
-        date = str(row['Date'])
         round_no = row['Round No.']
-        date_only = row['Date'].strftime('%Y-%m-%d')
-        spike_counts_for_all = compute_total_sum_of_spikes(date, round_no, bin_size, monkey_group)
-        for _, r in spike_counts_for_all.iterrows():
-            data = r['TotalSpikeCount']
-            channelstr = r['ChannelStr']
+        date = row['Date'].strftime('%Y-%m-%d')
+        zombies_timebin_spikecount_list= compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group)
+        for _, r in tqdm(zombies_timebin_spikecount_list.iterrows(), total=len(zombies_timebin_spikecount_list), desc="Processing each neuron"):
+            data = r['TotalSpikeCountList']
+            neuron = r['NeuronID']
             normalized_data = z_score(data)
             thresh = 0.5
             change_points = threshold_and_fill_gap(normalized_data, thresh)
@@ -169,8 +141,17 @@ if __name__ == '__main__':
             filtered_windows = remove_consecutive_tuples(windows)
             time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
             if len(time_windows) > 0:
-                print(f"---------------- {date_only} round no. {round_no} {channelstr}----------------")
+                print(f"---------------- {neuron} ----------------")
                 print(time_windows)
+                for start_time, end_time in time_windows:
+                    results.append({
+                        'NeuronID': neuron,
+                        'WindowStart_ms': int(start_time * 1000),
+                        'WindowEnd_ms': int(end_time * 1000)
+                    })
+
+    results_df = pd.DataFrame(results)
+    results_df = results_df.sort_values(by=['NeuronID'])
 
             # # Plotting
             # y_values_at_change_points = [data[i] for i in change_points]
@@ -200,23 +181,8 @@ if __name__ == '__main__':
             # # plt.savefig("hi")
             # plt.show()
 
-            if len(time_windows) > 0:
-                results.append({
-                    'Date': date_only,
-                    'Round No.': round_no,
-                    'Cell': channelstr,
-                    'Time Window': time_windows
-                })
-
-    results_df = pd.DataFrame(results)
-    results_sorted = results_df.sort_values(by=['Date', 'Round No.', 'Cell'])
-    results_expanded = results_sorted.explode('Time Window')
-    results_expanded['Time Window'] = results_expanded['Time Window'].apply(
-        lambda t: tuple(int(num * 1000) for num in t))
-    results_expanded.to_excel('simple_window_finder_windows_after_refactoring.xlsx')
-    # print("shape")
-    print(results_expanded)
-    # print(results_expanded.shape)
+    #results_expanded.to_excel('simple_window_finder_windows_after_refactoring.xlsx')
+    print(results_df)
     '''
     
     Date Created: 2025-01-29
