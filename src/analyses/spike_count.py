@@ -189,12 +189,12 @@ def count_spikes_for_specific_cell_time_windowed(raw_data, cell, time_window):
     return spike_count_per_channel
 
 
-def get_spike_count_for_single_neuron_with_time_window(cell_metadata):
+def get_spike_count_for_single_neuron_with_time_window(neuron_specific_time_windows):
     """
     Spike count for a channel with time window (handles both sorted and unsorted channels)
 
     Parameters:
-        cell_metadata (pandas.DataFrame) contains the following columns:
+        neuron_specific_time_windows (pandas.DataFrame) contains the following columns:
             - 'Date': need to convert to YYYY-MM-DD format
             - 'Round No.': int (i.e. 2)
             - 'Cell': string (i.e. Channel.C_013 or Channel.C_010_Unit 1)
@@ -204,21 +204,18 @@ def get_spike_count_for_single_neuron_with_time_window(cell_metadata):
     all_spike_count (pandas.DataFrame)
 
     """
-    reader = RecordingMetadataReader()
-    rows_with_unique_rounds = cell_metadata.drop_duplicates(subset=['Date', 'Round No.'])
+    neuron_specific_time_windows[['Date', 'Round No.']] = neuron_specific_time_windows['NeuronID'].apply(
+        lambda x: pd.Series(x.split('_', 2)[:2])
+    )
+    neuron_specific_time_windows['Round No.'] = neuron_specific_time_windows['Round No.'].astype(int)
+    rows_with_unique_rounds = neuron_specific_time_windows.drop_duplicates(subset=['Date', 'Round No.'])
     experimental_rounds = rows_with_unique_rounds[['Date', 'Round No.']]
 
     results = []
     for _, row in experimental_rounds.iterrows():
-        pickle_filepath, _, round_dir_path = reader.get_metadata_for_spike_analysis(row['Date'], row['Round No.'])
-        raw_trial_data = read_pickle(pickle_filepath)
-        sorted_file = round_dir_path / 'sorted_spikes.pkl'
-
-        if sorted_file.exists():
-            sorted_data = read_sorted_data(round_dir_path)
-
-        cells = cell_metadata[
-            ((cell_metadata['Date'] == row['Date']) & (cell_metadata['Round No.'] == row['Round No.']))]
+        combined_data = load_and_combine_data(row['Date'], row['Round No.'])
+        cells = neuron_specific_time_windows[
+            ((neuron_specific_time_windows['Date'] == row['Date']) & (neuron_specific_time_windows['Round No.'] == row['Round No.']))]
         for _, cell in cells.iterrows():
             if isinstance(cell['Time Window'], str):
                 time_window = tuple(float(num) for num in cell['Time Window'].strip('()').split(','))
@@ -249,14 +246,4 @@ def get_spike_count_for_single_neuron_with_time_window(cell_metadata):
     all_spike_count.set_index('Cell', inplace=True)
 
     return all_spike_count
-
-
-def add_metadata_to_spike_counts(spike_count_df, date, round_number, time_window):
-    """
-    Adds metadata to spike counts DataFrame.
-    """
-    spike_count_df['Date'] = date
-    spike_count_df['Round No.'] = round_number
-    spike_count_df['Time Window'] = [time_window] * len(spike_count_df)
-    return spike_count_df
 
