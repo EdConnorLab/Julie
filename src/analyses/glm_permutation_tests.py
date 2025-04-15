@@ -9,8 +9,8 @@ import statsmodels.formula.api as smf
 from tqdm import tqdm  # progress bar
 from statsmodels.stats.multitest import multipletests
 
-from spike_count import prepare_binned_spike_data
-from statistical_tests import perform_statistical_test_on_dataframe_rows, permutation_anova_test
+from analyses.spike_count import prepare_binned_spike_data
+from analyses.statistical_tests import perform_statistical_test_on_dataframe_rows, permutation_anova_test
 
 
 def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):

@@ -189,6 +189,64 @@ def count_spikes_for_specific_cell_time_windowed(raw_data, cell, time_window):
     return spike_count_per_channel
 
 
+def extract_spike_counts_from_windows(window_df, bin_size):
+    """
+    For each NeuronID and time window, extract trial-level spike counts.
+
+    Parameters:
+    - window_df: DataFrame with ['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']
+    - bin_size: float (in seconds, e.g., 0.05)
+
+    Returns:
+    - DataFrame with columns:
+        ['NeuronID', 'MonkeyName', 'MonkeyGroup', 'TaskField',
+         'WindowStart_ms', 'WindowEnd_ms', 'SpikeCount']
+    """
+    from tqdm import tqdm
+
+    spike_count_rows = []
+
+    for _, row in tqdm(window_df.iterrows(), total=len(window_df), desc="Extracting windowed spike counts"):
+        neuron_id = row['NeuronID']
+        start_ms = row['WindowStart_ms']
+        end_ms = row['WindowEnd_ms']
+
+        # Parse date and round_no from NeuronID
+        parts = neuron_id.split('_', 3)
+        date_str, round_no = parts[0], parts[1]
+        date = date_str  # already in 'YYYY-MM-DD' format
+        round_no = int(round_no)
+
+        # Load binned spike data
+        binned_df = prepare_binned_spike_data(date, round_no, bin_size)
+        neuron_df = binned_df[binned_df['NeuronID'] == neuron_id]
+
+        # Compute bin indices corresponding to time window
+        start_bin = int(start_ms / 1000 / bin_size)
+        end_bin = int(end_ms / 1000 / bin_size)
+
+        # Subset bins within the window
+        windowed_df = neuron_df[
+            (neuron_df['TimeBinIndex'] >= start_bin) &
+            (neuron_df['TimeBinIndex'] < end_bin)
+            ]
+
+        # Aggregate per trial (group by TaskField & MonkeyName)
+        trial_spike_counts = windowed_df.groupby(
+            ['TaskField', 'MonkeyName', 'MonkeyGroup'], as_index=False
+        )['SpikeCount'].sum()
+
+        # Attach metadata
+        trial_spike_counts['NeuronID'] = neuron_id
+        trial_spike_counts['WindowStart_ms'] = start_ms
+        trial_spike_counts['WindowEnd_ms'] = end_ms
+
+        spike_count_rows.append(trial_spike_counts)
+
+    final_df = pd.concat(spike_count_rows, ignore_index=True)
+    return final_df
+
+
 def get_spike_count_for_single_neuron_with_time_window(neuron_specific_time_windows):
     """
     Spike count for a channel with time window (handles both sorted and unsorted channels)
@@ -221,7 +279,6 @@ def get_spike_count_for_single_neuron_with_time_window(neuron_specific_time_wind
                 time_window = tuple(float(num) for num in cell['Time Window'].strip('()').split(','))
             else:
                 time_window = cell['Time Window']
-            if 'Unit' not in cell['Cell']:  # unsorted cells
                 cell['Cell'] = convert_to_enum(cell['Cell'])
                 unsorted_cells_spike_count = count_spikes_for_specific_cell_time_windowed(raw_trial_data, cell['Cell'],
                                                                                           time_window)
@@ -231,16 +288,6 @@ def get_spike_count_for_single_neuron_with_time_window(neuron_specific_time_wind
                 unsorted_cells_spike_count_dict['Round No.'] = row['Round No.']
                 unsorted_cells_spike_count_dict['Time Window'] = time_window
                 results.append(unsorted_cells_spike_count_dict)
-
-            else:  # sorted cells
-                sorted_cells_spike_count = count_spikes_for_specific_cell_time_windowed(
-                    sorted_data, cell['Cell'], time_window)
-                sorted_cells_spike_count_dict = sorted_cells_spike_count.to_dict(orient='records')[0]
-                sorted_cells_spike_count_dict['Cell'] = cell['Cell']
-                sorted_cells_spike_count_dict['Date'] = row['Date']
-                sorted_cells_spike_count_dict['Round No.'] = row['Round No.']
-                sorted_cells_spike_count_dict['Time Window'] = time_window
-                results.append(sorted_cells_spike_count_dict)
 
     all_spike_count = pd.DataFrame(results)
     all_spike_count.set_index('Cell', inplace=True)
