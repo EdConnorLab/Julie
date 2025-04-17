@@ -4,7 +4,7 @@ from analyses.channel_enum_resolvers import is_channel_in_dict, get_value_from_d
 from analyses.intan_data_processor.single_channel_analysis import get_spike_count
 from analyses.spike_count import load_and_combine_data
 
-
+## --- needs to be refactored ---
 def get_spike_counts_for_given_time_window(monkeys, raw_data, channels, time_window):
     monkey_spike_counts = pd.DataFrame()
     for monkey in monkeys:

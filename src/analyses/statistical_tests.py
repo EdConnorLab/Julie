@@ -250,8 +250,6 @@ if __name__ == '__main__':
     analysis_df = prepare_binned_spike_data(date, round_no, 0.05)
     filtered_df = analysis_df[analysis_df['MonkeyGroup'] == 'Zombies']
     zombies_trial_df = aggregate_trial_level(filtered_df)
-    results = run_permutation_anova(zombies_trial_df, category_col='MonkeyName', neuron_col='NeuronID', count_col='SpikeCount',
-                          n_permutations=1000, alpha=0.05, verbose=True)
 
     # neuron_id = analysis_df['NeuronID'].unique()[0]  # or pick any neuron you like
     # neuron_df = analysis_df[analysis_df['NeuronID'] == neuron_id]
