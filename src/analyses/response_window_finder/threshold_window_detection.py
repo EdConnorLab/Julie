@@ -2,6 +2,7 @@ from itertools import zip_longest
 
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 from tqdm import tqdm
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
@@ -111,6 +112,68 @@ def z_score(data):
 
 
 if __name__ == '__main__':
+
+    results=[]
+    date = '2023-09-26'
+    round_no = 1
+    bin_size = 0.05
+    monkey_group = 'Zombies'
+    rounded_time = np.round(np.arange(bin_size, 3.50, bin_size), 2)
+
+    timebin_spikecount_list = compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group)
+    for _, r in timebin_spikecount_list.iterrows():
+        data = r['TotalSpikeCountList']
+        neuron = r['NeuronID']
+        normalized_data = z_score(data)
+        thresh = 0.5
+        change_points = threshold_and_fill_gap(normalized_data, thresh)
+        windows = extract_consecutive_ranges(change_points)
+        filtered_windows = remove_consecutive_tuples(windows)
+        time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
+        if len(time_windows) > 0:
+            # print(f"---------------- {neuron} ----------------")
+            # print(time_windows)
+            for start_time, end_time in time_windows:
+                results.append({
+                    'NeuronID': neuron,
+                    'WindowStart_ms': int(start_time * 1000),
+                    'WindowEnd_ms': int(end_time * 1000)
+                })
+            # Plotting
+            y_values_at_change_points = [data[i] for i in change_points]
+            t_values_at_change_points = [rounded_time[i] for i in change_points]
+
+            plt.figure(figsize=(12, 6))
+            overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
+            if normalized_data is not None:
+                plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
+                for start, end in filtered_windows:
+                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
+                                      rounded_time[end], color='red',
+                                      alpha=0.4)
+
+            if data is not None:
+                plt.plot(rounded_time[:len(data)], data, label='Data')
+                for start, end in filtered_windows:
+                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
+                                      rounded_time[end], color='red',
+                                      alpha=0.4)
+                plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
+
+            plt.axhline(y=thresh, color='green', linestyle='--', label='Threshold')
+
+            plt.title(f'{neuron}--- window: {time_windows}')
+            plt.xlabel('Time')
+            plt.ylabel('Value')
+            plt.legend()
+            # plt.savefig("hi")
+            plt.show()
+
+    results_df = pd.DataFrame(results)
+    print(results_df)
+    results_df = results_df.sort_values(by=['NeuronID'])
+
+
     # prelim = RecordingMetadataReader().get_metadata_for_preliminary_analysis()
     # results = []
     # bin_size = 0.05  # in sec
@@ -146,8 +209,8 @@ if __name__ == '__main__':
     # results_df.to_excel('bestfrans_windows.xlsx')
     # final_df = extract_spike_counts_from_windows(results_df)
     # final_df.to_excel('bestfrans_spike_counts_in_windows.xlsx')
-    final_df = pd.read_excel('bestfrans_spike_counts_in_windows.xlsx')
-    zombies_df = final_df[final_df['MonkeyGroup'] == 'Best Frans']
+    # final_df = pd.read_excel('bestfrans_spike_counts_in_windows.xlsx')
+    # zombies_df = final_df[final_df['MonkeyGroup'] == 'Best Frans']
     # perm_results = run_permutation_anova_by_window(zombies_df,
     #                                 category_col='MonkeyName',
     #                                 neuron_col='NeuronID',
@@ -198,32 +261,6 @@ if __name__ == '__main__':
     # results_df = pd.DataFrame(results)
     # results_df = results_df.sort_values(by=['NeuronID'])
 
-    # # Plotting
-    # y_values_at_change_points = [data[i] for i in change_points]
-    # t_values_at_change_points = [rounded_time[i] for i in change_points]
-    #
-    # plt.figure(figsize=(12, 6))
-    # overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
-    # if normalized_data is not None:
-    #     plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
-    #     for start, end in filtered_windows:
-    #         plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
-    #                           alpha=0.4)
-    #
-    # if data is not None:
-    #     plt.plot(rounded_time[:len(data)], data, label='Data')
-    #     for start, end in filtered_windows:
-    #         plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start], rounded_time[end], color='red',
-    #                           alpha=0.4)
-    #     plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
-    #
-    # plt.axhline(y=thresh, color='green', linestyle='--', label='Threshold')
-    #
-    # plt.title(f'{date_only} Round {round_no} {index}')
-    # plt.xlabel('Time')
-    # plt.ylabel('Value')
-    # plt.legend()
-    # # plt.savefig("hi")
-    # plt.show()
 
-    print(results_df)
+
+    # print(results_df)
