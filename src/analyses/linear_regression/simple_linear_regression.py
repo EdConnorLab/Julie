@@ -124,7 +124,7 @@ if __name__ == "__main__":
     additional_anova_passed_cells = pd.read_excel(
         "/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/window_cells_ANOVA_passed_to_keep.xlsx")
     ed_anova_passed_cells = pd.read_excel(
-        "/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/Ed_window_cells_ANOVA_passed.xlsx")
+        "/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/Ed_window_cells_ANOVA_passed_Zombies.xlsx")
     additional_anova_passed_cells['Time Window'] = additional_anova_passed_cells['Time Window'].apply(
         lambda s: tuple((float(num)) for num in s.strip('()').split(',')))
     cells_with_windows = pd.concat([additional_anova_passed_cells, ed_anova_passed_cells], ignore_index=True)
