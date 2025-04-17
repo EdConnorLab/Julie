@@ -1,6 +1,7 @@
 import pandas as pd
 
 from analyses.data_loader import load_raw_data, combine_unsorted_with_sorted
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 
 """
 Data Preparation Module for Spike Data Analysis
@@ -44,7 +45,7 @@ def load_and_combine_data(date, round_no):
 
 
 # --- Data explosion (wide → long format) ---
-def explode_spike_data(combined_data, date, round_no):
+def explode_spike_data(combined_data, date, round_no, only_valid_channels=False):
     """Explode spike times into long-format DataFrame with metadata."""
     rows = []
     for _, row in combined_data.iterrows():
@@ -75,14 +76,19 @@ def explode_spike_data(combined_data, date, round_no):
             exploded_df['Round No.'].astype(str) + "_" +
             exploded_df['Channel'].astype(str)
     )
+    if only_valid_channels:
+        reader = RecordingMetadataReader()
+        valid_channels = reader.get_valid_channels(date, round_no)
+        valid_channels_list = [str(ch) for ch in valid_channels]
+        exploded_df = exploded_df[exploded_df['BaseChannel'].isin(valid_channels_list)]
 
     return exploded_df
 
 
-def prepare_exploded_spike_data(date, round_no):
+def prepare_exploded_spike_data(date, round_no, only_valid_channels=False):
     """Prepare exploded spike data (pre-binning)."""
     combined_data = load_and_combine_data(date, round_no)
-    exploded_df = explode_spike_data(combined_data, date, round_no)
+    exploded_df = explode_spike_data(combined_data, date, round_no, only_valid_channels)
     return exploded_df
 
 
@@ -114,9 +120,9 @@ def bin_spike_times(exploded_df, bin_size):
     return pd.DataFrame(binned_rows)
 
 
-def prepare_binned_spike_data(date, round_no, bin_size):
+def prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=False):
     """Prepare binned spike data with spike counts."""
-    exploded_df = prepare_exploded_spike_data(date, round_no)
+    exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels)
     binned_df = bin_spike_times(exploded_df, bin_size)
     return binned_df
 
