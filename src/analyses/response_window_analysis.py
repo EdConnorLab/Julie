@@ -61,7 +61,7 @@ def run_permutation_anova_by_window(df,
                 detail = details.get(index, {})
                 extras = detail.get('extras')
                 if extras:
-                    print(extras)
+                    # print(extras)
                     perm_f_stats, = extras
                     plot_permutation_anova_distribution(
                         perm_f_stats=perm_f_stats,
@@ -80,7 +80,7 @@ def run_permutation_anova_by_window(df,
     print("\nSignificant windows (p < 0.05):")
     print(significant_df)
 
-    return results_df
+    return results_df, significant_df
 
 
 def run_glm_by_window(df,
