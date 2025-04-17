@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
-from excel_data_reader import ExcelDataReader
-from monkey_names import Zombies, BestFrans
+from analyses.data_readers.excel_data_reader import ExcelDataReader
+from analyses.enums.monkey_names import Zombies, BestFrans
 
 from data_readers.social_data_reader import SocialDataReader
 from enums.behaviors import AffiliativeBehaviors as Affiliative
@@ -117,41 +117,41 @@ if __name__ == '__main__':
     bestfrans = [member.value for name, member in BestFrans.__members__.items()]
     del bestfrans[-1]
     del zombies[-1]
-    social_data_reader = SocialDataReader(file_name="BestFransFinalRawData.xlsx")
+    social_data_reader = SocialDataReader(file_name="bestfrans_social_data/BestFransFinalRawData.xlsx")
     social_data = social_data_reader.social_data
 
     # Agonistic
     agonistic_behaviors = list(Agonistic)
     agon = extract_specific_social_behavior(social_data, agonistic_behaviors)
     # Counting specific social_data and saving the data table as excel
-    # agon_behavior_specific_count = agon.groupby('Behavior').apply(lambda x: x.groupby(['Focal Name', 'Social Modifier']).size()).reset_index(name='Count')
-    # agon_behavior_specific_count.columns = ['Behavior', 'Actor', 'Receiver', 'Count']
-    # agon_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_agonism.xlsx')
-    edge_list_agon = generate_edge_list_from_extracted_interactions(agon)
-    agonistic_feature_df = generate_feature_matrix_from_edge_list(edge_list_agon, bestfrans)
-    agonistic_feature_df.to_excel('bestfrans_feature_df_agonism_updated.xlsx')
+    agon_behavior_specific_count = agon.groupby('Behavior').apply(lambda x: x.groupby(['Focal Name', 'Social Modifier']).size()).reset_index(name='Count')
+    agon_behavior_specific_count.columns = ['Behavior', 'Actor', 'Receiver', 'Count']
+    agon_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_agonism_updated.xlsx')
+    # edge_list_agon = generate_edge_list_from_extracted_interactions(agon)
+    # agonistic_feature_df = generate_feature_matrix_from_edge_list(edge_list_agon, bestfrans)
+    # agonistic_feature_df.to_excel('bestfrans_feature_df_agonism_updated.xlsx')
 
     # Submissive
     submissive_behaviors = list(Submissive)
     sub = extract_specific_social_behavior(social_data, submissive_behaviors)
     # Counting specific social_data and saving the data table as excel
-    # sub_behavior_specific_count = sub.groupby('Behavior').apply(lambda x: x.groupby(['Focal Name', 'Social Modifier']).size()).reset_index(name='Count')
-    # sub_behavior_specific_count.columns = ['Behavior', 'Actor', 'Receiver', 'Count']
-    # sub_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_submission.xlsx')
-    edge_list_sub = generate_edge_list_from_extracted_interactions(sub)
-    submissive_feature_df = generate_feature_matrix_from_edge_list(edge_list_sub, bestfrans)
-    submissive_feature_df.to_excel('bestfrans_feature_df_submission_updated.xlsx')
+    sub_behavior_specific_count = sub.groupby('Behavior').apply(lambda x: x.groupby(['Focal Name', 'Social Modifier']).size()).reset_index(name='Count')
+    sub_behavior_specific_count.columns = ['Behavior', 'Actor', 'Receiver', 'Count']
+    sub_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_submission_updated.xlsx')
+    # edge_list_sub = generate_edge_list_from_extracted_interactions(sub)
+    # submissive_feature_df = generate_feature_matrix_from_edge_list(edge_list_sub, bestfrans)
+    # submissive_feature_df.to_excel('bestfrans_feature_df_submission_updated.xlsx')
     #
     # Affiliative
     affiliative_behaviors = list(Affiliative)
     aff = extract_specific_social_behavior(social_data, affiliative_behaviors)
     # Counting specific social_data and saving the data table as excel
-    # aff_behavior_specific_count = aff.groupby('Behavior').apply(lambda x: x.groupby(['Focal Name', 'Social Modifier']).size()).reset_index(name='Count')
-    # aff_behavior_specific_count.columns = ['Behavior', 'Actor', 'Receiver', 'Count']
-    # aff_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_affiliation.xlsx')
-    edge_list_aff = generate_edge_list_from_extracted_interactions(aff)
-    affiliative_feature_df = generate_feature_matrix_from_edge_list(edge_list_aff, bestfrans)
-    affiliative_feature_df.to_excel('bestfrans_feature_df_affiliative_updated.xlsx')
+    aff_behavior_specific_count = aff.groupby('Behavior').apply(lambda x: x.groupby(['Focal Name', 'Social Modifier']).size()).reset_index(name='Count')
+    aff_behavior_specific_count.columns = ['Behavior', 'Actor', 'Receiver', 'Count']
+    aff_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_affiliation_updated.xlsx')
+    # edge_list_aff = generate_edge_list_from_extracted_interactions(aff)
+    # affiliative_feature_df = generate_feature_matrix_from_edge_list(edge_list_aff, bestfrans)
+    # affiliative_feature_df.to_excel('bestfrans_feature_df_affiliative_updated.xlsx')
     '''
     # Get genealogy matrix
     # excel_data_reader = ExcelDataReader(file_name='zombies_genealogy_matrix.xlsx')

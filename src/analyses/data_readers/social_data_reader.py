@@ -1,4 +1,4 @@
-from excel_data_reader import ExcelDataReader
+from analyses.data_readers.excel_data_reader import ExcelDataReader
 
 
 class SocialDataReader(ExcelDataReader):
