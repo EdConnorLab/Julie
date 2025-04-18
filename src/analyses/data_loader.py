@@ -70,6 +70,54 @@ def combine_unsorted_with_sorted(raw_unsorted_data, sorted_data):
     return combined_df
 
 
+def load_and_combine_data(date, round_no):
+    """Load and combine raw unsorted and sorted spike data."""
+    raw_unsorted_data, _, sorted_data = load_raw_data(date, round_no)
+    combined_data = combine_unsorted_with_sorted(raw_unsorted_data, sorted_data)
+    return combined_data
+
+
+# --- Data explosion (wide → long format) ---
+def explode_spike_data(combined_data, date, round_no, only_valid_channels=False):
+    """Explode spike times into long-format DataFrame with metadata."""
+    rows = []
+    for _, row in combined_data.iterrows():
+        for channel_enum, spike_list in row['SpikeTimes'].items():
+            rows.append({
+                'TaskField': row['TaskField'],
+                'MonkeyId': row['MonkeyId'],
+                'MonkeyGroup': row['MonkeyGroup'],
+                'MonkeyName': row['MonkeyName'],
+                'Channel': channel_enum,
+                'SpikeTimes': spike_list,
+                'EpochStartStop': row['EpochStartStop']
+            })
+    exploded_df = pd.DataFrame(rows)
+
+    sample_channel = str(exploded_df['Channel'].iloc[0])
+    has_unit = "_Unit" in sample_channel
+
+    def normalize_channel(ch):
+        ch_str = str(ch) if not hasattr(ch, 'value') else str(ch)
+        return ch_str.split("_Unit")[0] if has_unit else ch_str
+
+    exploded_df['BaseChannel'] = exploded_df['Channel'].apply(normalize_channel)
+    exploded_df['Date'] = date
+    exploded_df['Round No.'] = round_no
+    exploded_df['NeuronID'] = (
+            exploded_df['Date'].astype(str) + "_" +
+            exploded_df['Round No.'].astype(str) + "_" +
+            exploded_df['Channel'].astype(str)
+    )
+    if only_valid_channels:
+        reader = RecordingMetadataReader()
+        valid_channels = reader.get_valid_channels(date, round_no)
+        valid_channels_list = [str(ch) for ch in valid_channels]
+        exploded_df = exploded_df[exploded_df['BaseChannel'].isin(valid_channels_list)]
+
+    return exploded_df
+
+
 if __name__ == '__main__':
     date = '2023-09-26'
     round_no = 1
