@@ -6,11 +6,11 @@ from clat.compile.task.cached_task_fields import CachedTaskFieldList
 from clat.compile.task.classic_database_task_fields import TaskIdField
 from clat.compile.task.compile_task_id import PngSlideIdCollector
 from src.compile.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
-from julie_intan_file_per_experiment_fields import SpikeTimesForChannelsField_Experiment, \
+from compile.julie_intan_file_per_experiment_fields import SpikeTimesForChannelsField_Experiment, \
     EpochStartStopField_Experiment, PeriStimulusSpikeTimesForChannelsField_Experiment
-from julie_intan_file_per_trial_fields import SpikeTimesForChannelsField, EpochStartStopField
+from compile.julie_intan_file_per_trial_fields import SpikeTimesForChannelsField, EpochStartStopField
 from clat.compile.task.task_field import TaskFieldList, get_data_from_tasks, TaskField
-from julie_one_file_spike_parsing import OneFileParser
+from compile.julie_one_file_spike_parsing import OneFileParser
 from clat.util import time_util
 from clat.util.connection import Connection
 

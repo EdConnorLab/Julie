@@ -11,7 +11,7 @@ from clat.compile.task.task_field import TaskFieldList, TaskField
 from clat.intan.livenotes import map_task_id_to_epochs_with_livenotes
 from clat.intan.marker_channels import epoch_using_marker_channels
 from clat.intan.rhd import load_intan_rhd_format
-from manual_thresh_compilation import calc_start_and_end_unix_times
+from compile.manual_thresh_compilation import calc_start_and_end_unix_times
 from clat.util.connection import Connection
 from src.compile.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
 
