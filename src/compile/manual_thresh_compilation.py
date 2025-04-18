@@ -2,16 +2,17 @@ import os
 from datetime import datetime, time, date
 
 import pytz
+from clat.compile.task.cached_task_fields import CachedTaskFieldList
+from clat.compile.task.classic_database_task_fields import TaskIdField
 from clat.compile.task.compile_task_id import PngSlideIdCollector
-from clat.compile.task.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
+from src.compile.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
+from julie_intan_file_per_experiment_fields import SpikeTimesForChannelsField_Experiment, \
+    EpochStartStopField_Experiment, PeriStimulusSpikeTimesForChannelsField_Experiment
+from julie_intan_file_per_trial_fields import SpikeTimesForChannelsField, EpochStartStopField
 from clat.compile.task.task_field import TaskFieldList, get_data_from_tasks, TaskField
+from julie_one_file_spike_parsing import OneFileParser
 from clat.util import time_util
 from clat.util.connection import Connection
-
-from compile.julie_intan_file_per_experiment_fields import SpikeTimesForChannelsField_Experiment, \
-    EpochStartStopField_Experiment, PeriStimulusSpikeTimesForChannelsField_Experiment
-from compile.julie_intan_file_per_trial_fields import SpikeTimesForChannelsField, EpochStartStopField
-from compile.julie_one_file_spike_parsing import OneFileParser
 
 
 def main():
@@ -25,7 +26,6 @@ def main():
     #              start_time=time(17, 0, 0),
     #              end_time=time(17, 59, 0),
     #              )
-
 
 def compile_data(day: date = None,
                  start_time: time = None,
@@ -48,7 +48,7 @@ def compile_data(day: date = None,
         filename = f"{day.strftime('%Y-%m-%d')}_{start_time.strftime('%H-%M-%S')}_to_{end_time.strftime('%H-%M-%S')}.pkl"
 
     # Clean rows with empty SpikeTimes
-    data = data[data['SpikeTimes'].notna()]
+    data = data[data['RawSpikeTimes'].notna()]
 
     # Save Data
     # save_dir = "/"
@@ -80,21 +80,20 @@ def collect_raw_data_single_file_for_experiment(*, day: date, start_time: time, 
     # Parse Spikes
     parser = OneFileParser()
     # spike_tstamps_for_channels_by_task_id, epoch_start_stop_by_task_id, sample_rate = parser.parse(intan_file_path)
-    unfiltered_spike_tstamps_for_channels_by_task_id, spike_tstamps_for_channels_by_task_id, epoch_start_stop_by_task_id, sample_rate = parser.parse_with_peristimulus_spikes(
-        intan_file_path)
+    unfiltered_spike_tstamps_for_channels_by_task_id, spike_tstamps_for_channels_by_task_id, epoch_start_stop_by_task_id, sample_rate = parser.parse_with_peristimulus_spikes(intan_file_path)
 
     # Task Fields
-    fields = TaskFieldList()
-    fields.append(TaskField())
+    fields = CachedTaskFieldList()
+    fields.append(TaskIdField(conn_xper))
     fields.append(FileNameField(conn_xper=conn_xper))
     fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
     fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
     fields.append(MonkeyGroupField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(SpikeTimesForChannelsField_Experiment(spike_tstamps_for_channels_by_task_id))
-    fields.append(PeriStimulusSpikeTimesForChannelsField_Experiment(unfiltered_spike_tstamps_for_channels_by_task_id))
-    fields.append(EpochStartStopField_Experiment(epoch_start_stop_by_task_id))
+    fields.append(SpikeTimesForChannelsField_Experiment(conn_xper, spike_tstamps_for_channels_by_task_id))
+    fields.append(PeriStimulusSpikeTimesForChannelsField_Experiment(conn_xper, unfiltered_spike_tstamps_for_channels_by_task_id))
+    fields.append(EpochStartStopField_Experiment(conn_xper, epoch_start_stop_by_task_id))
     # Get data
-    data = get_data_from_tasks(fields, task_ids)
+    data = fields.to_data(task_ids)
     return data
 
 
@@ -109,8 +108,7 @@ def calc_start_and_end_unix_times(day, start_time, end_time):
     return start_unix, end_unix
 
 
-def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time: time = time(0, 0, 0),
-                                        end_time: time = time(23, 59, 59)):
+def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time: time = time(0, 0, 0), end_time: time = time(23, 59, 59)):
     # day to string
     day_path = day.strftime("%Y-%m-%d")
 
@@ -130,8 +128,8 @@ def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time:
     task_ids = task_id_collector.collect_complete_task_ids(time_range)
 
     # Task Fields
-    fields = TaskFieldList()
-    fields.append(TaskField())
+    fields = CachedTaskFieldList()
+    fields.append(TaskIdField(conn_xper))
     fields.append(FileNameField(conn_xper=conn_xper))
     fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
     fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
@@ -139,7 +137,7 @@ def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time:
     fields.append(SpikeTimesForChannelsField(intan_data_path=intan_data_path))
     fields.append(EpochStartStopField(intan_data_path=intan_data_path))
     # Get data
-    data = get_data_from_tasks(fields, task_ids)
+    data = fields.to_data(task_ids)
     print(data.to_string())
     return data
 

@@ -4,15 +4,16 @@ import re
 from datetime import date, time
 from typing import Optional
 
+from clat.compile.task.cached_task_fields import CachedTaskFieldList, CachedTaskDatabaseField
+from clat.compile.task.classic_database_task_fields import TaskIdField
 from clat.compile.task.compile_task_id import PngSlideIdCollector
-from clat.compile.task.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
 from clat.compile.task.task_field import TaskFieldList, TaskField
 from clat.intan.livenotes import map_task_id_to_epochs_with_livenotes
 from clat.intan.marker_channels import epoch_using_marker_channels
 from clat.intan.rhd import load_intan_rhd_format
+from manual_thresh_compilation import calc_start_and_end_unix_times
 from clat.util.connection import Connection
-
-from compile.manual_thresh_compilation import calc_start_and_end_unix_times
+from src.compile.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
 
 
 def main():
@@ -44,7 +45,7 @@ def compile_data(*, experiment_name: str, day: date):
                                                                stim_epochs_from_markers)
 
     # # Collect Sorted Spikes - SPIKE SORTER
-    # sorted_spikes = read_pickle(os.path.join(intan_file_path, "sorted_spikes.pkl"))
+    sorted_spikes = read_pickle(os.path.join(intan_file_path, "sorted_spikes.pkl"))
 
     # Collect task Ids
     task_id_collector = PngSlideIdCollector(conn_xper)
@@ -52,14 +53,14 @@ def compile_data(*, experiment_name: str, day: date):
     task_ids = task_id_collector.collect_complete_task_ids(time_range)
 
     # Task Fields
-    fields = TaskFieldList()
-    fields.append(TaskField())
+    fields = CachedTaskFieldList()
+    fields.append(TaskIdField(conn_xper))
     fields.append(FileNameField(conn_xper=conn_xper))
     fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
     fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
     fields.append(MonkeyGroupField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(EpochStartStopTimesField(epochs_for_task_ids, sample_rate))
-    # fields.append(SortedSpikeTStampField(sorted_spikes, sample_rate, epochs_for_task_ids))
+    fields.append(EpochStartStopTimesField(conn_xper, epochs_for_task_ids, sample_rate))
+    fields.append(SortedSpikeTStampField(conn_xper, sorted_spikes, sample_rate, epochs_for_task_ids))
 
     # Get data
     data = fields.to_data(task_ids)
@@ -72,11 +73,11 @@ def compile_data(*, experiment_name: str, day: date):
     print(data.to_string())
 
 
-class EpochStartStopTimesField(TaskField):
-    def __init__(self, epoch_indices_for_task_ids: dict, sample_rate, name: str = "EpochStartStop"):
-        super().__init__(name=name)
+class EpochStartStopTimesField(CachedTaskDatabaseField):
+    def __init__(self, conn, epoch_indices_for_task_ids: dict, sample_rate):
         self.epoch_start_stop_by_task_id = epoch_indices_for_task_ids
         self.sample_rate = sample_rate
+        super().__init__(conn)
 
     def get(self, task_id: int) -> tuple:
         try:
@@ -90,17 +91,20 @@ class EpochStartStopTimesField(TaskField):
         except KeyError:
             return None
 
+    def get_name(self):
+        return "EpochStartStop"
+
 
 class SortedSpikeTStampField(EpochStartStopTimesField):
-    def __init__(self, spike_indices_by_unit_by_channel: dict, sample_rate: int, epoch_times_for_task_ids: dict,
-                 name='SpikeTimes'):
-        super().__init__(epoch_times_for_task_ids, sample_rate, name=name)
+    def __init__(self, conn, spike_indices_by_unit_by_channel: dict, sample_rate: int, epoch_times_for_task_ids: dict):
         self.spike_indices_by_unit_by_channel = spike_indices_by_unit_by_channel
         self.sample_rate = sample_rate
+        super().__init__(conn, epoch_times_for_task_ids, sample_rate)
 
     def get(self, task_id: int):
         spikes_tstamps_by_unit = {}
-        epoch_start_stop_times = super().get(task_id)
+        # epoch_start_stop_times = super().get(task_id)
+        epoch_start_stop_times = self.get_cached_super(task_id, EpochStartStopTimesField, self.epoch_start_stop_by_task_id , self.sample_rate)
         if epoch_start_stop_times is None:
             return None
 
@@ -115,6 +119,8 @@ class SortedSpikeTStampField(EpochStartStopTimesField):
                         spikes_tstamps_by_unit[new_unit_name].append(spike_tstamp)
         return spikes_tstamps_by_unit
 
+    def get_name(self):
+        return "SortedSpikeTimes"
 
 def read_pickle(path: str):
     try:
