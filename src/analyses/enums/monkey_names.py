@@ -65,7 +65,7 @@ class StrangerThings(Enum):
     RANK = [S_M1, S_F1, S_F2, S_F3, S_F4, S_J1, S_J2, S_J3, S_J4, S_J5, S_J6]
 
 
-def get_monkeys_by_rank(groupname: str):
+def get_monkeys_by_rank(groupname: str, exclude: str = None):
     group_to_class = {
         "Zombies": Zombies,
         "Best Frans": BestFrans,
@@ -73,8 +73,13 @@ def get_monkeys_by_rank(groupname: str):
         "Stranger Things": StrangerThings,
     }
 
-    if groupname in group_to_class:
-        cls = group_to_class[groupname]  # Get the corresponding class
-        return cls.RANK.value  # Get ordered values
-    else:
+    if groupname not in group_to_class:
         raise ValueError(f"Unknown group name: {groupname}")
+
+    cls = group_to_class[groupname]
+    monkey_list = [m.value for m in cls.RANK]
+
+    if exclude is not None:
+        monkey_list = [m for m in monkey_list if m != exclude]
+
+    return monkey_list
