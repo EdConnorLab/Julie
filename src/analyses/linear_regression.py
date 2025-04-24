@@ -1,5 +1,6 @@
 import pandas as pd
 import statsmodels.formula.api as smf
+from scipy.stats import zscore
 from statsmodels.formula.api import mixedlm
 import statsmodels.api as sm
 
@@ -118,9 +119,12 @@ if __name__ == "__main__":
     date = '2023-09-26'
     round_no = 1
     exploded_df = prepare_exploded_spike_data(date, round_no, True)
-    trial_df = compute_trial_level_spike_rate(exploded_df)
-    mean_df = compute_mean_spike_rate(trial_df)
-    print(mean_df)
+    # trial_df = compute_trial_level_spike_rate(exploded_df)
+    # mean_df = compute_mean_spike_rate(trial_df)
+    # print(mean_df)
+    file_name = '../social_data/zombies_social_data/zombies_feature_df_affiliation.xlsx'
+    affiliation_df = pd.read_excel(file_name)
+    run_directional_vector_regression(affiliation_df, exploded_df, direction='column', normalize=True)
 
     # base_dir = '../social_data/zombies_social_data/'
     # zombies_affiliation_from_file_name = 'zombies_affiliation_from.csv'

@@ -1,7 +1,8 @@
 import pandas as pd
 
 from analyses.cache_utils import ExplodedSpikeCacheManager
-
+from tqdm import tqdm
+from collections import defaultdict
 """
 Data Preparation Module for Spike Data Analysis
 -----------------------------------------------
@@ -65,55 +66,44 @@ def aggregate_timebin_level(df):
 
 def extract_spike_counts_from_windows(window_df):
     """
-    Extract spike counts for each neuron and time window directly from raw spike times.
-
-    Parameters:
-    - window_df: DataFrame with ['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']
-
-    Returns:
-    - DataFrame with columns:
-        ['NeuronID', 'MonkeyName', 'MonkeyGroup', 'TaskField',
-         'WindowStart_ms', 'WindowEnd_ms', 'SpikeCount']
+    Extract spike counts for each neuron and time window from cached raw spike times.
     """
-    from tqdm import tqdm
-    from collections import defaultdict
-
     spike_count_rows = []
-    cache = {}  # (date, round_no) → exploded_df
+    cache = {}  # {(date, round_no): exploded_df}
 
     for _, row in tqdm(window_df.iterrows(), total=len(window_df), desc="Extracting spike counts"):
         neuron_id = row['NeuronID']
-        start_ms = row['WindowStart_ms']
-        end_ms = row['WindowEnd_ms']
-        start_sec = start_ms / 1000
-        end_sec = end_ms / 1000
+        start_ms, end_ms = row['WindowStart_ms'], row['WindowEnd_ms']
+        start_sec, end_sec = start_ms / 1000, end_ms / 1000
 
-        # Parse date and round_no from NeuronID
+        # Extract date and round from NeuronID (e.g., "2023-09-26_3_Channel.C_003_Unit 1")
         parts = neuron_id.split('_', 3)
-        date_str, round_no = str(parts[0]), int(parts[1])
+        date_str, round_no = parts[0], int(parts[1])
         cache_key = (date_str, round_no)
-        # Load + cache exploded data
+
+        # Use cache manager
         if cache_key not in cache:
             exploded_df = prepare_exploded_spike_data(date_str, round_no)
             cache[cache_key] = exploded_df
         else:
             exploded_df = cache[cache_key]
 
-        neuron_df = exploded_df[exploded_df['NeuronID'] == neuron_id]
-        for _, trial_row in neuron_df.iterrows():
+        # Match spike rows
+        neuron_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]
+        for _, trial_row in neuron_trials.iterrows():
             spike_times = trial_row['SpikeTimes']
             epoch_start, _ = trial_row['EpochStartStop']
-            window_start_abs = epoch_start + start_sec
-            window_end_abs = epoch_start + end_sec
-            count = sum(window_start_abs <= t < window_end_abs for t in spike_times)
+            window_start = epoch_start + start_sec
+            window_end = epoch_start + end_sec
+            count = sum(window_start <= t < window_end for t in spike_times)
 
             spike_count_rows.append({
                 'NeuronID': neuron_id,
                 'MonkeyName': trial_row['MonkeyName'],
                 'MonkeyGroup': trial_row['MonkeyGroup'],
                 'TaskField': trial_row['TaskField'],
-                'WindowStart_ms': row['WindowStart_ms'],
-                'WindowEnd_ms': row['WindowEnd_ms'],
+                'WindowStart_ms': start_ms,
+                'WindowEnd_ms': end_ms,
                 'SpikeCount': count
             })
 

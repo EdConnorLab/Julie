@@ -7,19 +7,14 @@ from analyses.data_readers.recording_metadata_reader import RecordingMetadataRea
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import explained_variance_score
 from analyses.response_window_processing import get_spike_count_for_single_neuron_with_time_window
+from analyses.spike_count import extract_spike_counts_from_windows
 
 
 def run_linear_regression_using_sklearn(x, y):
     x = np.array(x).reshape(-1, 1)
     y = np.array(y).reshape(-1, 1)
-    # Model
-    model = LinearRegression()
-    model.fit(x, y)
-    # Coefficients
-    coeff = model.coef_[0]
-    intercept = model.intercept_
-    r_squared = model.score(x, y)
-    return coeff, intercept, r_squared
+    model = LinearRegression().fit(x,y)
+    return  model.coef_[0], model.intercept_, model.score(x, y) # coeff, intercept, r_squared
 
 
 
@@ -47,7 +42,7 @@ def plot_regression_scatter(x, y, coeff, intercept, r_squared, behavior_name, so
     plt.savefig(os.path.join(output_dir, filename))
     plt.close()
 
-def run_linear_regression_analysis(spike_counts, behavior_table, behavior_name):
+def run_linear_regression_analysis(spike_counts, behavior_table, behavior_name, subject_monkey_index):
     results = []
     for index, row in spike_counts.iterrows():
         date = row['Date']
@@ -92,8 +87,8 @@ def run_linear_regression_analysis(spike_counts, behavior_table, behavior_name):
                     'R-squared': r_squared
                 })
     results_df = pd.DataFrame(results)
-    print(results_df)
-    results_df.to_excel(behavior_name + '.xlsx')
+    # print(results_df)
+    # results_df.to_excel(behavior_name + '.xlsx')
     return results_df
 
 
@@ -102,7 +97,7 @@ if __name__ == "__main__":
     zombies = [member.value for name, member in Zombies.__members__.items()]
     del zombies[-1]
 
-    base_dir = '/social_data/'
+    base_dir = '/home/connorlab/Documents/GitHub/Julie/social_data/zombies_social_data/'
     zombies_affiliation_file_name = 'zombies_feature_df_affiliation.xlsx'
     zombies_submission_file_name = 'zombies_feature_df_submission.xlsx'
     zombies_agonism_file_name = 'zombies_feature_df_agonism.xlsx'
@@ -120,18 +115,13 @@ if __name__ == "__main__":
     zombies_agonism_to = zombies_agonism_df.iloc[:, 1:].to_numpy()
     zombies_agonism_from = zombies_agonism_to.T
 
-    # Cells
-    additional_anova_passed_cells = pd.read_excel(
-        "/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/window_cells_ANOVA_passed_to_keep.xlsx")
-    ed_anova_passed_cells = pd.read_excel(
-        "/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/Ed_window_cells_ANOVA_passed_Zombies.xlsx")
-    additional_anova_passed_cells['Time Window'] = additional_anova_passed_cells['Time Window'].apply(
-        lambda s: tuple((float(num)) for num in s.strip('()').split(',')))
-    cells_with_windows = pd.concat([additional_anova_passed_cells, ed_anova_passed_cells], ignore_index=True)
-    cells_with_windows['Date'] = pd.to_datetime(cells_with_windows['Date']).dt.date
-    cells_with_windows_sorted = cells_with_windows.sort_values(by=['Date', 'Round No.', 'Cell'])
-    cells_with_windows_sorted.to_excel('all_anova_passed_cells.xlsx')
-    all_spike_counts = get_spike_count_for_single_neuron_with_time_window(cells_with_windows)
+    # all_anova_passed_cells were created from combining
+    # "/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/Ed_window_cells_ANOVA_passed_Zombies.xlsx"
+    # and
+    # "/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/window_cells_ANOVA_passed_to_keep.xlsx"
+    cells_with_windows = pd.read_excel('all_anova_passed_cells.xlsx')
+    all_spike_counts = extract_spike_counts_from_windows(cells_with_windows)
+    print(all_spike_counts)
     all_spike_counts.columns = all_spike_counts.columns.astype(str)
     subject_monkey_index = 6
     subject_monkey = '81G'
@@ -142,11 +132,11 @@ if __name__ == "__main__":
     zombies_spike_counts[zombies_without_subject_monkey] = zombies_spike_counts[zombies_without_subject_monkey].map(
         lambda x: sum(x) / len(x) if x else None)
     run_linear_regression_analysis(zombies_spike_counts, zombies_affiliation_to, "AffliationTo")
-    run_linear_regression_analysis(zombies_spike_counts, zombies_affiliation_from, "AffliationFrom")
-    run_linear_regression_analysis(zombies_spike_counts, zombies_submission_to, "SubmissionTo")
-    run_linear_regression_analysis(zombies_spike_counts, zombies_submission_from, "SubmissionFrom")
-    run_linear_regression_analysis(zombies_spike_counts, zombies_agonism_to, "AgonismTo")
-    run_linear_regression_analysis(zombies_spike_counts, zombies_agonism_from, "AgonismFrom")
+    # run_linear_regression_analysis(zombies_spike_counts, zombies_affiliation_from, "AffliationFrom")
+    # run_linear_regression_analysis(zombies_spike_counts, zombies_submission_to, "SubmissionTo")
+    # run_linear_regression_analysis(zombies_spike_counts, zombies_submission_from, "SubmissionFrom")
+    # run_linear_regression_analysis(zombies_spike_counts, zombies_agonism_to, "AgonismTo")
+    # run_linear_regression_analysis(zombies_spike_counts, zombies_agonism_from, "AgonismFrom")
 
 '''an example to run for testing -- r squared has to be around 0.5092734647876507'''
 # x = np.array([11.5, 8.444444444444445, 8.0, 8.444444444444445, 7.1, 7.3, 10.5, 5.777777777777778]).reshape(-1, 1)
