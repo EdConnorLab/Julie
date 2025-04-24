@@ -14,7 +14,7 @@ def get_mean_spike_rate_per_neuron_monkey(trial_level_spike_rate_df):
     # Take mean spike rate per NeuronID × MonkeyName
     mean_rate_df = (
         trial_level_spike_rate_df
-        .groupby(['NeuronID', 'MonkeyName'])['SpikeRate']
+        .groupby(['NeuronID', 'MonkeyName', 'MonkeyGroup'])['SpikeRate']
         .mean()
         .reset_index()
         .rename(columns={'SpikeRate': 'MeanSpikeRate'})

@@ -10,7 +10,8 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from analyses.enums.monkey_names import get_monkeys_by_default_order
-from analyses.spike_count import extract_spike_counts_from_windows
+from analyses.spike_count import extract_spike_counts_from_windows, prepare_exploded_spike_data
+from analyses.spike_rate import compute_mean_spike_rate_table
 
 def run_linear_regression_using_sklearn(x, y):
     x = np.array(x).reshape(-1, 1)
@@ -19,11 +20,12 @@ def run_linear_regression_using_sklearn(x, y):
     return model.coef_[0], model.intercept_, model.score(x, y)
 
 
-def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx):
+def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_rate = False):
     results = []
+    value_col = 'MeanSpikeRate' if use_rate else 'SpikeCount'
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
-    mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)['SpikeCount'].mean()
-    spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values='SpikeCount')
+    mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col].mean()
+    spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values= value_col)
 
     for neuron_id, row in spike_matrix.iterrows():
         for src_idx, src_monkey in enumerate(monkey_list):
@@ -50,12 +52,12 @@ def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior
 
 
 
-def run_rsa_analysis(spike_df, behavior_matrix, monkey_list, subject_idx, method='cosine'):
+def run_rsa_analysis(spike_df, behavior_matrix, monkey_list, subject_idx, method='cosine', use_rate = False):
     """
     Run RSA comparing neural and behavioral similarity (excluding subject monkey).
 
     Parameters:
-        spike_df (pd.DataFrame): contains ['NeuronID', 'MonkeyName', 'SpikeCount']
+        spike_df (pd.DataFrame): contains ['NeuronID', 'MonkeyName', 'SpikeCount' or 'MeanSpikeRate']
         behavior_matrix (np.ndarray): full social matrix (e.g., AffiliationTo)
         monkey_list (list): all monkeys (ordered like behavior_matrix)
         subject_idx (int): index of the subject monkey to exclude
@@ -65,6 +67,8 @@ def run_rsa_analysis(spike_df, behavior_matrix, monkey_list, subject_idx, method
         r, p, neural_rsm, social_rsm
     """
 
+    value_col = 'MeanSpikeRate' if use_rate else 'SpikeCount'
+
     # Step 0: Remove subject monkey
     subject_monkey = monkey_list[subject_idx]
     filtered_monkeys = [m for m in monkey_list if m != subject_monkey]
@@ -72,11 +76,11 @@ def run_rsa_analysis(spike_df, behavior_matrix, monkey_list, subject_idx, method
     # Filter neural data
     mean_df = (
         spike_df[spike_df['MonkeyName'].isin(filtered_monkeys)]
-        .groupby(['NeuronID', 'MonkeyName'], as_index=False)['SpikeCount']
+        .groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col]
         .mean()
     )
 
-    neural_matrix = mean_df.pivot(index='NeuronID', columns='MonkeyName', values='SpikeCount')
+    neural_matrix = mean_df.pivot(index='NeuronID', columns='MonkeyName', values=value_col)
     neural_matrix = neural_matrix[filtered_monkeys].dropna()
 
     # Filter behavior matrix
@@ -185,37 +189,40 @@ if __name__ == "__main__":
 
     # Load spike windows and compute spike counts
     cells_df = pd.read_excel('all_anova_passed_cells.xlsx')
-    spike_df = extract_spike_counts_from_windows(cells_df)
+    # spike_df = extract_spike_counts_from_windows(cells_df)
+    exploded_df = prepare_exploded_spike_data("2023-09-26", 1, True)
+    print(exploded_df)
+    spike_df = compute_mean_spike_rate_table(exploded_df)
 
-    # subject_monkey_index = 6
-    # all_results = []
-    # for name, mat in behavior_matrices.items():
-    #     results_df = run_directional_vector_linear_regression(
-    #         spike_df, mat, name, monkey_group_name, monkey_list, subject_monkey_index
-    #     )
-    #     # plot_clustered_neurons(results_df, name)
-    #     all_results.append(results_df)
-    #
-    # final_df = pd.concat(all_results, ignore_index=True)
-    # print(final_df.head())
-
-    rsa_results = []
+    subject_monkey_index = 6
+    all_results = []
     for name, mat in behavior_matrices.items():
-        r, p, neural_rsm, social_rsm = run_rsa_analysis(
-            spike_df=spike_df,
-            behavior_matrix=mat,
-            monkey_list=monkey_list,
-            subject_idx=6,
-            method='correlation'
+        results_df = run_directional_vector_linear_regression(
+            spike_df, mat, name, monkey_group_name, monkey_list, subject_monkey_index, use_rate = True
         )
+        # plot_clustered_neurons(results_df, name)
+        plot_heatmap_r_squared(results_df, name)
+        all_results.append(results_df)
 
-        rsa_results.append({
-            'Behavior': name,
-            'RSA_r': r,
-            'RSA_p': p
-        })
+    final_df = pd.concat(all_results, ignore_index=True)
+    print(final_df.head())
 
-    rsa_df = pd.DataFrame(rsa_results)
-    print(rsa_df.sort_values(by='RSA_r', ascending=False))
-
-
+    # rsa_results = []
+    # for name, mat in behavior_matrices.items():
+    #     r, p, neural_rsm, social_rsm = run_rsa_analysis(
+    #         spike_df=spike_df,
+    #         behavior_matrix=mat,
+    #         monkey_list=monkey_list,
+    #         subject_idx=6,
+    #         method='correlation',
+    #         use_rate = True
+    #     )
+    #
+    #     rsa_results.append({
+    #         'Behavior': name,
+    #         'RSA_r': r,
+    #         'RSA_p': p
+    #     })
+    #
+    # rsa_df = pd.DataFrame(rsa_results)
+    # print(rsa_df.sort_values(by='RSA_r', ascending=False))
