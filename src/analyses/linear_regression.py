@@ -39,43 +39,12 @@ def run_neuron_wise_spike_rate_regression(exploded_df, social_df, social_col='Af
 
     return pd.DataFrame(results)
 
-
-# Be cautious with collinearity!!!!!!!!!
-def run_trial_level_regression(exploded_df, social_df, social_col='AffiliationTo_z', model_type='ols'):
-    # Step 1: Prepare spike count data
-    df = exploded_df.copy()
-    df['SpikeCount'] = df['SpikeTimes'].apply(len)
-
-    # Collapse to one spike count per trial
-    trial_spike_count_df = (
-        df.groupby(['NeuronID', 'MonkeyName', 'TaskField'])['SpikeCount']
-        .sum()
-        .reset_index()
-    )
-
-    # Step 2: Merge with social score
-    merged_df = pd.merge(trial_spike_count_df, social_df[['MonkeyName', social_col]], on='MonkeyName')
-
-    # Step 3: Run regression per neuron
-    results = []
-    for neuron in merged_df['NeuronID'].unique():
-        neuron_df = merged_df[merged_df['NeuronID'] == neuron]
-        if model_type == 'ols':
-            model = smf.ols(f"SpikeCount ~ {social_col}", data=neuron_df).fit()
-        elif model_type == 'glm':
-            model = smf.glm(f"SpikeCount ~ {social_col}", data=neuron_df,
-                            family=sm.families.Poisson()).fit()
-        else:
-            raise ValueError("model_type must be 'ols' or 'glm'")
-
-        results.append({
-            'NeuronID': neuron,
-            'R_squared': model.rsquared if model_type == 'ols' else None,
-            'coef': model.params[social_col],
-            'p_value': model.pvalues[social_col]
-        })
-
-    return pd.DataFrame(results)
+# NOTE: Trial-level regression was removed.
+# Justification: social predictors are constant across trials,
+# causing collinearity and weak interpretability.
+# Preferred alternatives:
+#   - run_mean_rate_regression()
+#   - run_population_glmm()
 
 ##### ---- Population Level Analysis
 
