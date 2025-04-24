@@ -1,10 +1,14 @@
 import numpy as np
 import pandas as pd
 import os
-from analyses.enums.monkey_names import Zombies, get_monkeys_by_rank
-from analyses.spike_count import extract_spike_counts_from_windows
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.linear_model import LinearRegression
-
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+from analyses.enums.monkey_names import get_monkeys_by_default_order
+from analyses.spike_count import extract_spike_counts_from_windows
 
 def run_linear_regression_using_sklearn(x, y):
     x = np.array(x).reshape(-1, 1)
@@ -26,7 +30,6 @@ def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior
             y = np.delete(behavior_matrix[src_idx], [src_idx, subject_idx])
             x_row = row.drop(index=[monkey_list[src_idx], monkey_list[subject_idx]], errors='ignore')
             x = x_row.values.astype(float)
-
             if len(x) != len(y):
                 print(f"Length mismatch for {neuron_id} (source: {monkey_list[src_idx]})")
                 continue
@@ -43,11 +46,56 @@ def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior
 
     return pd.DataFrame(results)
 
+def plot_heatmap_r_squared(df, behavior_type):
+    """Heatmap: R² per NeuronID × Source Monkey."""
+    pivot_df = df.pivot(index='NeuronID', columns='Source_Monkey', values='R-squared')
+    plt.figure(figsize=(12, 6))
+    sns.heatmap(pivot_df, annot=True, cmap='YlOrRd', vmin=0, vmax=1)
+    plt.title(f"R² Heatmap - {behavior_type}")
+    plt.tight_layout()
+    plt.show()
+
+def plot_violin_r_squared(df, behavior_type):
+    """Violin plot: distribution of R² per Source Monkey."""
+    plt.figure(figsize=(10, 5))
+    sns.violinplot(data=df, x='Source_Monkey', y='R-squared')
+    plt.title(f"Distribution of R² per Source Monkey - {behavior_type}")
+    plt.axhline(0.25, color='gray', linestyle='--')
+    plt.tight_layout()
+    plt.show()
+
+def plot_best_r2_bar(df, behavior_type):
+    """Bar plot: each neuron's best-correlated source monkey."""
+    best_df = df.sort_values('R-squared', ascending=False).drop_duplicates('NeuronID')
+    plt.figure(figsize=(12, 5))
+    sns.barplot(data=best_df, x='NeuronID', y='R-squared', hue='Source_Monkey')
+    plt.title(f"Best R² per NeuronID by Source Monkey - {behavior_type}")
+    plt.xticks(rotation=90)
+    plt.tight_layout()
+    plt.show()
+
+def plot_clustered_neurons(df, behavior_type):
+    """Clustering neurons based on R² values across sources."""
+    pivot_df = df.pivot(index='NeuronID', columns='Source_Monkey', values='R-squared').fillna(0)
+    scaler = StandardScaler()
+    scaled = scaler.fit_transform(pivot_df)
+
+    pca = PCA(n_components=2)
+    reduced = pca.fit_transform(scaled)
+
+    kmeans = KMeans(n_clusters=3, n_init=10, random_state=42).fit(reduced)
+    plt.figure(figsize=(8, 6))
+    plt.scatter(reduced[:, 0], reduced[:, 1], c=kmeans.labels_, cmap='tab10', s=60)
+    plt.title(f"Neuron Clustering by R² Pattern {behavior_type}")
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == "__main__":
     # Setup
     monkey_group_name = "Zombies"
-    monkey_list = get_monkeys_by_rank(monkey_group_name)
+    monkey_list = get_monkeys_by_default_order(monkey_group_name)
     base_dir = '/home/connorlab/Documents/GitHub/Julie/social_data/zombies_social_data/'
     behavior_files = {
         "AffliationTo": "zombies_feature_df_affiliation.xlsx",
@@ -69,9 +117,14 @@ if __name__ == "__main__":
     spike_df = extract_spike_counts_from_windows(cells_df)
 
     subject_monkey_index = 6
-
+    all_results = []
     for name, mat in behavior_matrices.items():
         results_df = run_directional_vector_linear_regression(
             spike_df, mat, name, monkey_group_name, monkey_list, subject_monkey_index
         )
-        print(results_df.head())
+        # plot_clustered_neurons(results_df, name)
+        all_results.append(results_df)
+
+    final_df = pd.concat(all_results, ignore_index=True)
+    print(final_df.head())
+
