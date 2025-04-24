@@ -4,6 +4,7 @@ import pandas as pd
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import pearsonr
 import seaborn as sns
+import statsmodels.api as sm
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.decomposition import PCA
@@ -20,7 +21,7 @@ def run_linear_regression_using_sklearn(x, y):
     return model.coef_[0], model.intercept_, model.score(x, y)
 
 
-def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_rate = False):
+def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_rate = False, model_type = 'ols'):
     results = []
     value_col = 'MeanSpikeRate' if use_rate else 'SpikeCount'
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
@@ -38,15 +39,29 @@ def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior
                 print(f"Length mismatch for {neuron_id} (source: {monkey_list[src_idx]})")
                 continue
 
-            coeff, intercept, r_squared = run_linear_regression_using_sklearn(x, y)
-            if r_squared > 0.25:
-                print(f"--- {neuron_id} | {monkey_list[src_idx]} | R² = {r_squared:.3f}")
+            try:
+                X = sm.add_constant(x)
+                if model_type == 'ols':
+                    model = sm.OLS(y, X).fit()
+                    r_squared = model.rsquared
+                elif model_type == 'glm':
+                    model = sm.GLM(y, X, family=sm.families.Poisson()).fit()
+                    r_squared = None
+                else:
+                    raise ValueError("model_type must be 'ols' or 'glm'")
+
                 results.append({
                     'NeuronID': neuron_id,
                     'Behavior': behavior_name,
                     'Source_Monkey': monkey_list[src_idx],
-                    'R-squared': r_squared
+                    'Model': model_type,
+                    'R-squared': r_squared,
+                    'coef': model.params[1],
+                    'p_value': model.pvalues[1]
                 })
+            except Exception as e:
+                print(f"Error for Neuron {neuron_id}, Monkey {monkey_list[src_idx]}: {e}")
+                continue
 
     return pd.DataFrame(results)
 
