@@ -78,3 +78,17 @@ def get_monkeys_by_rank(groupname: str):
         return cls.RANK.value  # Get ordered values
     else:
         raise ValueError(f"Unknown group name: {groupname}")
+
+def get_monkeys_by_default_order(groupname: str):
+    group_to_class = {
+        "Zombies": Zombies,
+        "Best Frans": BestFrans,
+        "Instigators": Instigators,
+        "Stranger Things": StrangerThings,
+    }
+
+    if groupname in group_to_class:
+        cls = group_to_class[groupname]  # Get the corresponding class
+        return [m.value for m in cls.__members__.values() if m.name != "RANK"]
+    else:
+        raise ValueError(f"Unknown group name: {groupname}")
