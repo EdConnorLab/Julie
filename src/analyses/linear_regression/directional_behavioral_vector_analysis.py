@@ -1,8 +1,10 @@
+import os
 import numpy as np
 import pandas as pd
-import os
-import matplotlib.pyplot as plt
+from scipy.spatial.distance import pdist, squareform
+from scipy.stats import pearsonr
 import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
@@ -46,6 +48,74 @@ def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior
 
     return pd.DataFrame(results)
 
+
+
+def run_rsa_analysis(spike_df, behavior_matrix, monkey_list, subject_idx, method='cosine'):
+    """
+    Run RSA comparing neural and behavioral similarity (excluding subject monkey).
+
+    Parameters:
+        spike_df (pd.DataFrame): contains ['NeuronID', 'MonkeyName', 'SpikeCount']
+        behavior_matrix (np.ndarray): full social matrix (e.g., AffiliationTo)
+        monkey_list (list): all monkeys (ordered like behavior_matrix)
+        subject_idx (int): index of the subject monkey to exclude
+        method (str): similarity metric ('correlation', 'cosine', etc.)
+
+    Returns:
+        r, p, neural_rsm, social_rsm
+    """
+
+    # Step 0: Remove subject monkey
+    subject_monkey = monkey_list[subject_idx]
+    filtered_monkeys = [m for m in monkey_list if m != subject_monkey]
+
+    # Filter neural data
+    mean_df = (
+        spike_df[spike_df['MonkeyName'].isin(filtered_monkeys)]
+        .groupby(['NeuronID', 'MonkeyName'], as_index=False)['SpikeCount']
+        .mean()
+    )
+
+    neural_matrix = mean_df.pivot(index='NeuronID', columns='MonkeyName', values='SpikeCount')
+    neural_matrix = neural_matrix[filtered_monkeys].dropna()
+
+    # Filter behavior matrix
+    idxs = [monkey_list.index(m) for m in filtered_monkeys]
+    behavior_matrix = behavior_matrix[np.ix_(idxs, idxs)]
+
+    # Neural RSM
+    neural_rsm = 1 - pd.DataFrame(
+        squareform(pdist(neural_matrix.T, metric=method)),
+        index=filtered_monkeys,
+        columns=filtered_monkeys
+    )
+
+    # Social RSM
+    social_rsm = 1 - pd.DataFrame(
+        squareform(pdist(behavior_matrix.T, metric=method)),
+        index=filtered_monkeys,
+        columns=filtered_monkeys
+    )
+
+    # Flatten upper triangle for correlation
+    mask = np.triu(np.ones_like(neural_rsm), k=1).astype(bool)
+    neural_vec = neural_rsm.values[mask]
+    social_vec = social_rsm.values[mask]
+    r, p = pearsonr(neural_vec, social_vec)
+
+    # Plot
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    sns.heatmap(neural_rsm, ax=ax[0], cmap='viridis')
+    ax[0].set_title("Neural RSM")
+    sns.heatmap(social_rsm, ax=ax[1], cmap='viridis')
+    ax[1].set_title("Social RSM")
+    plt.suptitle(f"RSA: r = {r:.3f}, p = {p:.3g}", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+    return r, p, neural_rsm, social_rsm
+
+
 def plot_heatmap_r_squared(df, behavior_type):
     """Heatmap: R² per NeuronID × Source Monkey."""
     pivot_df = df.pivot(index='NeuronID', columns='Source_Monkey', values='R-squared')
@@ -74,7 +144,7 @@ def plot_best_r2_bar(df, behavior_type):
     plt.tight_layout()
     plt.show()
 
-def plot_clustered_neurons(df, behavior_type):
+def plot_clustered_neurons_per_behavior(df, behavior_type):
     """Clustering neurons based on R² values across sources."""
     pivot_df = df.pivot(index='NeuronID', columns='Source_Monkey', values='R-squared').fillna(0)
     scaler = StandardScaler()
@@ -91,6 +161,7 @@ def plot_clustered_neurons(df, behavior_type):
     plt.ylabel("PC2")
     plt.tight_layout()
     plt.show()
+
 
 if __name__ == "__main__":
     # Setup
@@ -116,15 +187,35 @@ if __name__ == "__main__":
     cells_df = pd.read_excel('all_anova_passed_cells.xlsx')
     spike_df = extract_spike_counts_from_windows(cells_df)
 
-    subject_monkey_index = 6
-    all_results = []
-    for name, mat in behavior_matrices.items():
-        results_df = run_directional_vector_linear_regression(
-            spike_df, mat, name, monkey_group_name, monkey_list, subject_monkey_index
-        )
-        # plot_clustered_neurons(results_df, name)
-        all_results.append(results_df)
+    # subject_monkey_index = 6
+    # all_results = []
+    # for name, mat in behavior_matrices.items():
+    #     results_df = run_directional_vector_linear_regression(
+    #         spike_df, mat, name, monkey_group_name, monkey_list, subject_monkey_index
+    #     )
+    #     # plot_clustered_neurons(results_df, name)
+    #     all_results.append(results_df)
+    #
+    # final_df = pd.concat(all_results, ignore_index=True)
+    # print(final_df.head())
 
-    final_df = pd.concat(all_results, ignore_index=True)
-    print(final_df.head())
+    rsa_results = []
+    for name, mat in behavior_matrices.items():
+        r, p, neural_rsm, social_rsm = run_rsa_analysis(
+            spike_df=spike_df,
+            behavior_matrix=mat,
+            monkey_list=monkey_list,
+            subject_idx=6,
+            method='correlation'
+        )
+
+        rsa_results.append({
+            'Behavior': name,
+            'RSA_r': r,
+            'RSA_p': p
+        })
+
+    rsa_df = pd.DataFrame(rsa_results)
+    print(rsa_df.sort_values(by='RSA_r', ascending=False))
+
 
