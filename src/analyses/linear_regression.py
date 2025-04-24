@@ -124,7 +124,6 @@ if __name__ == "__main__":
     # print(mean_df)
     file_name = '../social_data/zombies_social_data/zombies_feature_df_affiliation.xlsx'
     affiliation_df = pd.read_excel(file_name)
-    run_directional_vector_regression(affiliation_df, exploded_df, direction='column', normalize=True)
 
     # base_dir = '../social_data/zombies_social_data/'
     # zombies_affiliation_from_file_name = 'zombies_affiliation_from.csv'

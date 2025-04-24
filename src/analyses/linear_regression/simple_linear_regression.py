@@ -6,7 +6,6 @@ from analyses.enums.monkey_names import Zombies, BestFrans
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import explained_variance_score
-from analyses.response_window_processing import get_spike_count_for_single_neuron_with_time_window
 from analyses.spike_count import extract_spike_counts_from_windows
 
 
@@ -17,79 +16,38 @@ def run_linear_regression_using_sklearn(x, y):
     return  model.coef_[0], model.intercept_, model.score(x, y) # coeff, intercept, r_squared
 
 
-
-def plot_regression_scatter(x, y, coeff, intercept, r_squared, behavior_name, source_monkey, neuron_id, output_dir="regression_plots"):
-    # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
-
-    plt.figure(figsize=(6, 4))
-    plt.scatter(x, y, color='blue', alpha=0.7, label='Data points')
-
-    # Regression line
-    x_vals = np.array(plt.gca().get_xlim())
-    y_vals = intercept + coeff * x_vals
-    plt.plot(x_vals, y_vals, color='red', label=f'Fit: y = {coeff[0]:.2f}x + {intercept[0]:.2f}')
-
-    # Labels and title
-    plt.xlabel('Mean Firing Rate')
-    plt.ylabel(f'{behavior_name} Score')
-    plt.title(f'Neuron {neuron_id} | {behavior_name} | {source_monkey}\nR² = {r_squared:.2f}')
-    plt.legend()
-
-    # Save plot
-    filename = f"{behavior_name}_{source_monkey}_Neuron{neuron_id}.png"
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, filename))
-    plt.close()
-
-def run_linear_regression_analysis(spike_counts, behavior_table, behavior_name, subject_monkey_index):
+def run_directional_vector_linear_regression(all_spike_counts, behavior_table, behavior_name, monkey_group_name, monkey_list, subject_monkey_index):
     results = []
-    for index, row in spike_counts.iterrows():
-        date = row['Date']
-        round_no = row['Round No.']
-        time_window = row['Time Window']
+    all_spike_counts = all_spike_counts[all_spike_counts['MonkeyGroup'] == monkey_group_name]
+    all_spike_counts= all_spike_counts[all_spike_counts['MonkeyName'] != "NewMonkey"]
+    mean_spike_counts = all_spike_counts.groupby(['NeuronID', 'MonkeyName'], as_index=False)['SpikeCount'].mean()
+    mean_spike_counts.rename(columns={'SpikeCount': 'MeanSpikeCount'}, inplace=True)
+    spike_matrix = mean_spike_counts.pivot(index='NeuronID', columns='MonkeyName', values='MeanSpikeCount')
 
-        for sourcemonkey in range(len(zombies)):
-            exclude_columns = ['Date', 'Round No.', 'Time Window']
-            if sourcemonkey == subject_monkey_index:
+    for neuron_id, row in spike_matrix.iterrows():
+        for src_idx, src_monkey in enumerate(monkey_list):
+            if src_idx == subject_monkey_index:
                 continue
-            else:
-                behavior_table_arr = behavior_table[sourcemonkey, :]
-                y = np.delete(behavior_table_arr, [sourcemonkey, subject_monkey_index])
-                exclude_columns.append(zombies[sourcemonkey])
-                x = [value for key, value in row.items() if
-                     key not in exclude_columns and isinstance(value, (int, float))]
+            # Get y vector: source monkey’s behavior toward all others
+            y = np.delete(behavior_table[src_idx, :], [src_idx, subject_monkey_index])
+            # Get x vector: spike count of this neuron in response to those same monkeys
+            spike_row = row.drop(index=[monkey_list[src_idx], monkey_list[subject_monkey_index]], errors='ignore')
+            x = spike_row.values.astype(float)
+            # Make sure lengths match
+            if len(x) != len(y):
+                print(f"Mismatch in lengths for {neuron_id} (source: {monkey_list[src_idx]})")
+                continue  # skip if mismatch
             coeff, intercept, r_squared = run_linear_regression_using_sklearn(x, y)
-            plot_regression_scatter(
-                x=np.array(x),
-                y=np.array(y),
-                coeff=coeff,
-                intercept=intercept,
-                r_squared=r_squared,
-                behavior_name=behavior_name,
-                source_monkey=zombies[sourcemonkey],
-                neuron_id=index
-            )
             if r_squared > 0.25:
-                print("")
-                print(
-                    f"-------- Linear Regression Results for {date} Round No.{round_no} {time_window} {index} -------")
-                print(
-                    f"------------------------------------{zombies[sourcemonkey]}--------------------------------------")
-                print(f"r-squared: {r_squared}")
+                print(f"--- Regression for {neuron_id} (source: {monkey_list[src_idx]}) --- R² = {r_squared:.3f}")
                 results.append({
-                    'Date': date,
-                    'Round No.': round_no,
-                    'Cell': str(index),
-                    'Time Window': time_window,
+                    'NeuronID': neuron_id,
                     'Behavior': behavior_name,
-                    'Source_Monkey': zombies[sourcemonkey],
+                    'Source_Monkey': monkey_list[src_idx],
                     'R-squared': r_squared
                 })
-    results_df = pd.DataFrame(results)
-    # print(results_df)
-    # results_df.to_excel(behavior_name + '.xlsx')
-    return results_df
+
+    return pd.DataFrame(results)
 
 
 if __name__ == "__main__":
@@ -121,30 +79,6 @@ if __name__ == "__main__":
     # "/home/connorlab/Documents/GitHub/Julie/src/analyses/response_window_finder/window_cells_ANOVA_passed_to_keep.xlsx"
     cells_with_windows = pd.read_excel('all_anova_passed_cells.xlsx')
     all_spike_counts = extract_spike_counts_from_windows(cells_with_windows)
-    print(all_spike_counts)
-    all_spike_counts.columns = all_spike_counts.columns.astype(str)
     subject_monkey_index = 6
-    subject_monkey = '81G'
-    zombies_without_subject_monkey = [item for item in zombies if item != subject_monkey]
-    experimental_session_details = ['Date', 'Round No.', 'Time Window']
-    zombies_spike_counts = all_spike_counts[zombies_without_subject_monkey + experimental_session_details]
-    # get mean of spike counts
-    zombies_spike_counts[zombies_without_subject_monkey] = zombies_spike_counts[zombies_without_subject_monkey].map(
-        lambda x: sum(x) / len(x) if x else None)
-    run_linear_regression_analysis(zombies_spike_counts, zombies_affiliation_to, "AffliationTo")
-    # run_linear_regression_analysis(zombies_spike_counts, zombies_affiliation_from, "AffliationFrom")
-    # run_linear_regression_analysis(zombies_spike_counts, zombies_submission_to, "SubmissionTo")
-    # run_linear_regression_analysis(zombies_spike_counts, zombies_submission_from, "SubmissionFrom")
-    # run_linear_regression_analysis(zombies_spike_counts, zombies_agonism_to, "AgonismTo")
-    # run_linear_regression_analysis(zombies_spike_counts, zombies_agonism_from, "AgonismFrom")
-
-'''an example to run for testing -- r squared has to be around 0.5092734647876507'''
-# x = np.array([11.5, 8.444444444444445, 8.0, 8.444444444444445, 7.1, 7.3, 10.5, 5.777777777777778]).reshape(-1, 1)
-# y = np.array([38, 43, 24, 18, 6, 26, 29, 4])
-# coeff, intercept, r_squared = run_linear_regression_sklearn(x, y)
-# my_coeff, my_intcpt, my_r_sq = run_linear_regression_mine(x, y)
-# ed_coeff, ed_int, ed_r_sq = run_linear_regression_ed(x, y)
-# print(f"Linear Regression Results")
-# print(f"coeff -- sklearn, mine, ed's: {coeff}, {my_coeff}, {ed_coeff}")
-# print(f"intercept -- sklearn, mine, ed's: {intercept}, {my_intcpt}, {ed_int}")
-# print(f"r^2 -- sklearn, mine, ed's: {r_squared}, {my_r_sq}, {ed_r_sq}")
+    print(all_spike_counts)
+    run_directional_vector_linear_regression(all_spike_counts, zombies_affiliation_to, "AffliationTo", "Zombies", zombies, subject_monkey_index)
