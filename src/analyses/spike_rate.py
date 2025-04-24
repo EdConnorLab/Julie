@@ -1,6 +1,6 @@
 
 
-def compute_trial_level_spike_rate(exploded_df):
+def add_trial_spike_rate_columns(exploded_df):
     """
     Adds SpikeCount, EpochDuration, and SpikeRate columns to exploded spike data.
     """
@@ -10,7 +10,7 @@ def compute_trial_level_spike_rate(exploded_df):
     df['SpikeRate'] = df['SpikeCount'] / df['EpochDuration']
     return df
 
-def compute_mean_spike_rate(trial_level_spike_rate_df):
+def get_mean_spike_rate_per_neuron_monkey(trial_level_spike_rate_df):
     # Take mean spike rate per NeuronID × MonkeyName
     mean_rate_df = (
         trial_level_spike_rate_df
@@ -21,3 +21,8 @@ def compute_mean_spike_rate(trial_level_spike_rate_df):
     )
 
     return mean_rate_df
+
+def compute_mean_spike_rate_table(exploded_df):
+    trial_level_spike_rate_df= add_trial_spike_rate_columns(exploded_df)
+    df = get_mean_spike_rate_per_neuron_monkey(trial_level_spike_rate_df)
+    return df

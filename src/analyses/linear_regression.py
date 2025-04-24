@@ -5,14 +5,14 @@ from statsmodels.formula.api import mixedlm
 import statsmodels.api as sm
 
 from analyses.spike_count import prepare_exploded_spike_data
-from analyses.spike_rate import compute_trial_level_spike_rate, compute_mean_spike_rate
+from analyses.spike_rate import compute_mean_spike_rate_table
+
 
 ##### ---- Single Neuron Level Analysis
 
-def run_mean_rate_regression(exploded_df, social_df, social_col='AffiliationTo_z', model_type='ols'):
+def run_neuron_wise_spike_rate_regression(exploded_df, social_df, social_col='AffiliationTo_z', model_type='ols'):
     # Step 1: Compute mean spike rate (per neuron per monkey identity)
-    trial_spike_rate_df = compute_trial_level_spike_rate(exploded_df)
-    mean_df = compute_mean_spike_rate(trial_spike_rate_df)
+    mean_df = compute_mean_spike_rate_table(exploded_df)
     # Step 2: Merge with social score
     merged_df = pd.merge(mean_df, social_df[['MonkeyName', social_col]], on='MonkeyName')
 
