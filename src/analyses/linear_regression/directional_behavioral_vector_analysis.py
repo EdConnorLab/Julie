@@ -21,9 +21,9 @@ def run_linear_regression_using_sklearn(x, y):
     return model.coef_[0], model.intercept_, model.score(x, y)
 
 
-def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_rate = False, model_type = 'ols'):
+def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_spikerate = False, model_type ='ols'):
     results = []
-    value_col = 'MeanSpikeRate' if use_rate else 'SpikeCount'
+    value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
     mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col].mean()
     spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values= value_col)
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     all_results = []
     for name, mat in behavior_matrices.items():
         results_df = run_directional_vector_linear_regression(
-            spike_df, mat, name, monkey_group_name, monkey_list, subject_monkey_index, use_rate = True
+            spike_df, mat, name, monkey_group_name, monkey_list, subject_monkey_index, use_spikerate= True
         )
         # plot_clustered_neurons(results_df, name)
         plot_heatmap_r_squared(results_df, name)
