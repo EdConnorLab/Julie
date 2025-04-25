@@ -110,14 +110,24 @@ def z_score(data):
         return (data - np.mean(data)) / np.std(data)
 
 
+def detect_response_windows_for_session(date, round_no, bin_size=0.05, monkey_group='Zombies', threshold=0.5,
+                                        plot=False):
+    """
+    Detect significant response windows for a given session.
 
-if __name__ == '__main__':
+    Parameters:
+    - date: str, e.g., '2023-09-26'
+    - round_no: int
+    - bin_size: float
+    - monkey_group: str
+    - threshold: float, z-scored threshold for window detection
+    - plot: bool, whether to plot each neuron's window detection
 
-    results=[]
-    date = '2023-09-26'
-    round_no = 1
-    bin_size = 0.05
-    monkey_group = 'Zombies'
+    Returns:
+    - results_df: pd.DataFrame with columns ['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']
+    """
+
+    results = []
     rounded_time = np.round(np.arange(bin_size, 3.50, bin_size), 2)
 
     timebin_spikecount_list = compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group)
@@ -125,142 +135,60 @@ if __name__ == '__main__':
         data = r['TotalSpikeCountList']
         neuron = r['NeuronID']
         normalized_data = z_score(data)
-        thresh = 0.5
-        change_points = threshold_and_fill_gap(normalized_data, thresh)
+
+        change_points = threshold_and_fill_gap(normalized_data, threshold)
         windows = extract_consecutive_ranges(change_points)
         filtered_windows = remove_consecutive_tuples(windows)
         time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
+
         if len(time_windows) > 0:
-            # print(f"---------------- {neuron} ----------------")
-            # print(time_windows)
             for start_time, end_time in time_windows:
                 results.append({
                     'NeuronID': neuron,
                     'WindowStart_ms': int(start_time * 1000),
                     'WindowEnd_ms': int(end_time * 1000)
                 })
-            # Plotting
-            y_values_at_change_points = [data[i] for i in change_points]
-            t_values_at_change_points = [rounded_time[i] for i in change_points]
 
-            plt.figure(figsize=(12, 6))
-            overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
-            if normalized_data is not None:
-                plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
-                for start, end in filtered_windows:
-                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
-                                      rounded_time[end], color='red',
-                                      alpha=0.4)
+            if plot:
+                y_values_at_change_points = [data[i] for i in change_points]
+                t_values_at_change_points = [rounded_time[i] for i in change_points]
 
-            if data is not None:
-                plt.plot(rounded_time[:len(data)], data, label='Data')
-                for start, end in filtered_windows:
-                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
-                                      rounded_time[end], color='red',
-                                      alpha=0.4)
-                plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
+                plt.figure(figsize=(12, 6))
+                overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
 
-            plt.axhline(y=thresh, color='green', linestyle='--', label='Threshold')
+                if normalized_data is not None:
+                    plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
+                    for start, end in filtered_windows:
+                        plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
+                                          rounded_time[end], color='red', alpha=0.4)
 
-            plt.title(f'{neuron}--- window: {time_windows}')
-            plt.xlabel('Time')
-            plt.ylabel('Value')
-            plt.legend()
-            # plt.savefig("hi")
-            plt.show()
+                if data is not None:
+                    plt.plot(rounded_time[:len(data)], data, label='Data')
+                    for start, end in filtered_windows:
+                        plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
+                                          rounded_time[end], color='red', alpha=0.4)
+                    plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
+
+                plt.axhline(y=threshold, color='green', linestyle='--', label='Threshold')
+                plt.title(f'{neuron} --- window: {time_windows}')
+                plt.xlabel('Time')
+                plt.ylabel('Value')
+                plt.legend()
+                plt.show()
 
     results_df = pd.DataFrame(results)
-    print(results_df)
     results_df = results_df.sort_values(by=['NeuronID'])
+    return results_df
 
 
-    # prelim = RecordingMetadataReader().get_metadata_for_preliminary_analysis()
-    # results = []
-    # bin_size = 0.05  # in sec
-    # rounded_time = np.round(np.arange(bin_size, 3.50, bin_size), 2)
-    # monkey_group = 'Best Frans'
-    # # monkey_group = 'Zombies'
-    # for _, row in tqdm(prelim.iterrows(), total = len(prelim), desc = "Processing each recording day..."):
-    #     round_no = row['Round No.']
-    #     date = str(row['Date'].strftime('%Y-%m-%d'))
-    #     timebin_spikecount_list = compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group)
-    #     for _, r in timebin_spikecount_list.iterrows():
-    #         data = r['TotalSpikeCountList']
-    #         neuron = r['NeuronID']
-    #         normalized_data = z_score(data)
-    #         thresh = 0.5
-    #         change_points = threshold_and_fill_gap(normalized_data, thresh)
-    #         windows = extract_consecutive_ranges(change_points)
-    #         filtered_windows = remove_consecutive_tuples(windows)
-    #         time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
-    #         if len(time_windows) > 0:
-    #             print(f"---------------- {neuron} ----------------")
-    #             print(time_windows)
-    #             for start_time, end_time in time_windows:
-    #                 results.append({
-    #                     'NeuronID': neuron,
-    #                     'WindowStart_ms': int(start_time * 1000),
-    #                     'WindowEnd_ms': int(end_time * 1000)
-    #                 })
-    #
-    # results_df = pd.DataFrame(results)
-    # print(results_df)
-    # results_df = results_df.sort_values(by=['NeuronID'])
-    # results_df.to_excel('bestfrans_windows.xlsx')
-    # final_df = extract_spike_counts_from_windows(results_df)
-    # final_df.to_excel('bestfrans_spike_counts_in_windows.xlsx')
-    # final_df = pd.read_excel('bestfrans_spike_counts_in_windows.xlsx')
-    # zombies_df = final_df[final_df['MonkeyGroup'] == 'Best Frans']
-    # perm_results = run_permutation_anova_by_window(zombies_df,
-    #                                 category_col='MonkeyName',
-    #                                 neuron_col='NeuronID',
-    #                                 count_col='SpikeCount',
-    #                                 window_start_col='WindowStart_ms',
-    #                                 window_end_col='WindowEnd_ms',
-    #                                 n_permutations=1000,
-    #                                 alpha=0.05,
-    #                                 plot=True)
-    # print(perm_results)
-    #
-    # zombies = [member.value for name, member in Zombies.__members__.items()]
-    # del zombies[6]
-    # del zombies[-1]
-    #
-    # bin_size = 0.05  # in sec
-    # rounded_time = np.round(np.arange(bin_size, 3.50, bin_size), 2)
-    # monkey_group = 'Zombies'
-    # # response_window_test = pd.read_excel('response_window_algorithm_validation_test.xlsx')
-    # reader = RecordingMetadataReader()
-    # prelim = reader.get_metadata_for_preliminary_analysis()
-    # shuffled_df = prelim.sample(frac=1, random_state=42)
-    # shuffled_df = shuffled_df.reset_index(drop=True)
-    # results = []
-    # for _, row in prelim.iterrows():
-    #     round_no = row['Round No.']
-    #     date = row['Date'].strftime('%Y-%m-%d')
-    #     zombies_timebin_spikecount_list= compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group)
-    #     for _, r in tqdm(zombies_timebin_spikecount_list.iterrows(), total=len(zombies_timebin_spikecount_list), desc="Processing each neuron"):
-    #         data = r['TotalSpikeCountList']
-    #         neuron = r['NeuronID']
-    #         normalized_data = z_score(data)
-    #         thresh = 0.5
-    #         change_points = threshold_and_fill_gap(normalized_data, thresh)
-    #         windows = extract_consecutive_ranges(change_points)
-    #         filtered_windows = remove_consecutive_tuples(windows)
-    #         time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
-    #         if len(time_windows) > 0:
-    #             print(f"---------------- {neuron} ----------------")
-    #             print(time_windows)
-    #             for start_time, end_time in time_windows:
-    #                 results.append({
-    #                     'NeuronID': neuron,
-    #                     'WindowStart_ms': int(start_time * 1000),
-    #                     'WindowEnd_ms': int(end_time * 1000)
-    #                 })
-    #
-    # results_df = pd.DataFrame(results)
-    # results_df = results_df.sort_values(by=['NeuronID'])
+if __name__ == '__main__':
+    date = '2023-09-26'
+    round_no = 1
+    bin_size = 0.05
+    monkey_group = 'Zombies'
 
+    results_df = detect_response_windows_for_session(
+        date, round_no, bin_size=bin_size, monkey_group=monkey_group, threshold=0.5, plot=True
+    )
 
-
-    # print(results_df)
+    print(results_df)
