@@ -109,3 +109,45 @@ def extract_spike_counts_from_windows(window_df):
 
     return pd.DataFrame(spike_count_rows)
 
+## TODO: needs to be tested
+def extract_spike_counts_from_cells(neurons_df):
+    """
+    Given a list of neurons with Date, Round No., and NeuronID,
+    extract spike counts per trial from cached exploded spike data.
+
+    Parameters
+    ----------
+    neurons_df : pd.DataFrame
+        Must contain column: 'NeuronID'
+
+    Returns
+    -------
+    pd.DataFrame
+        Long-form DataFrame with columns:
+        ['NeuronID', 'MonkeyName', 'MonkeyGroup', 'TaskField', 'SpikeCount']
+    """
+    all_rows = []
+    cache = {}
+
+    neurons_df_sorted = neurons_df.sort_values(by=['NeuronID'])
+
+    for _, row in tqdm(neurons_df_sorted.iterrows(), total=len(neurons_df_sorted), desc="Extracting spike counts"):
+        neuron_id = row['NeuronID']
+        parts = neuron_id.split('_', 3)
+        date_str = parts[0]
+        round_no = int(parts[1])
+        cache_key = (date_str, round_no)
+
+        if cache_key not in cache:
+            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no)
+        exploded_df = cache[cache_key]
+
+        matching_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]
+        matching_trials = matching_trials.copy()
+        matching_trials['SpikeCount'] = matching_trials['SpikeTimes'].apply(len)
+
+        all_rows.append(matching_trials[
+            ['NeuronID', 'MonkeyName', 'MonkeyGroup', 'TaskField', 'SpikeCount']
+        ])
+
+    return pd.concat(all_rows, ignore_index=True)
