@@ -104,9 +104,9 @@ def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', 
                     )
     results_df = pd.DataFrame(all_results)
     significant_df = results_df[results_df['p-value'] < 0.05]
-    print("\nResults:")
+    print("\nPermANOVA Results:")
     print(results_df)
-    print("\nSignificant neurons (p < 0.05):")
+    print("\nPermANOVA Significant neurons (p < 0.05):")
     print(significant_df)
 
 
