@@ -35,6 +35,11 @@ def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
     # Combine results
     if results:
         results_df = pd.concat(results, ignore_index=True)
+        # print("\nGLM Results:")
+        # print(results_df)
+        significant_df = results_df[results_df['P>|z|'] < 0.05]
+        print("\nGLM Significant neurons:")
+        print(significant_df)
         return results_df
     else:
         print("No valid neurons found for GLM.")
@@ -104,8 +109,8 @@ def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', 
                     )
     results_df = pd.DataFrame(all_results)
     significant_df = results_df[results_df['p-value'] < 0.05]
-    print("\nPermANOVA Results:")
-    print(results_df)
+    # print("\nPermANOVA Results:")
+    # print(results_df)
     print("\nPermANOVA Significant neurons (p < 0.05):")
     print(significant_df)
 
