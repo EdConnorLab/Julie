@@ -73,16 +73,15 @@ def detect_significant_windows(response_window_fpath, monkey_group,
     if save:
         significant_windows.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl")
 
-def main():
-    # find sig cells and detect windows
+
+if __name__ == "__main__":
+
+    ## find sig cells and detect windows
     # analysis_cache_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/"
-    # reader = RecordingMetadataReader()
-    # metadata = reader.get_metadata_for_preliminary_analysis()
+    reader = RecordingMetadataReader()
+    metadata = reader.get_metadata_for_preliminary_analysis()
     # monkey_group = "Zombies"
     # # select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
     # detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
     # detect_significant_windows("/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_response_windows.pkl", monkey_group="Zombies")
 
-
-if __name__ == "__main__":
-    main()
