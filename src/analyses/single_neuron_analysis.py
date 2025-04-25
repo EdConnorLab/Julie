@@ -40,7 +40,7 @@ def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
         significant_df = results_df[results_df['P>|z|'] < 0.05]
         print("\nGLM Significant neurons:")
         print(significant_df)
-        return results_df
+        return results_df, significant_df
     else:
         print("No valid neurons found for GLM.")
         return pd.DataFrame()

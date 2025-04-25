@@ -124,7 +124,13 @@ def run_glm_by_window(df,
             continue
 
     if all_results:
-        return pd.concat(all_results, ignore_index=True)
+        results_df = pd.concat(all_results, ignore_index=True)
+        # print("\nGLM Results (windows):")
+        # print(results_df)
+        significant_df = results_df[results_df['P>|z|'] < 0.05]
+        print("\nGLM Significant windows:")
+        print(significant_df)
+        return results_df, significant_df
     else:
         print("No valid (neuron, window) combinations found.")
         return pd.DataFrame()
