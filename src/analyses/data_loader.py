@@ -80,6 +80,7 @@ def load_and_combine_data(date, round_no):
 # --- Data explosion (wide → long format) ---
 def explode_spike_data(combined_data, date, round_no, only_valid_channels=False):
     """Explode spike times into long-format DataFrame with metadata."""
+    reader = RecordingMetadataReader()
     rows = []
     for _, row in combined_data.iterrows():
         for channel_enum, spike_list in row['SpikeTimes'].items():
@@ -101,6 +102,8 @@ def explode_spike_data(combined_data, date, round_no, only_valid_channels=False)
         ch_str = str(ch) if not hasattr(ch, 'value') else str(ch)
         return ch_str.split("_Unit")[0] if has_unit else ch_str
 
+    metadata = reader.get_metadata_for_preliminary_analysis()
+
     exploded_df['BaseChannel'] = exploded_df['Channel'].apply(normalize_channel)
     exploded_df['Date'] = date
     exploded_df['Round No.'] = round_no
@@ -109,8 +112,13 @@ def explode_spike_data(combined_data, date, round_no, only_valid_channels=False)
             exploded_df['Round No.'].astype(str) + "_" +
             exploded_df['Channel'].astype(str)
     )
+    # add locations!
+    exploded_df = exploded_df.merge(
+        metadata[['Date', 'Round No.', 'Location']],
+        on=['Date', 'Round No.'],
+        how='left'
+    )
     if only_valid_channels:
-        reader = RecordingMetadataReader()
         valid_channels = reader.get_valid_channels(date, round_no)
         valid_channels_list = [str(ch) for ch in valid_channels]
         exploded_df = exploded_df[exploded_df['BaseChannel'].isin(valid_channels_list)]
