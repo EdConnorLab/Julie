@@ -35,6 +35,12 @@ def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior
             y = np.delete(behavior_matrix[src_idx], [src_idx, subject_idx])
             x_row = row.drop(index=[monkey_list[src_idx], monkey_list[subject_idx]], errors='ignore')
             x = x_row.values.astype(float)
+            # check variance
+            if np.var(x) < 1e-3 or np.var(y) < 1e-3:  # threshold adjustable (e.g. 0.0001)
+                print(
+                    f"Skipped {neuron_id} {src_monkey}: variance too small (x_var={np.var(x):.6f}, y_var={np.var(y):.6f})")
+                continue
+
             if len(x) != len(y):
                 print(f"Length mismatch for {neuron_id} (source: {monkey_list[src_idx]})")
                 continue
