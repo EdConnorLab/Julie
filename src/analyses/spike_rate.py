@@ -52,7 +52,7 @@ def compute_mean_spike_rate_for_cells(neurons_df):
         neuron_id = row['NeuronID']
 
         # Extract date and round_no
-        parts = neuron_id.split('_', 3)
+        parts = neuron_id.split('_', 4)
         date_str = parts[0]
         round_no = int(parts[1])
         cache_key = (date_str, round_no)

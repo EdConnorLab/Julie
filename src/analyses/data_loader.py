@@ -107,17 +107,23 @@ def explode_spike_data(combined_data, date, round_no, only_valid_channels=False)
     exploded_df['BaseChannel'] = exploded_df['Channel'].apply(normalize_channel)
     exploded_df['Date'] = date
     exploded_df['Round No.'] = round_no
-    exploded_df['NeuronID'] = (
-            exploded_df['Date'].astype(str) + "_" +
-            exploded_df['Round No.'].astype(str) + "_" +
-            exploded_df['Channel'].astype(str)
-    )
     # add locations!
     metadata['Date'] = metadata['Date'].apply(lambda x: x.strftime('%Y-%m-%d'))
     exploded_df = exploded_df.merge(
         metadata[['Date', 'Round No.', 'Location']],
         on=['Date', 'Round No.'],
         how='left'
+    )
+    exploded_df['Location'] = exploded_df['Location'].fillna('Unknown')
+    exploded_df['Location'] = exploded_df['Location'].replace({
+        'Amygdala': 'AMG'
+    })
+
+    exploded_df['NeuronID'] = (
+            exploded_df['Location'].astype(str) + "_" +
+            exploded_df['Date'].astype(str) + "_" +
+            exploded_df['Round No.'].astype(str) + "_" +
+            exploded_df['Channel'].astype(str)
     )
     if only_valid_channels:
         valid_channels = reader.get_valid_channels(date, round_no)

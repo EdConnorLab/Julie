@@ -39,11 +39,11 @@ def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
         # print(results_df)
         significant_df = results_df[results_df['P>|z|'] < 0.05]
         print("\nGLM Significant neurons:")
-        print(significant_df)
+        print(significant_df.head())
         return results_df, significant_df
     else:
         print("No valid neurons found for GLM.")
-        return pd.DataFrame()
+        return pd.DataFrame(),pd.DataFrame()
 
 def plot_glm_coefficients(glm_results):
     coef_df = glm_results[glm_results['index'] != '(Intercept)'].copy()
@@ -107,15 +107,17 @@ def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', 
                         category_name=category_col,
                         output_dir="permutation_anova_plots"
                     )
-    results_df = pd.DataFrame(all_results)
-    significant_df = results_df[results_df['p-value'] < 0.05]
-    # print("\nPermANOVA Results:")
-    # print(results_df)
-    print("\nPermANOVA Significant neurons (p < 0.05):")
-    print(significant_df)
-
-
-    return results_df
+    if all_results:
+        results_df = pd.DataFrame(all_results)
+        significant_df = results_df[results_df['p-value'] < 0.05]
+        # print("\nPermANOVA Results:")
+        # print(results_df)
+        print("\nPermANOVA Significant neurons (p < 0.05):")
+        print(significant_df.head())
+        return results_df, significant_df
+    else:
+        print("No valid neurons found for permutation ANOVA.")
+        return pd.DataFrame(),pd.DataFrame()
 
 def plot_permutation_anova_distribution(perm_f_stats, observed_f_stat, neuron_id, category_name, output_dir="permutation_anova_plots"):
     os.makedirs(output_dir, exist_ok=True)

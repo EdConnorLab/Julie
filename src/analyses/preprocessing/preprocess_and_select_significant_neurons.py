@@ -14,19 +14,19 @@ def select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name="Zo
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
         binned_data = prepare_binned_spike_data(date, round, bin_size, True)
-        zombies_df = binned_data[binned_data['MonkeyGroup'] == group_name]
+        monkey_group_df = binned_data[binned_data['MonkeyGroup'] == group_name]
         formula = "SpikeCount ~ C(MonkeyName)"  # Stimulus identity
-        glm_results = run_glm(zombies_df, formula=formula)
+        glm_results, glm_sig_results = run_glm(monkey_group_df, formula=formula)
         # print(glm_results.head())
-        zombies_trial_df = aggregate_trial_level(zombies_df)
-        perm_anova_results = run_permutation_anova(zombies_trial_df, category_col='MonkeyName', plot=False)
+        group_specific_trial_df = aggregate_trial_level(monkey_group_df)
+        perm_anova_results, perm_anova_sig_results = run_permutation_anova(group_specific_trial_df, category_col='MonkeyName', plot=False)
         # print(perm_anova_results.head())
         results = merge_glm_and_permutation_anova(glm_results, perm_anova_results)
         # print(results.head())
         all_results.append(results)
     final_df = pd.concat(all_results, ignore_index=True)
     # print(final_df.head())
-    # Keep neurons that passed GLM or permANOVA
+    # Keep neurons that passed GLM **OR** permANOVA
     significant_df = final_df[(final_df["GLM_significant"]) | (final_df["Permutation_significant"])]
     print('All significant neurons passing GLM or permANOVA:')
     print(significant_df.head())
@@ -47,6 +47,7 @@ def detect_all_response_windows_for_all_neurons(metadata, group_name="Zombies",
     final_df = pd.concat(all_results, ignore_index=True)
     final_df = final_df.sort_values(by=['NeuronID'])
     print(final_df.head())
+    print(f"{final_df.shape[0]} windows detected")
     if save:
         final_df.to_pickle(analysis_cache_dir + f"{group_name}_response_windows.pkl")
     return final_df
@@ -70,6 +71,7 @@ def detect_significant_windows(response_window_fpath, monkey_group,
     all_results = merge_glm_and_permutation_anova(glm_results, panova_results)
     significant_windows = all_results[(all_results["GLM_significant"]) | (all_results["Permutation_significant"])]
     print(significant_windows.head())
+    print(f"{significant_windows.shape[0]} significant windows detected")
     if save:
         significant_windows.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl")
 
@@ -77,11 +79,14 @@ def detect_significant_windows(response_window_fpath, monkey_group,
 if __name__ == "__main__":
 
     ## find sig cells and detect windows
-    # analysis_cache_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/"
+    analysis_cache_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/"
     reader = RecordingMetadataReader()
     metadata = reader.get_metadata_for_preliminary_analysis()
-    # monkey_group = "Zombies"
-    # # select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
-    # detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
-    # detect_significant_windows("/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_response_windows.pkl", monkey_group="Zombies")
+    monkey_group = "Best Frans"
+    # select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
+    detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
+    detect_significant_windows("/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_response_windows.pkl", monkey_group="Zombies")
+    detect_significant_windows(
+        "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Best Frans_response_windows.pkl",
+        monkey_group="Best Frans")
 

@@ -76,9 +76,9 @@ def extract_spike_counts_from_windows(window_df):
         start_ms, end_ms = row['WindowStart_ms'], row['WindowEnd_ms']
         start_sec, end_sec = start_ms / 1000, end_ms / 1000
 
-        # Extract date and round from NeuronID (e.g., "2023-09-26_3_Channel.C_003_Unit 1")
-        parts = neuron_id.split('_', 3)
-        date_str, round_no = parts[0], int(parts[1])
+        # Extract date and round from NeuronID (e.g., "AMG_2023-09-26_3_Channel.C_003_Unit 1")
+        parts = neuron_id.split('_', 4)
+        date_str, round_no = parts[1], int(parts[2])
         cache_key = (date_str, round_no)
 
         # Use cache manager
@@ -133,9 +133,9 @@ def extract_spike_counts_from_cells(neurons_df):
 
     for _, row in tqdm(neurons_df_sorted.iterrows(), total=len(neurons_df_sorted), desc="Extracting spike counts"):
         neuron_id = row['NeuronID']
-        parts = neuron_id.split('_', 3)
-        date_str = parts[0]
-        round_no = int(parts[1])
+        parts = neuron_id.split('_', 4)
+        date_str = parts[1]
+        round_no = int(parts[2])
         cache_key = (date_str, round_no)
 
         if cache_key not in cache:
