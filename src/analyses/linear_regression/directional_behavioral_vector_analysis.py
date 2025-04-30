@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import pdist, squareform
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, zscore
 import seaborn as sns
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
@@ -32,7 +32,13 @@ def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior
         for src_idx, src_monkey in enumerate(monkey_list):
             if src_idx == subject_idx:
                 continue
-            y = np.delete(behavior_matrix[src_idx], [src_idx, subject_idx])
+            # y = np.delete(behavior_matrix[src_idx], [src_idx, subject_idx])
+            # z-score y
+            raw_y = behavior_matrix[src_idx].copy()
+            mask = np.ones_like(raw_y, dtype=bool)
+            mask[[src_idx, subject_idx]] = False
+            y = zscore(raw_y[mask])
+
             x_row = row.drop(index=[monkey_list[src_idx], monkey_list[subject_idx]], errors='ignore')
             x = x_row.values.astype(float)
             # check variance
