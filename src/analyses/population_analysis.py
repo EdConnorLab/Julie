@@ -1,8 +1,26 @@
+import os
+
+import numpy as np
+from scipy.stats import zscore
 from statsmodels.formula.api import mixedlm
 import matplotlib.pyplot as plt
 import pandas as pd
+
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+from analyses.enums.monkey_names import get_monkeys_by_default_order
 from analyses.spike_count import prepare_exploded_spike_data
 
+def run_population_glmm_by_social_score(df, social_vector, social_col_name='AffiliationTo_z'):
+
+    # Step 3: merge with social vector
+    df = df.merge(social_vector[['MonkeyName', social_col_name]], on='MonkeyName')
+
+    # Step 4: fit mixed model
+    df['MonkeyName'] = df['MonkeyName'].astype('category')
+    model = mixedlm(f"SpikeCount ~ {social_col_name}", data=df, groups=df['MonkeyName'])
+    result = model.fit()
+
+    return result.summary(), result
 
 def run_population_glmm_by_monkey_identity(
     df,
@@ -133,11 +151,70 @@ def plot_glmm_estimates_from_model(model, reference_label="(ref)"):
 
     return plot_df  # return the data used in plot for inspection if needed
 
+def get_all_combined_exploded_spike_counts(group_name="Zombies"):
+    reader = RecordingMetadataReader()
+    metadata = reader.get_metadata_for_preliminary_analysis()
+
+    all_dfs = []
+
+    for _, row in metadata.iterrows():
+        print(row['Date'])
+        date = str(row['Date'].strftime("%Y-%m-%d"))
+        round_no = int(row['Round No.'])
+
+        # Load and filter
+        exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels=True)
+        exploded_df = exploded_df[exploded_df['MonkeyGroup'] == group_name].copy()
+
+        # Add spike count
+        exploded_df['SpikeCount'] = exploded_df['SpikeTimes'].apply(len)
+
+        all_dfs.append(exploded_df)
+
+    # Combine all sessions
+    combined_df = pd.concat(all_dfs, ignore_index=True)
+    return combined_df
 
 if __name__ == "__main__":
-    date = "2023-09-26"
-    round_no = 3
-    exploded_df = prepare_exploded_spike_data(date, round_no, True)
-    summary, model = run_population_glmm_by_monkey_identity(exploded_df, monkey_filter="Zombies")
+    # date = "2023-09-26"
+    # round_no = 3
+    exploded_df = get_all_combined_exploded_spike_counts()
+    subject_monkey_index = 6
+    # summary, model = run_population_glmm_by_monkey_identity(exploded_df, monkey_filter="Zombies")
+    # print(summary)
+    # plot_glmm_estimates_from_model(model)
+    # Setup
+    monkey_group_name = "Zombies"
+    monkey_list = get_monkeys_by_default_order(monkey_group_name)
+    base_dir = '/home/connorlab/Documents/GitHub/Julie/social_data/zombies_social_data/'
+    behavior_files = {
+        "AffiliationTo": "zombies_feature_df_affiliation.xlsx",
+        "AffiliationFrom": "zombies_feature_df_affiliation.xlsx",
+        "SubmissionTo": "zombies_feature_df_submission.xlsx",
+        "SubmissionFrom": "zombies_feature_df_submission.xlsx",
+        "AgonismTo": "zombies_feature_df_agonism.xlsx",
+        "AgonismFrom": "zombies_feature_df_agonism.xlsx",
+    }
+
+    behavior_matrices = {
+        name: pd.read_excel(os.path.join(base_dir, fname)).iloc[:, 1:].to_numpy().T if 'From' in name
+        else pd.read_excel(os.path.join(base_dir, fname)).iloc[:, 1:].to_numpy()
+        for name, fname in behavior_files.items()
+    }
+
+    # behavioral score (e.g., AffiliationTo) vector
+    beh_vector = behavior_matrices['AffiliationFrom'][subject_monkey_index].copy()
+    behavior_vector = np.delete(beh_vector, subject_monkey_index)
+
+    z_vector = zscore(behavior_vector)
+    # build social df
+    social_df = pd.DataFrame({
+        'MonkeyName': [m for i, m in enumerate(monkey_list) if i != subject_monkey_index],
+        'AffiliationFrom_z': z_vector
+    })
+
+    # Run model
+    summary, model = run_population_glmm_by_social_score(
+        exploded_df, social_df, social_col_name='AffiliationFrom_z'
+    )
     print(summary)
-    plot_glmm_estimates_from_model(model)
