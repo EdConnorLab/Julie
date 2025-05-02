@@ -14,6 +14,11 @@ def select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name="Zo
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
         binned_data = prepare_binned_spike_data(date, round, bin_size, True)
+
+        if binned_data is None or binned_data.empty:
+            print(f"Skipping {date} Round {round}: no good neurons")
+            continue  # 🔁 skip this round
+
         monkey_group_df = binned_data[binned_data['MonkeyGroup'] == group_name]
         formula = "SpikeCount ~ C(MonkeyName)"  # Stimulus identity
         glm_results, glm_sig_results = run_glm(monkey_group_df, formula=formula)
@@ -82,11 +87,11 @@ if __name__ == "__main__":
     analysis_cache_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/"
     reader = RecordingMetadataReader()
     metadata = reader.get_metadata_for_preliminary_analysis()
-    monkey_group = "Best Frans"
-    # select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
-    detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
-    detect_significant_windows("/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_response_windows.pkl", monkey_group="Zombies")
-    detect_significant_windows(
-        "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Best Frans_response_windows.pkl",
-        monkey_group="Best Frans")
-
+    monkey_group = "Zombies"
+    significant_df = select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir,save=False)
+    significant_df.to_pickle(analysis_cache_dir + f"good_neurons_{monkey_group}_significant_neurons_pANOVAorGLM_passed.pkl")
+    # detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
+    # detect_significant_windows("/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_response_windows.pkl", monkey_group="Zombies")
+    # detect_significant_windows(
+    #     "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Best Frans_response_windows.pkl",
+    #     monkey_group="Best Frans")
