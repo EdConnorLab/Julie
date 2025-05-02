@@ -52,6 +52,15 @@ def save_raster_plots(fig, date, round_no, channel):
     print("plot saved to %s" % individual_save_path_png)
     plt.close(fig)
 
+def save_raster_plots_by_neuron(fig, neuron_id):
+    base_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/raster_plots"
+    save_folder_path = os.path.join(base_dir)
+    individual_save_path_png = os.path.join(save_folder_path, f"{neuron_id}.png")
+    fig.savefig(individual_save_path_png)
+    print("plot saved to %s" % individual_save_path_png)
+    plt.close(fig)
+
+
 
 def read_pickle(file_path):
     unpacked_pickle = pd.read_pickle(file_path)
