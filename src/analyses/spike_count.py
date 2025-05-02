@@ -18,6 +18,57 @@ def prepare_exploded_spike_data(date, round_no, only_valid_channels=False):
     return cache.load_or_compute(date, round_no, only_valid_channels=only_valid_channels)
 
 
+def filter_good_neurons(exploded_df,
+                        min_total_spikes=500,
+                        min_firing_rate_hz=1.0,
+                        min_trial_ratio=0.7,
+                        min_trial_count=300):
+    """
+    Filters neurons based on total spikes, firing rate, spike coverage across trials, and trial participation count.
+
+    Parameters:
+    - exploded_df: DataFrame with columns ['NeuronID', 'SpikeTimes', 'EpochStartStop']
+    - min_total_spikes: minimum total spike count
+    - min_firing_rate_hz: minimum average firing rate in Hz
+    - min_trial_ratio: minimum ratio of trials where spikes are present
+    - min_trial_count: minimum number of trials the neuron participated in
+
+    Returns:
+    - List of NeuronIDs that passed all filters
+    """
+    neuron_stats = []
+
+    for neuron_id, group in exploded_df.groupby("NeuronID"):
+        spike_counts = group["SpikeTimes"].apply(len)
+        total_spikes = spike_counts.sum()
+        trial_durations = group["EpochStartStop"].apply(lambda x: x[1] - x[0])
+        total_time = trial_durations.sum()
+        mean_firing_rate = total_spikes / total_time if total_time > 0 else 0
+        spike_trials = (spike_counts > 0).sum()
+        total_trials = len(group)
+
+        neuron_stats.append({
+            "NeuronID": neuron_id,
+            "TotalSpikes": total_spikes,
+            "MeanFiringRateHz": mean_firing_rate,
+            "SpikeTrialRatio": spike_trials / total_trials,
+            "TotalTrials": total_trials
+        })
+
+    stats_df = pd.DataFrame(neuron_stats)
+
+    # Apply filters
+    good_neurons = stats_df[
+        (stats_df["TotalSpikes"] >= min_total_spikes) &
+        (stats_df["MeanFiringRateHz"] >= min_firing_rate_hz) &
+        (stats_df["SpikeTrialRatio"] >= min_trial_ratio) &
+        (stats_df["TotalTrials"] >= min_trial_count)
+        ]["NeuronID"].tolist()
+
+    return good_neurons
+
+
+
 def bin_spike_times(exploded_df, bin_size):
     """Bin spike times into spike counts per time bin."""
     binned_rows = []
@@ -49,7 +100,9 @@ def bin_spike_times(exploded_df, bin_size):
 def prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=False):
     """Prepare binned spike data with spike counts."""
     exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels)
-    binned_df = bin_spike_times(exploded_df, bin_size)
+    good_neurons = filter_good_neurons(exploded_df)
+    filtered_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
+    binned_df = bin_spike_times(filtered_df, bin_size)
     return binned_df
 
 
