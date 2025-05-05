@@ -41,6 +41,10 @@ def list_addition(lists):
 
 def compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group):
     binned_spike_data = prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=True)
+    if binned_spike_data.empty:
+        print(f"[Warning] No valid neurons after filtering on {date}, round {round_no}")
+        return pd.DataFrame(columns=['NeuronID', 'TotalSpikeCountList'])
+
     bin_level_spike_data = aggregate_timebin_level(binned_spike_data)
     group_data = bin_level_spike_data[bin_level_spike_data['MonkeyGroup'] == monkey_group]
     group_data = group_data.sort_values(['NeuronID', 'TimeBinIndex'])
@@ -177,6 +181,8 @@ def detect_response_windows_for_session(date, round_no, bin_size=0.05, monkey_gr
                 plt.show()
 
     results_df = pd.DataFrame(results)
+    if results_df.empty:
+        return pd.DataFrame(columns=['NeuronID', 'WindowStart_ms', 'WindowEnd_ms'])
     results_df = results_df.sort_values(by=['NeuronID'])
     return results_df
 
