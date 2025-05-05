@@ -200,8 +200,8 @@ if __name__ == "__main__":
     monkey_list = get_monkeys_by_default_order(monkey_group_name)
     base_dir = '/home/connorlab/Documents/GitHub/Julie/social_data/zombies_social_data/'
     behavior_files = {
-        "AffliationTo": "zombies_feature_df_affiliation.xlsx",
-        "AffliationFrom": "zombies_feature_df_affiliation.xlsx",
+        "AffiliationTo": "zombies_feature_df_affiliation.xlsx",
+        "AffiliationFrom": "zombies_feature_df_affiliation.xlsx",
         "SubmissionTo": "zombies_feature_df_submission.xlsx",
         "SubmissionFrom": "zombies_feature_df_submission.xlsx",
         "AgonismTo": "zombies_feature_df_agonism.xlsx",
