@@ -129,7 +129,7 @@ if __name__ == '__main__':
     agon_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_agonism_updated.xlsx')
     # edge_list_agon = generate_edge_list_from_extracted_interactions(agon)
     # agonistic_feature_df = generate_feature_matrix_from_edge_list(edge_list_agon, bestfrans)
-    # agonistic_feature_df.to_excel('bestfrans_feature_df_agonism_updated.xlsx')
+    # agonistic_feature_df.to_excel('bestfrans_feature_df_agonism.xlsx')
 
     # Submissive
     submissive_behaviors = list(Submissive)
@@ -140,7 +140,7 @@ if __name__ == '__main__':
     sub_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_submission_updated.xlsx')
     # edge_list_sub = generate_edge_list_from_extracted_interactions(sub)
     # submissive_feature_df = generate_feature_matrix_from_edge_list(edge_list_sub, bestfrans)
-    # submissive_feature_df.to_excel('bestfrans_feature_df_submission_updated.xlsx')
+    # submissive_feature_df.to_excel('bestfrans_feature_df_submission.xlsx')
     #
     # Affiliative
     affiliative_behaviors = list(Affiliative)
@@ -151,7 +151,7 @@ if __name__ == '__main__':
     aff_behavior_specific_count.to_excel('bestfrans_frequency_of_specific_behavior_affiliation_updated.xlsx')
     # edge_list_aff = generate_edge_list_from_extracted_interactions(aff)
     # affiliative_feature_df = generate_feature_matrix_from_edge_list(edge_list_aff, bestfrans)
-    # affiliative_feature_df.to_excel('bestfrans_feature_df_affiliative_updated.xlsx')
+    # affiliative_feature_df.to_excel('bestfrans_feature_df_affiliation.xlsx')
     '''
     # Get genealogy matrix
     # excel_data_reader = ExcelDataReader(file_name='zombies_genealogy_matrix.xlsx')
