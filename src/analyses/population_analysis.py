@@ -47,6 +47,17 @@ def run_glmm_social_score_across_neurons(spike_df, social_vector_df, social_col_
 
     return result.summary(), result
 
+def run_population_glmm_by_social_score(df, social_vector, social_col_name='AffiliationTo_z'):
+
+    # Step 3: merge with social vector
+    df = df.merge(social_vector[['MonkeyName', social_col_name]], on='MonkeyName')
+
+    # Step 4: fit mixed model
+    df['MonkeyName'] = df['MonkeyName'].astype('category')
+    model = mixedlm(f"SpikeCount ~ {social_col_name}", data=df, groups=df['MonkeyName'])
+    result = model.fit()
+
+    return result.summary(), result
 
 def run_population_glmm_by_monkey_identity(
     df,
@@ -114,6 +125,69 @@ def run_population_glmm_by_monkey_identity(
     return result.summary(), result
 
 
+def plot_glmm_estimates_from_model(model, reference_label="(ref)"):
+    """
+    Plot estimated spike counts per monkey from a fitted MixedLMResults model object.
+
+    Parameters
+    ----------
+    model : statsmodels.regression.mixed_linear_model.MixedLMResults
+        A fitted model from statsmodels' mixedlm().
+    reference_label : str, optional
+        Label to assign to the reference level (intercept term).
+    """
+
+    # Get fixed effects and confidence intervals
+    fixed_effects = model.fe_params
+    conf_ints = model.conf_int()
+
+    # Extract intercept
+    intercept = fixed_effects["Intercept"]
+    intercept_ci = conf_ints.loc["Intercept"]
+
+    # Get all other monkey terms (e.g., C(MonkeyName)[T.143H])
+    monkey_terms = [term for term in fixed_effects.index if term != "Intercept"]
+
+    # Parse monkey names from terms
+    monkeys = [term.split("[")[-1].strip("]") for term in monkey_terms]
+    monkeys = [f"{model.model.data.orig_exog.columns[1]} {reference_label}"] + monkeys
+
+    # Compute estimated firing rates and CIs
+    estimates = [intercept] + [
+        intercept + fixed_effects[term] for term in monkey_terms
+    ]
+    lower_bounds = [intercept_ci[0]] + [
+        intercept + conf_ints.loc[term][0] for term in monkey_terms
+    ]
+    upper_bounds = [intercept_ci[1]] + [
+        intercept + conf_ints.loc[term][1] for term in monkey_terms
+    ]
+
+    # Create DataFrame
+    plot_df = pd.DataFrame({
+        "Monkey": monkeys,
+        "FiringRate": estimates,
+        "LowerCI": lower_bounds,
+        "UpperCI": upper_bounds
+    })
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.errorbar(
+        x=plot_df['Monkey'], y=plot_df['FiringRate'],
+        yerr=[plot_df['FiringRate'] - plot_df['LowerCI'], plot_df['UpperCI'] - plot_df['FiringRate']],
+        fmt='o', capsize=5, linestyle='-', marker='o'
+    )
+    plt.xticks(rotation=45)
+    plt.xlabel('Monkey Identity')
+    plt.ylabel('Estimated Mean Spike Count')
+    plt.title('Estimated Spike Count per Monkey (w/ 95% CI)')
+    plt.tight_layout()
+    plt.grid(True)
+    plt.show()
+
+    return plot_df  # return the data used in plot for inspection if needed
+
 def get_all_combined_exploded_spike_counts(group_name="Zombies", apply_filter=False, apply_binning=False, bin_size=0.05, location=None):
     reader = RecordingMetadataReader()
     metadata = reader.get_metadata_for_preliminary_analysis()
@@ -146,73 +220,9 @@ def get_all_combined_exploded_spike_counts(group_name="Zombies", apply_filter=Fa
     return combined_df
 
 
-
-
-def run_population_glmm_all_social_metrics(location="AMG", group_name="Zombies", subject_monkey_index=6):
-    exploded_df = get_all_combined_exploded_spike_counts(
-        group_name=group_name, apply_filter=True, location=location
-    )
-    exploded_df['SpikeCount'] = exploded_df['SpikeTimes'].apply(len)
-
-    monkey_list = get_monkeys_by_default_order(group_name)
-    base_dir = '/home/connorlab/Documents/GitHub/Julie/social_data/zombies_social_data/'
-
-    behavior_files = {
-        "AffiliationTo": "zombies_feature_df_affiliation.xlsx",
-        "AffiliationFrom": "zombies_feature_df_affiliation.xlsx",
-        "SubmissionTo": "zombies_feature_df_submission.xlsx",
-        "SubmissionFrom": "zombies_feature_df_submission.xlsx",
-        "AgonismTo": "zombies_feature_df_agonism.xlsx",
-        "AgonismFrom": "zombies_feature_df_agonism.xlsx",
-    }
-
-    summary_results = []
-
-    for metric_name, file_name in behavior_files.items():
-        print(f"\n===== Running GLMM for {location}: {metric_name} =====")
-
-        matrix = pd.read_excel(os.path.join(base_dir, file_name)).iloc[:, 1:].to_numpy()
-        if "From" in metric_name:
-            matrix = matrix.T
-
-        beh_vector = matrix[subject_monkey_index].copy()
-        behavior_vector = np.delete(beh_vector, subject_monkey_index)
-        monkey_vector = [m for i, m in enumerate(monkey_list) if i != subject_monkey_index]
-
-        z_vector = zscore(behavior_vector)
-        social_df = pd.DataFrame({
-            'MonkeyName': monkey_vector,
-            f'{metric_name}_z': z_vector
-        })
-
-        try:
-            summary, model = run_glmm_social_score_across_neurons(
-                exploded_df, social_df, social_col_name=f'{metric_name}_z'
-            )
-
-            # Parse summary
-            coef = summary.loc[f'{metric_name}_z', 'Coef.']
-            ci_low = summary.loc[f'{metric_name}_z', '[0.025']
-            ci_high = summary.loc[f'{metric_name}_z', '0.975]']
-            p_val = summary.loc[f'{metric_name}_z', 'P>|z|']
-
-            summary_results.append({
-                "Region": location,
-                "Metric": metric_name,
-                "Beta": coef,
-                "CI_low": ci_low,
-                "CI_high": ci_high,
-                "p": p_val
-            })
-
-        except Exception as e:
-            print(f"[ERROR] Failed for {metric_name}: {e}")
-
-    return pd.DataFrame(summary_results)
-
 if __name__ == "__main__":
     # Running directional GLMMs on all neurons
-    exploded_df = get_all_combined_exploded_spike_counts(apply_filter=True, location='AMG')
+    exploded_df = get_all_combined_exploded_spike_counts(apply_filter=True, location='ER')
     exploded_df['SpikeCount'] = exploded_df['SpikeTimes'].apply(len)
 
     subject_monkey_index = 6
