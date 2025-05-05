@@ -6,7 +6,7 @@ from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
 import seaborn as sns
 import plotly.express as px
-matplotlib.use("Qt5Agg")
+# matplotlib.use("Qt5Agg")
 # -------------------------------
 # 1. Load and Filter Results
 # -------------------------------
@@ -186,8 +186,8 @@ def plot_behavior_distribution_per_cluster(df, cluster_labels, behavior_col='Beh
     """
     if behavior_map is None:
         behavior_map = {
-            'AffliationFrom': ('Affliation', 'From'),
-            'AffliationTo':   ('Affliation', 'To'),
+            'AffiliationFrom': ('Affiliation', 'From'),
+            'AffiliationTo':   ('Affiliation', 'To'),
             'SubmissionFrom': ('Submission', 'From'),
             'SubmissionTo':   ('Submission', 'To'),
             'AgonismFrom':    ('Agonism', 'From'),
@@ -272,7 +272,7 @@ def plot_cross_meta_from_filtered_df(filtered_df, pivot_df, cluster_labels, valu
 
 if __name__ == '__main__':
     df = load_significant_ols_results('/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results'
-                                 '/good_neurons_directional_linear_regression_on_single_neurons.pkl')
+                                 '/Zombies_dir_linreg_on_windows.pkl')
     filtered_df = filter_table_for_pivot(df, column='Source_Monkey')
     # Source-monkey-centered
     pivot_df = make_pivot_table(filtered_df, column='Source_Monkey')
@@ -282,7 +282,7 @@ if __name__ == '__main__':
     # pca, pca_coords = make_pca_model_and_projection(pivot_df, n_components=3, plot='2d')
 
     # # Only look at Scree plot
-    _, pca_coords = make_pca_model_and_projection(pivot_df, plot='scree')
+    _, pca_coords = make_pca_model_and_projection(pivot_df, n_components=6, plot='2d')
     # t-SNE after PCA
     tsne_coords = run_tsne(pca_coords, perplexity=20)
     cluster_labels, kmeans_model = run_kmeans(tsne_coords, n_clusters=8)
