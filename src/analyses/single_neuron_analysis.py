@@ -13,6 +13,35 @@ from analyses.spike_count import prepare_binned_spike_data
 from analyses.statistical_tests import perform_statistical_test_on_dataframe_rows, permutation_anova_test
 
 
+def run_multi_predictor_glm(df, formula, neuron_col="NeuronID"):
+    results = []
+    unique_neurons = df[neuron_col].unique()
+
+    for neuron in tqdm(unique_neurons, desc="Running multi-GLM per neuron"):
+        neuron_df = df[df[neuron_col] == neuron]
+        if neuron_df['SpikeCount'].sum() == 0:
+            continue
+        try:
+            model = smf.glm(formula=formula, data=neuron_df, family=sm.families.Poisson()).fit()
+            summary = model.summary2().tables[1].reset_index()
+            summary['NeuronID'] = neuron
+            results.append(summary)
+        except Exception as e:
+            print(f"Error processing neuron {neuron}: {e}")
+            continue
+
+    if results:
+        results_df = pd.concat(results, ignore_index=True)
+        significant_df = results_df[results_df['P>|z|'] < 0.05]
+        # print("\nMulti-GLM Significant neurons:")
+        # print(significant_df.head())
+        return results_df, significant_df
+    else:
+        print("No valid neurons found.")
+        return pd.DataFrame(), pd.DataFrame()
+
+
+
 def run_glm(df, formula="SpikeCount ~ C(MonkeyName)", neuron_col="NeuronID"):
     results = []
     unique_neurons = df[neuron_col].unique()
