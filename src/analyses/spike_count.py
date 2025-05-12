@@ -132,7 +132,7 @@ def extract_spike_counts_from_windows(window_df):
         # Extract date and round from NeuronID (e.g., "AMG_2023-09-26_3_Channel.C_003_Unit 1")
         parts = neuron_id.split('_', 4)
 
-        date_str, round_no = parts[0], int(parts[1])
+        date_str, round_no = parts[1], int(parts[2])
         cache_key = (date_str, round_no)
 
         # Use cache manager
