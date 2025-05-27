@@ -104,7 +104,85 @@ def run_marginal_vector_linear_regression_from_matrix(
     return pd.DataFrame(results)
 
 
-def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_spikerate = False, model_type ='ols'):
+
+def run_directional_vector_linear_regression_window_level(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_spikerate = False, model_type ='ols'):
+    results = []
+    value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
+    filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
+    # mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col].mean()
+    # spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values= value_col)
+    mean_spikes = filtered_df.groupby(
+        ['NeuronID', 'MonkeyName', 'WindowStart_ms', 'WindowEnd_ms'], as_index=False
+    )[value_col].mean()
+
+    # Create a unique key for each window
+    mean_spikes['NeuronWindowID'] = (
+            mean_spikes['NeuronID'].astype(str) + "_" +
+            mean_spikes['WindowStart_ms'].astype(str) + "_" +
+            mean_spikes['WindowEnd_ms'].astype(str)
+    )
+
+    spike_matrix = mean_spikes.pivot(index='NeuronWindowID', columns='MonkeyName', values=value_col)
+
+    # Add back mapping from NeuronWindowID → NeuronID + Window
+    id_map = mean_spikes[['NeuronWindowID', 'NeuronID', 'WindowStart_ms', 'WindowEnd_ms']].drop_duplicates()
+    for unit_id, row in spike_matrix.iterrows():
+        meta = id_map[id_map['NeuronWindowID'] == unit_id].iloc[0]
+        neuron_id = meta['NeuronID']
+        win_start = meta['WindowStart_ms']
+        win_end = meta['WindowEnd_ms']
+        for src_idx, src_monkey in enumerate(monkey_list):
+            if src_idx == subject_idx:
+                continue
+            # z-score y
+            raw_y = behavior_matrix[src_idx].copy()
+            mask = np.ones_like(raw_y, dtype=bool)
+            mask[[src_idx, subject_idx]] = False
+            y = zscore(raw_y[mask])
+
+            x_row = row.drop(index=[monkey_list[src_idx], monkey_list[subject_idx]], errors='ignore')
+            x = x_row.values.astype(float)
+            # check variance
+            if np.var(x) < 1e-3 or np.var(y) < 1e-3:  # threshold adjustable (e.g. 0.0001)
+                print(
+                    f"Skipped {unit_id} {src_monkey}: variance too small (x_var={np.var(x):.6f}, y_var={np.var(y):.6f})")
+                continue
+
+            if len(x) != len(y):
+                print(f"Length mismatch for {unit_id} (source: {monkey_list[src_idx]})")
+                continue
+
+            try:
+                X = sm.add_constant(x)
+                if model_type == 'ols':
+                    model = sm.OLS(y, X).fit()
+                    r_squared = model.rsquared
+                elif model_type == 'glm':
+                    model = sm.GLM(y, X, family=sm.families.Poisson()).fit()
+                    r_squared = None
+                else:
+                    raise ValueError("model_type must be 'ols' or 'glm'")
+                results.append({
+                    'NeuronID': neuron_id,
+                    'WindowStart_ms': win_start,
+                    'WindowEnd_ms': win_end,
+                    'Behavior': behavior_name,
+                    'Source_Monkey': monkey_list[src_idx],
+                    'Model': model_type,
+                    'R-squared': r_squared,
+                    'coef': model.params[1],
+                    'intercept': model.params[0],
+                    'p_value': model.pvalues[1]
+                })
+
+            except Exception as e:
+                print(f"Error for {unit_id}, Monkey {monkey_list[src_idx]}: {e}")
+                continue
+
+    return pd.DataFrame(results)
+
+
+def run_directional_vector_linear_regression_cell_level(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_spikerate = False, model_type ='ols'):
     results = []
     value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
@@ -152,6 +230,7 @@ def run_directional_vector_linear_regression(spike_df, behavior_matrix, behavior
                     'Model': model_type,
                     'R-squared': r_squared,
                     'coef': model.params[1],
+                    'intercept': model.params[0],
                     'p_value': model.pvalues[1]
                 })
             except Exception as e:
