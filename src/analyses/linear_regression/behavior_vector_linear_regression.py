@@ -2,7 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import pdist, squareform
-from scipy.stats import pearsonr, zscore
+from scipy.stats import pearsonr, zscore, spearmanr
 import seaborn as sns
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
@@ -294,7 +294,7 @@ def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subj
     mask = np.triu(np.ones_like(neural_rsm), k=1).astype(bool)
     neural_vec = neural_rsm.values[mask]
     social_vec = social_rsm.values[mask]
-    r, p = pearsonr(neural_vec, social_vec)
+    r, p = spearmanr(neural_vec, social_vec)
 
     # Plot
     fig, ax = plt.subplots(1, 2, figsize=(12, 5))
