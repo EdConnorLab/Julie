@@ -5,8 +5,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from analyses.enums.monkey_names import get_monkeys_by_default_order
-from analyses.linear_regression.behavior_vector_linear_regression import run_directional_vector_linear_regression, \
-    run_rsa_analysis
+from analyses.linear_regression.behavior_vector_linear_regression import \
+    run_directional_vector_linear_regression_cell_level, \
+    run_rsa_analysis, run_directional_vector_linear_regression_window_level
 
 from analyses.spike_count import extract_spike_counts_from_cells
 from analyses.spike_rate import compute_mean_spike_rate_for_cells, compute_mean_spike_rate_for_windows
@@ -52,14 +53,19 @@ def main():
     # mean_spike_rate_neurons = compute_mean_spike_rate_for_cells(sig_neurons)
     # directional_neuron_results = []
     # for name, mat in behavior_matrices.items():
-    #     neuron_results_df = run_directional_vector_linear_regression(
+    #     neuron_results_df = run_directional_vector_linear_regression_cell_level(
     #         mean_spike_rate_neurons, mat, name, monkey_group, monkey_list, subject_monkey_index, use_spikerate=True
     #     )
     #     directional_neuron_results.append(neuron_results_df)
     # directional_all_neuron_results_df = pd.concat(directional_neuron_results, ignore_index=True)
     # directional_all_neuron_results_sorted = directional_all_neuron_results_df.sort_values(by=['p_value','R-squared'], ascending=False)
-    # # directional_all_neuron_results_sorted.to_pickle(f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/{monkey_group}_dir_ols_on_single_neurons.pkl')
+    # filtered_df = directional_all_neuron_results_df[
+    #     (directional_all_neuron_results_df['p_value'] < 0.05) &
+    #     (directional_all_neuron_results_df['R-squared'] > 0.5)
+    #     ]
+    # directional_all_neuron_results_sorted.to_pickle(f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/{monkey_group}_dir_ols_on_single_neurons.pkl')
     # print(directional_all_neuron_results_sorted)
+    # mean_spike_rate = compute_mean_spike_rate_for_cells(filtered_df)
 
     # Marginal Linear Regression (OLS) on Significant Cells
     # marginal_neuron_results = []
@@ -79,38 +85,41 @@ def main():
     mean_spike_rate_windows = compute_mean_spike_rate_for_windows(sig_windows)
     all_window_results = []
     for name, mat in behavior_matrices.items():
-        results_df = run_directional_vector_linear_regression(
+        results_df = run_directional_vector_linear_regression_window_level(
             mean_spike_rate_windows, mat, name, monkey_group, monkey_list, subject_monkey_index, use_spikerate=True
         )
         all_window_results.append(results_df)
     all_window_results_df = pd.concat(all_window_results, ignore_index=True)
     all_window_results_sorted = all_window_results_df.sort_values(by=['p_value','R-squared'], ascending=False)
     all_window_results_sorted.to_pickle(f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/{monkey_group}_dir_ols_on_windows.pkl')
-    print(all_window_results_sorted)
+    # print(all_window_results_sorted.shape)
     filtered_df = all_window_results_df[
         (all_window_results_df['p_value'] < 0.05) &
         (all_window_results_df['R-squared'] > 0.5)
         ]
-    mean_spike_rate = compute_mean_spike_rate_for_cells(filtered_df)
+    window_dir_results = pd.read_pickle('/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/Zombies_dir_ols_on_windows.pkl')
+    print(window_dir_results)
+    # mean_spike_rate = compute_mean_spike_rate_for_windows(filtered_df)
 
-    rsa_results = []
-    for name, mat in behavior_matrices.items():
-        r, p, neural_rsm, social_rsm = run_rsa_analysis(
-            spike_df=mean_spike_rate,
-            behavior_matrix=mat,
-            behavior_name=name,
-            monkey_list=monkey_list,
-            subject_idx=6,
-            method='correlation',
-            use_rate=True
-        )
-
-        rsa_results.append({
-            'Behavior': name,
-            'RSA_r': r,
-            'RSA_p': p
-        })
-        print(f"RSA for {name}: r={r:.3f}, p={p:.3f}")
+    ### RSA
+    # rsa_results = []
+    # for name, mat in behavior_matrices.items():
+    #     r, p, neural_rsm, social_rsm = run_rsa_analysis(
+    #         spike_df=mean_spike_rate,
+    #         behavior_matrix=mat,
+    #         behavior_name=name,
+    #         monkey_list=monkey_list,
+    #         subject_idx=6,
+    #         method='Euclidean',
+    #         use_rate=True
+    #     )
+    #
+    #     rsa_results.append({
+    #         'Behavior': name,
+    #         'RSA_r': r,
+    #         'RSA_p': p
+    #     })
+    #     print(f"RSA for {name}: r={r:.3f}, p={p:.3f}")
 
 if __name__ == "__main__":
     main()
