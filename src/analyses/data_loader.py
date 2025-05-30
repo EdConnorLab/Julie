@@ -115,9 +115,6 @@ def explode_spike_data(combined_data, date, round_no, only_valid_channels=False)
         how='left'
     )
     exploded_df['Location'] = exploded_df['Location'].fillna('Unknown')
-    exploded_df['Location'] = exploded_df['Location'].replace({
-        'Amygdala': 'AMG'
-    })
 
     exploded_df['NeuronID'] = (
             exploded_df['Location'].astype(str) + "_" +
