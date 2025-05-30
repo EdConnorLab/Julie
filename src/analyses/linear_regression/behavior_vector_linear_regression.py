@@ -10,6 +10,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from tqdm import tqdm
+
 from analyses.enums.monkey_names import get_monkeys_by_default_order
 from analyses.spike_count import extract_spike_counts_from_windows, prepare_exploded_spike_data
 from analyses.spike_rate import compute_mean_spike_rate_table
@@ -136,7 +138,7 @@ def run_directional_vector_linear_regression_window_level(
 
     # Add back mapping from NeuronWindowID → NeuronID + Window
     id_map = mean_spikes[['NeuronWindowID', 'NeuronID', 'WindowStart_ms', 'WindowEnd_ms']].drop_duplicates()
-    for unit_id, row in spike_matrix.iterrows():
+    for unit_id, row in tqdm(spike_matrix.iterrows(), total=len(spike_matrix), desc="Computing window-level linear regression with directional vectors"):
         meta = id_map[id_map['NeuronWindowID'] == unit_id].iloc[0]
         neuron_id = meta['NeuronID']
         win_start = meta['WindowStart_ms']
@@ -224,7 +226,7 @@ def run_directional_vector_linear_regression_cell_level(
     mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col].mean()
     spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values= value_col)
 
-    for neuron_id, row in spike_matrix.iterrows():
+    for neuron_id, row in tqdm(spike_matrix.iterrows(), total=len(spike_matrix), desc="Computing cell-level linear regression with directional vectors"):
         for src_idx, src_monkey in enumerate(monkey_list):
             if src_idx == subject_idx:
                 continue
@@ -370,7 +372,8 @@ def expand_cell_level_regression_results_with_spike_rates_per_stimulus(
                 'R-squared': row['R-squared'],
                 'coef': row['coef'],
                 'intercept': row['intercept'],
-                'p_value': row['p_value']
+                'p_value': row['p_value'],
+                'p_perm': row['p_perm']
             })
 
     return pd.DataFrame(expanded_rows)
@@ -448,7 +451,8 @@ def expand_window_level_regression_results_with_spike_rates_per_stimulus(
                 'R-squared': row['R-squared'],
                 'coef': row['coef'],
                 'intercept': row['intercept'],
-                'p_value': row['p_value']
+                'p_value': row['p_value'],
+                'p_perm': row['p_perm']
             })
 
     return pd.DataFrame(expanded_rows)
