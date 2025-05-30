@@ -61,7 +61,7 @@ def run_marginal_vector_linear_regression_from_matrix(
         marginals = behavior_matrix[idxs, :].mean(axis=1)
     y = zscore(marginals)
 
-    # 3. spike data 평균
+    # 3. averaging spike data
     filtered_df = spike_df[
         (spike_df['MonkeyGroup'] == group_name) &
         (spike_df['MonkeyName'].isin(monkeys))
@@ -71,7 +71,7 @@ def run_marginal_vector_linear_regression_from_matrix(
     )
     spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values=value_col)
 
-    # 4. 뉴런별 회귀
+    # 4. regression per neuron
     for neuron_id, row in spike_matrix.iterrows():
         x_row = row[monkeys].values.astype(float)
         x = zscore(x_row)
@@ -105,7 +105,17 @@ def run_marginal_vector_linear_regression_from_matrix(
 
 
 
-def run_directional_vector_linear_regression_window_level(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_spikerate = False, model_type ='ols'):
+def run_directional_vector_linear_regression_window_level(
+        spike_df,
+        behavior_matrix,
+        behavior_name,
+        group_name,
+        monkey_list,
+        subject_idx,
+        use_spikerate = False,
+        model_type ='ols',
+        permutation_test = False,
+        n_perm = 10000):
     results = []
     value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
@@ -162,6 +172,19 @@ def run_directional_vector_linear_regression_window_level(spike_df, behavior_mat
                     r_squared = None
                 else:
                     raise ValueError("model_type must be 'ols' or 'glm'")
+
+                # Permutation test
+                if permutation_test and model_type == 'ols':
+                    null_distribution = []
+                    for _ in range(n_perm):
+                        y_perm = np.random.permutation(y)
+                        model_perm = sm.OLS(y_perm, X).fit()
+                        null_distribution.append(model_perm.rsquared)
+                    null_distribution = np.array(null_distribution)
+                    p_perm = (np.sum(null_distribution >= r_squared) + 1) / (n_perm + 1)
+                else:
+                    p_perm = None
+
                 results.append({
                     'NeuronID': neuron_id,
                     'WindowStart_ms': win_start,
@@ -172,7 +195,8 @@ def run_directional_vector_linear_regression_window_level(spike_df, behavior_mat
                     'R-squared': r_squared,
                     'coef': model.params[1],
                     'intercept': model.params[0],
-                    'p_value': model.pvalues[1]
+                    'p_value': model.pvalues[1],
+                    'p_perm': p_perm
                 })
 
             except Exception as e:
@@ -182,7 +206,18 @@ def run_directional_vector_linear_regression_window_level(spike_df, behavior_mat
     return pd.DataFrame(results)
 
 
-def run_directional_vector_linear_regression_cell_level(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_spikerate = False, model_type ='ols', plot = False):
+def run_directional_vector_linear_regression_cell_level(
+        spike_df,
+        behavior_matrix,
+        behavior_name,
+        group_name,
+        monkey_list,
+        subject_idx,
+        use_spikerate = False,
+        model_type ='ols',
+        plot = False,
+        permutation_test = False,
+        n_perm = 10000):
     results = []
     value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
@@ -223,6 +258,18 @@ def run_directional_vector_linear_regression_cell_level(spike_df, behavior_matri
                 else:
                     raise ValueError("model_type must be 'ols' or 'glm'")
 
+                # Permutation test
+                if permutation_test and model_type == 'ols':
+                    null_distribution = []
+                    for _ in range(n_perm):
+                        y_perm = np.random.permutation(y)
+                        model_perm = sm.OLS(y_perm, X).fit()
+                        null_distribution.append(model_perm.rsquared)
+                    null_distribution = np.array(null_distribution)
+                    p_perm = (np.sum(null_distribution >= r_squared) + 1) / (n_perm + 1)
+                else:
+                    p_perm = None
+
                 results.append({
                     'NeuronID': neuron_id,
                     'Behavior': behavior_name,
@@ -231,7 +278,8 @@ def run_directional_vector_linear_regression_cell_level(spike_df, behavior_matri
                     'R-squared': r_squared,
                     'coef': model.params[1],
                     'intercept': model.params[0],
-                    'p_value': model.pvalues[1]
+                    'p_value': model.pvalues[1],
+                    'p_perm': p_perm
                 })
 
                 if plot and r_squared > 0.6:
