@@ -257,6 +257,154 @@ def run_directional_vector_linear_regression_cell_level(spike_df, behavior_matri
     return pd.DataFrame(results)
 
 
+def expand_cell_level_regression_results_with_spike_rates_per_stimulus(
+        spike_df,
+        regression_df,
+        group_name,
+        monkey_list,
+        subject_idx,
+        use_spikerate=True
+):
+    """
+    Expands regression summary results by attaching mean spike rates per stimulus monkey.
+
+    Parameters:
+        spike_df (pd.DataFrame): Raw or processed DataFrame with 'NeuronID', 'MonkeyName', and either 'SpikeCount' or 'MeanSpikeRate'
+        regression_df (pd.DataFrame): Output from run_directional_vector_linear_regression_cell_level
+        group_name (str): Monkey group name (e.g., "Zombies")
+        monkey_list (List[str]): List of all monkeys in group (ordered)
+        subject_idx (int): Index of the subject monkey in monkey_list
+        use_spikerate (bool): Whether to use 'MeanSpikeRate' or 'SpikeCount'
+
+    Returns:
+        pd.DataFrame: Expanded table with one row per stimulus monkey per regression result
+    """
+
+    value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
+
+    # Filter for group and drop bad labels
+    filtered_df = spike_df[
+        (spike_df['MonkeyGroup'] == group_name) &
+        (spike_df['MonkeyName'] != "NewMonkey")
+        ]
+
+    # Average spike rate per neuron per stimulus monkey
+    mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col].mean()
+
+    # Build expanded table
+    expanded_rows = []
+
+    for _, row in regression_df.iterrows():
+        neuron_id = row['NeuronID']
+        behavior = row['Behavior']
+        source = row['Source_Monkey']
+        excluded = {monkey_list[subject_idx], source}
+
+        for stim_monkey in monkey_list:
+            if stim_monkey in excluded:
+                continue
+
+            # Get spike rate to this stimulus monkey for this neuron
+            match = mean_spikes[
+                (mean_spikes['NeuronID'] == neuron_id) &
+                (mean_spikes['MonkeyName'] == stim_monkey)
+                ]
+
+            if match.empty:
+                continue
+
+            expanded_rows.append({
+                'NeuronID': neuron_id,
+                'Behavior': behavior,
+                'Source_Monkey': source,
+                'StimulusMonkey': stim_monkey,
+                'MeanSpikeRate': match[value_col].values[0],
+                'R-squared': row['R-squared'],
+                'coef': row['coef'],
+                'intercept': row['intercept'],
+                'p_value': row['p_value']
+            })
+
+    return pd.DataFrame(expanded_rows)
+
+def expand_window_level_regression_results_with_spike_rates_per_stimulus(
+    spike_df,
+    regression_df,
+    group_name,
+    monkey_list,
+    subject_idx,
+    use_spikerate=True
+):
+    """
+    Expands window-level regression results with per-stimulus monkey mean spike rates.
+
+    Parameters:
+        spike_df (pd.DataFrame): DataFrame with 'NeuronID', 'MonkeyName', 'WindowStart_ms', 'WindowEnd_ms',
+                                 and either 'SpikeCount' or 'MeanSpikeRate'
+        regression_df (pd.DataFrame): Output from run_directional_vector_linear_regression_window_level
+        group_name (str): Group name (e.g. "Zombies")
+        monkey_list (List[str]): List of monkeys in group
+        subject_idx (int): Index of subject monkey
+        use_spikerate (bool): Use 'MeanSpikeRate' or 'SpikeCount'
+
+    Returns:
+        pd.DataFrame: Expanded table with one row per stimulus monkey per regression window
+    """
+
+    value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
+
+    # Filter spike_df
+    filtered_df = spike_df[
+        (spike_df['MonkeyGroup'] == group_name) &
+        (spike_df['MonkeyName'] != "NewMonkey")
+    ]
+
+    # Average spike rate per Neuron x StimulusMonkey x Time Window
+    mean_spikes = filtered_df.groupby(
+        ['NeuronID', 'MonkeyName', 'WindowStart_ms', 'WindowEnd_ms'],
+        as_index=False
+    )[value_col].mean()
+
+    expanded_rows = []
+
+    for _, row in regression_df.iterrows():
+        neuron_id = row['NeuronID']
+        behavior = row['Behavior']
+        source = row['Source_Monkey']
+        win_start = row['WindowStart_ms']
+        win_end = row['WindowEnd_ms']
+        excluded = {monkey_list[subject_idx], source}
+
+        for stim_monkey in monkey_list:
+            if stim_monkey in excluded:
+                continue
+
+            match = mean_spikes[
+                (mean_spikes['NeuronID'] == neuron_id) &
+                (mean_spikes['MonkeyName'] == stim_monkey) &
+                (mean_spikes['WindowStart_ms'] == win_start) &
+                (mean_spikes['WindowEnd_ms'] == win_end)
+            ]
+
+            if match.empty:
+                continue
+
+            expanded_rows.append({
+                'NeuronID': neuron_id,
+                'WindowStart_ms': win_start,
+                'WindowEnd_ms': win_end,
+                'Behavior': behavior,
+                'Source_Monkey': source,
+                'StimulusMonkey': stim_monkey,
+                'MeanSpikeRate': match[value_col].values[0],
+                'R-squared': row['R-squared'],
+                'coef': row['coef'],
+                'intercept': row['intercept'],
+                'p_value': row['p_value']
+            })
+
+    return pd.DataFrame(expanded_rows)
+
 
 def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subject_idx, method='cosine', use_rate = False):
     """
