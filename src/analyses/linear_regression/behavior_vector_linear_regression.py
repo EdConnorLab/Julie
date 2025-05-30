@@ -182,7 +182,7 @@ def run_directional_vector_linear_regression_window_level(spike_df, behavior_mat
     return pd.DataFrame(results)
 
 
-def run_directional_vector_linear_regression_cell_level(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_spikerate = False, model_type ='ols'):
+def run_directional_vector_linear_regression_cell_level(spike_df, behavior_matrix, behavior_name, group_name, monkey_list, subject_idx, use_spikerate = False, model_type ='ols', plot = False):
     results = []
     value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
@@ -233,6 +233,23 @@ def run_directional_vector_linear_regression_cell_level(spike_df, behavior_matri
                     'intercept': model.params[0],
                     'p_value': model.pvalues[1]
                 })
+
+                if plot and r_squared > 0.6:
+                    y_pred = model.predict(X)
+
+                    plt.figure(figsize=(8, 6))
+                    plt.scatter(x, y, label='True', color='blue', alpha=0.6)
+                    plt.scatter(x, y_pred, color='green', label='Prediction', alpha=0.6)
+                    plt.plot(x, y_pred, label='Fit', color='black', alpha=0.6)
+                    plt.xlabel(f'{behavior_name} {monkey_list[src_idx]} (z-scored)')
+                    plt.ylabel('Neural Response (z-scored)')
+                    plt.title(f'{neuron_id} (R-sq {r_squared:.3f})')
+                    plt.legend()
+                    plt.grid(True)
+                    plt.tight_layout()
+                    plt.show()
+
+
             except Exception as e:
                 print(f"Error for Neuron {neuron_id}, Monkey {monkey_list[src_idx]}: {e}")
                 continue
