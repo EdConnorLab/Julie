@@ -8,13 +8,16 @@ import statsmodels.api as sm
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.decomposition import PCA
+from sklearn.cross_decomposition import PLSRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+import plotly.express as px
 
 from analyses.enums.monkey_names import get_monkeys_by_default_order
 from analyses.spike_count import extract_spike_counts_from_windows, prepare_exploded_spike_data
-from analyses.spike_rate import compute_mean_spike_rate_table
+from analyses.spike_rate import compute_mean_spike_rate_table, compute_mean_spike_rate_for_cells
+
 
 def run_linear_regression_using_sklearn(x, y):
     x = np.array(x).reshape(-1, 1)
@@ -307,6 +310,91 @@ def run_directional_vector_linear_regression_cell_level(
     return pd.DataFrame(results)
 
 
+def run_directional_vector_pls_analysis_cell_level(
+    spike_df,
+    behavior_matrices,
+    behavior_names,
+    group_name,
+    monkey_list,
+    subject_idx,
+    use_spikerate=False,
+    n_components=3
+):
+    """
+    Run PLS analysis across neurons using directional behavior vectors as predictors.
+
+    Parameters:
+        spike_df: pd.DataFrame with ['NeuronID', 'MonkeyName', 'MonkeyGroup', 'SpikeCount' or 'MeanSpikeRate']
+        behavior_matrices: dict of {behavior_name: np.ndarray} matrices (n_monkeys x n_monkeys)
+        behavior_names: list of behavior names to include
+        group_name: str, monkey group name (e.g., "Zombies")
+        monkey_list: list of monkey names
+        subject_idx: index of subject monkey (to exclude)
+        use_spikerate: whether to use 'MeanSpikeRate' instead of 'SpikeCount'
+        n_components: number of PLS components
+
+    Returns:
+        pls_model: fitted PLSRegression model
+        X_df: DataFrame (n_samples x n_behaviors)
+        Y_df: DataFrame (n_samples x n_neurons)
+        sample_info: DataFrame with ['Source_Monkey', 'StimulusMonkey']
+    """
+
+    value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
+    subject_monkey = monkey_list[subject_idx]
+    monkeys = [m for m in monkey_list if m != subject_monkey]
+    idxs = [i for i in range(len(monkey_list)) if i != subject_idx]
+
+    # Step 1: build behavior predictor matrix (X)
+    X_list = []
+    sample_info = []
+    for src_idx, src_monkey in enumerate(monkey_list):
+        if src_idx == subject_idx:
+            continue
+        row = []
+        mask = np.ones(len(monkey_list), dtype=bool)
+        mask[[subject_idx, src_idx]] = False  # exclude self + subject
+
+        for bname in behavior_names:
+            mat = behavior_matrices[bname]
+            vec = mat[src_idx][mask]  # directional vector from src
+            row.append(zscore(vec))
+        X_list.extend(np.stack(row, axis=1))  # append each stimulus monkey's slice
+        for stim_idx, stim_monkey in enumerate(monkey_list):
+            if stim_idx in (subject_idx, src_idx):
+                continue
+            sample_info.append({'Source_Monkey': src_monkey, 'StimulusMonkey': stim_monkey})
+    X = np.vstack(X_list)
+    X_df = pd.DataFrame(X, columns=behavior_names)
+
+    # Step 2: build neural response matrix (Y)
+    filtered_df = spike_df[
+        (spike_df['MonkeyGroup'] == group_name) &
+        (spike_df['MonkeyName'].isin(monkeys))
+    ]
+    value_table = filtered_df.groupby(['NeuronID', 'MonkeyName'])[value_col].mean().unstack()
+    neuron_ids = value_table.index.tolist()
+
+    Y_list = []
+    for row in sample_info:
+        stim_monkey = row['StimulusMonkey']
+        y_row = value_table[stim_monkey].values  # all neurons' responses to this monkey
+        Y_list.append(zscore(y_row))  # z-score per stimulus
+    Y = np.vstack(Y_list)
+    Y_df = pd.DataFrame(Y, columns=neuron_ids)
+
+    # Step 3: run PLS
+    scaler_X = StandardScaler()
+    scaler_Y = StandardScaler()
+    X_scaled = scaler_X.fit_transform(X_df)
+    Y_scaled = scaler_Y.fit_transform(Y_df)
+
+    pls = PLSRegression(n_components=n_components)
+    pls.fit(X_scaled, Y_scaled)
+
+    return pls, X_df, Y_df, pd.DataFrame(sample_info)
+
+
 def expand_cell_level_regression_results_with_spike_rates_per_stimulus(
         spike_df,
         regression_df,
@@ -527,6 +615,68 @@ def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subj
 
 
 
+
+def plot_pls_component_by_source(full_sample_df, component='XComp1'):
+    plt.figure(figsize=(10, 5))
+    sns.boxplot(data=full_sample_df, x='Source_Monkey', y=component)
+    plt.title(f"{component} distribution by Source Monkey")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+
+def scatter_pls_scores_by_source(full_sample_df, comp_x='XComp1', comp_y='XComp2'):
+    plt.figure(figsize=(8, 6))
+    sns.scatterplot(
+        data=full_sample_df, x=comp_x, y=comp_y,
+        hue='Source_Monkey', palette='tab10', s=70
+    )
+    plt.title(f"{comp_x} vs {comp_y}")
+    plt.axhline(0, color='gray', linestyle='--')
+    plt.axvline(0, color='gray', linestyle='--')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.show()
+
+
+def scatter_3d_pls_by_stimulus_with_grid(full_sample_df):
+    fig = px.scatter_3d(
+        full_sample_df,
+        x='XComp1',
+        y='XComp2',
+        z='XComp3',
+        color='StimulusMonkey',
+        title='PLS Component Space (colored by StimulusMonkey)',
+        opacity=0.8
+    )
+    fig.update_traces(marker=dict(size=5))
+
+    # 축 스타일: grid on, zero lines, background
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(
+                title='XComp1',
+                showgrid=True,
+                zeroline=True,
+                backgroundcolor="rgba(240,240,240,0.95)"
+            ),
+            yaxis=dict(
+                title='XComp2',
+                showgrid=True,
+                zeroline=True,
+                backgroundcolor="rgba(240,240,240,0.95)"
+            ),
+            zaxis=dict(
+                title='XComp3',
+                showgrid=True,
+                zeroline=True,
+                backgroundcolor="rgba(240,240,240,0.95)"
+            )
+        )
+    )
+    fig.show()
+
+
 if __name__ == "__main__":
     # Setup
     monkey_group_name = "Zombies"
@@ -548,8 +698,8 @@ if __name__ == "__main__":
     }
 
     # Load spike windows and compute spike counts
-    cells_df = pd.read_excel('all_anova_passed_cells.xlsx')
-    spike_df = extract_spike_counts_from_windows(cells_df)
+    cells_df = pd.read_pickle('/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_significant_neurons_pANOVAorGLM_passed.pkl')
+    spike_df = compute_mean_spike_rate_for_cells(cells_df)
     # exploded_df = prepare_exploded_spike_data("2023-09-26", 1, True)
     # print(exploded_df)
     # spike_df = compute_mean_spike_rate_table(exploded_df)
@@ -567,22 +717,98 @@ if __name__ == "__main__":
     # final_df = pd.concat(all_results, ignore_index=True)
     # print(final_df.head())
 
-    rsa_results = []
-    for name, mat in behavior_matrices.items():
-        r, p, neural_rsm, social_rsm = run_rsa_analysis(
-            spike_df=spike_df,
-            behavior_matrix=mat,
-            monkey_list=monkey_list,
-            subject_idx=6,
-            method='correlation',
-            use_rate = True
-        )
+    ## Testing PLS
+    pls_model, X_df, Y_df, info_df = run_directional_vector_pls_analysis_cell_level(
+        spike_df=spike_df,
+        behavior_matrices=behavior_matrices,
+        behavior_names=["AffiliationTo", "AffiliationFrom", "SubmissionTo", "SubmissionFrom", "AgonismTo",
+                        "AgonismFrom"],
+        group_name="Zombies",
+        monkey_list=monkey_list,
+        subject_idx=6,
+        use_spikerate=True,
+        n_components=3
+    )
+    # 각 behavior의 salience
+    salience = pd.DataFrame(pls_model.x_weights_, index=X_df.columns,
+                 columns=[f"Comp{i + 1}" for i in range(pls_model.n_components)])
 
-        rsa_results.append({
-            'Behavior': name,
-            'RSA_r': r,
-            'RSA_p': p
-        })
+    # 각 neuron의 loading
+    loading = pd.DataFrame(pls_model.y_weights_, index=Y_df.columns,
+                 columns=[f"Comp{i + 1}" for i in range(pls_model.n_components)])
+    print('----------------------------------')
+    print(salience)
+    print(loading)
 
-    rsa_df = pd.DataFrame(rsa_results)
-    print(rsa_df.sort_values(by='RSA_r', ascending=False))
+    x_weights = pd.DataFrame(
+        pls_model.x_weights_,
+        index=X_df.columns,
+        columns=[f"Comp{i + 1}" for i in range(pls_model.n_components)]
+    )
+    print("🧭 Behavior (X) weights:")
+    print(x_weights.round(3))
+
+    y_weights = pd.DataFrame(
+        pls_model.y_weights_,
+        index=Y_df.columns,
+        columns=[f"Comp{i + 1}" for i in range(pls_model.n_components)]
+    )
+    print("🧠 Neuron (Y) weights:")
+    print(y_weights.round(3))
+
+    Y_pred = pls_model.predict(X_df)
+    explained_var_per_neuron = np.var(Y_pred, axis=0) / np.var(Y_df.values, axis=0)
+    print("📊 Variance explained per neuron (first few):")
+    print(pd.Series(explained_var_per_neuron, index=Y_df.columns).round(3).sort_values(ascending=False).head())
+
+    print(f"🔍 Mean explained variance across neurons: {explained_var_per_neuron.mean():.3f}")
+
+    X_scores = pd.DataFrame(pls_model.x_scores_, columns=[f"XComp{i + 1}" for i in range(pls_model.n_components)])
+    Y_scores = pd.DataFrame(pls_model.y_scores_, columns=[f"YComp{i + 1}" for i in range(pls_model.n_components)])
+
+    print("📌 First few sample scores (X):")
+    print(X_scores.head())
+
+    full_sample_df = pd.concat([info_df.reset_index(drop=True), X_scores], axis=1)
+    print(full_sample_df.head())
+
+    # plot_pls_component_by_source(full_sample_df, component='XComp1')
+    # plot_pls_component_by_source(full_sample_df, component='XComp2')
+    # plot_pls_component_by_source(full_sample_df, component='XComp3')
+
+    # scatter_pls_scores_by_source(full_sample_df, 'XComp1', 'XComp2')
+    scatter_3d_pls_by_stimulus_with_grid(full_sample_df)
+
+    y_weights = pd.DataFrame(
+        pls_model.y_weights_,
+        index=Y_df.columns,
+        columns=[f"Comp{i + 1}" for i in range(pls_model.n_components)]
+    )
+
+    plt.figure(figsize=(10, 5))
+    sns.histplot(y_weights["Comp1"], bins=30, kde=True)
+    plt.title("Distribution of Neuron Loadings on Component 1")
+    plt.xlabel("Loading")
+    plt.grid(True)
+    plt.show()
+
+    # RSA
+    # rsa_results = []
+    # for name, mat in behavior_matrices.items():
+    #     r, p, neural_rsm, social_rsm = run_rsa_analysis(
+    #         spike_df=spike_df,
+    #         behavior_matrix=mat,
+    #         monkey_list=monkey_list,
+    #         subject_idx=6,
+    #         method='correlation',
+    #         use_rate = True
+    #     )
+    #
+    #     rsa_results.append({
+    #         'Behavior': name,
+    #         'RSA_r': r,
+    #         'RSA_p': p
+    #     })
+    #
+    # rsa_df = pd.DataFrame(rsa_results)
+    # print(rsa_df.sort_values(by='RSA_r', ascending=False))
