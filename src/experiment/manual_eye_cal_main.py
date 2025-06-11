@@ -12,11 +12,11 @@ db = mysql.connector.connect(
     user='xper_rw',
     password='up2nite',
     host='127.0.0.1',
-    database='test',
+    database='bixby_training',
 )
 
-start_time = "2025-04-15 11:59:00"
-stop_time = "2025-04-15 12:15:00"
+start_time = "2025-06-06 12:05:00"
+stop_time = "2025-06-06 12:08:00"
 eye = "right"
 iscan_id = eye + "Iscan"
 calibration_degree = 10
