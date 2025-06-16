@@ -15,9 +15,9 @@ db = mysql.connector.connect(
     database='bixby_training',
 )
 
-start_time = "2025-06-06 12:05:00"
-stop_time = "2025-06-06 12:08:00"
-eye = "right"
+start_time = "2025-06-13 13:51:00"
+stop_time = "2025-06-13 13:54:00"
+eye = "left"
 iscan_id = eye + "Iscan"
 calibration_degree = 10
 
@@ -25,11 +25,11 @@ slide_on_delay = 20  # I.e. only display data starting 20 ms AFTER slide on time
 slide_on_max = 300
 
 _DEFAULT_FIX_VOLTS = array([
-    [-0.9118757387587779, 0.30264187879584314],  # left
-    [-0.1504638385568282, 1.0795660488146286],  # down
-    [-0.2613604404165235, 0.20934935047436465],  # center
-    [-0.22539309365889215, -0.4462073863464897],  # up
-    [0.6165709909727304, 0.3551694458719221],  # right
+    [-0.23930669684844386, 0.29129916559512226],  # left
+    [0.4512896107620046, 0.9935689308209374],  # down
+    [0.46152066717104834, 0.3934474950825133],  # center
+    [0.6201020415112257, -0.45778858397908095],  # up
+    [1.2032722568267156, 0.4147283970590534],  # right
 ])
 marker_size = 3
 marker_alpha = 1
