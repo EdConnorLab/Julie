@@ -23,7 +23,7 @@ class ExplodedSpikeCacheManager(GenericCacheManager):
         super().__init__(cache_dir)
 
     def load_or_compute(self, date, round_no, only_valid_channels=False, force_recompute=False):
-        label = f"{date}_round_{round_no}"
+        label = f"{date}_round_{round_no}{'_validOnly' if only_valid_channels else ''}"
         path = self._get_cache_path(label)
         if path.exists() and not force_recompute:
             return pd.read_pickle(path)
