@@ -1,6 +1,6 @@
 import os
-import numpy as np
 import pandas as pd
+import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import pearsonr, zscore, spearmanr
 import seaborn as sns
@@ -308,6 +308,104 @@ def run_directional_vector_linear_regression_cell_level(
                 continue
 
     return pd.DataFrame(results)
+
+def run_stimulus_centric_pls_analysis(
+    spike_df,
+    behavior_matrices,
+    behavior_names,
+    group_name,
+    monkey_list,
+    subject_idx,
+    use_spikerate=True,
+    n_components=3
+):
+    """
+    PLS analysis where behavioral predictors are based on stimulus monkeys.
+
+    Parameters:
+        spike_df: DataFrame with ['NeuronID', 'MonkeyName', 'MonkeyGroup', 'SpikeCount' or 'MeanSpikeRate']
+        behavior_matrices: dict of {behavior_name: np.ndarray} (10×10 directional matrices)
+        behavior_names: list of behavior keys (e.g., 'AffiliationTo', 'AffiliationFrom', etc.)
+        group_name: monkey group (e.g., 'Zombies')
+        monkey_list: ordered list of 10 monkeys in the behavior matrices
+        subject_idx: index of the subject monkey (to exclude)
+        use_spikerate: if True, use 'MeanSpikeRate' column in spike_df
+        n_components: number of PLS components
+
+    Returns:
+        pls_model: fitted PLSRegression model
+        X_df: behavioral feature matrix (stimuli × features)
+        Y_df: neural response matrix (stimuli × neurons)
+        stimulus_monkeys: list of stimulus monkey names
+    """
+
+    value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
+    subject_monkey = monkey_list[subject_idx]
+
+    # Stimulus monkeys: all except subject
+    stimulus_idxs = [i for i in range(len(monkey_list)) if i != subject_idx]
+    stimulus_monkeys = [monkey_list[i] for i in stimulus_idxs]
+
+    # Step 1: Build behavioral predictor matrix X (stimulus-centric)
+    X_dicts = []
+
+    for stim_idx in stimulus_idxs:
+        stim_monkey = monkey_list[stim_idx]
+        feature_dict = {}
+
+        for bname in behavior_names:
+            mat = behavior_matrices[bname]
+
+            if 'To' in bname:
+                vec = mat[:, stim_idx]  # other → stim
+                ids = monkey_list
+            elif 'From' in bname:
+                vec = mat[stim_idx, :]  # stim → other
+                ids = monkey_list
+            else:
+                raise ValueError(f"Behavior name must contain 'To' or 'From': {bname}")
+
+            # Exclude subject and self
+            mask = np.ones(len(monkey_list), dtype=bool)
+            mask[subject_idx] = False
+            mask[stim_idx] = False
+            vec = vec[mask]
+            ids_filtered = [id_ for i, id_ in enumerate(ids) if mask[i]]
+
+            # Normalize and name
+            zvec = zscore(vec)
+            for target_id, val in zip(ids_filtered, zvec):
+                colname = f"{bname}_{target_id}"
+                feature_dict[colname] = val
+
+        X_dicts.append(feature_dict)
+
+    # Create DataFrame with consistent columns across all rows
+    X_df = pd.DataFrame(X_dicts, index=stimulus_monkeys).fillna(0)
+
+    # Step 2: Build neural response matrix Y (stimulus → neuron mean firing)
+    filtered_df = spike_df[
+        (spike_df['MonkeyGroup'] == group_name) &
+        (spike_df['MonkeyName'].isin(stimulus_monkeys))
+    ]
+    value_table = filtered_df.groupby(['NeuronID', 'MonkeyName'])[value_col].mean().unstack()
+    value_table = value_table.loc[:, stimulus_monkeys]  # ensure correct order
+
+    # Z-score across stimulus monkeys (per neuron)
+    Y = zscore(value_table.T, axis=0)
+    Y_df = pd.DataFrame(Y, index=stimulus_monkeys, columns=value_table.index)
+
+    # Step 3: PLS regression
+    scaler_X = StandardScaler()
+    scaler_Y = StandardScaler()
+    X_scaled = scaler_X.fit_transform(X_df)
+    Y_scaled = scaler_Y.fit_transform(Y_df)
+
+    pls = PLSRegression(n_components=n_components)
+    pls.fit(X_scaled, Y_scaled)
+
+    return pls, X_df, Y_df, stimulus_monkeys
+
 
 
 def run_directional_vector_pls_analysis_cell_level(
@@ -792,6 +890,28 @@ if __name__ == "__main__":
     plt.grid(True)
     plt.show()
 
+
+    ## Testing PLS with stimulus-centered
+    pls_model, X_df, Y_df, stim_monkeys = run_stimulus_centric_pls_analysis(
+        spike_df=spike_df,
+        behavior_matrices=behavior_matrices,
+        behavior_names=["AffiliationTo", "AffiliationFrom", "SubmissionTo", "SubmissionFrom", "AgonismTo",
+                        "AgonismFrom"],
+        group_name="Zombies",
+        monkey_list=monkey_list,
+        subject_idx=6,
+        use_spikerate=True,
+        n_components=3
+    )
+
+    plot_behavioral_weights(pls_model, X_df)
+    plot_stimuli_in_component_space(pls_model, stim_monkeys)
+    print('RESULTS')
+    print(X_df)
+    print(Y_df)
+    print(pls_model.x_weights_)
+    print(pls_model.y_weights_)
+    interpret_behavioral_weights(pls_model, X_df, component=0, top_n=15, plot=True)
     # RSA
     # rsa_results = []
     # for name, mat in behavior_matrices.items():
