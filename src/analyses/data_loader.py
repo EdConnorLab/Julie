@@ -76,13 +76,10 @@ def load_and_combine_data(date, round_no):
     combined_data = combine_unsorted_with_sorted(raw_unsorted_data, sorted_data)
     return combined_data
 
-
-# --- Data explosion (wide → long format) ---
-def explode_spike_data(combined_data, date, round_no, only_valid_channels=False):
-    """Explode spike times into long-format DataFrame with metadata."""
-    reader = RecordingMetadataReader()
+def explode_spike_times(combined_df):
+    """Convert wide-format SpikeTimes into long-format rows per neuron per trial."""
     rows = []
-    for _, row in combined_data.iterrows():
+    for _, row in combined_df.iterrows():
         for channel_enum, spike_list in row['SpikeTimes'].items():
             rows.append({
                 'TaskField': row['TaskField'],
@@ -93,8 +90,14 @@ def explode_spike_data(combined_data, date, round_no, only_valid_channels=False)
                 'SpikeTimes': spike_list,
                 'EpochStartStop': row['EpochStartStop']
             })
-    exploded_df = pd.DataFrame(rows)
+    return pd.DataFrame(rows)
 
+
+def add_neuron_metadata(exploded_df, date, round_no):
+    """Add BaseChannel, Date, Round No, Location, and NeuronID to exploded DataFrame."""
+    from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+
+    reader = RecordingMetadataReader()
     sample_channel = str(exploded_df['Channel'].iloc[0])
     has_unit = "_Unit" in sample_channel
 
@@ -102,12 +105,11 @@ def explode_spike_data(combined_data, date, round_no, only_valid_channels=False)
         ch_str = str(ch) if not hasattr(ch, 'value') else str(ch)
         return ch_str.split("_Unit")[0] if has_unit else ch_str
 
-    metadata = reader.get_metadata_for_preliminary_analysis()
-
     exploded_df['BaseChannel'] = exploded_df['Channel'].apply(normalize_channel)
     exploded_df['Date'] = date
     exploded_df['Round No.'] = round_no
-    # add locations!
+
+    metadata = reader.get_metadata_for_preliminary_analysis()
     metadata['Date'] = metadata['Date'].apply(lambda x: x.strftime('%Y-%m-%d'))
     exploded_df = exploded_df.merge(
         metadata[['Date', 'Round No.', 'Location']],
@@ -117,24 +119,26 @@ def explode_spike_data(combined_data, date, round_no, only_valid_channels=False)
     exploded_df['Location'] = exploded_df['Location'].fillna('Unknown')
 
     exploded_df['NeuronID'] = (
-            exploded_df['Location'].astype(str) + "_" +
-            exploded_df['Date'].astype(str) + "_" +
-            exploded_df['Round No.'].astype(str) + "_" +
-            exploded_df['Channel'].astype(str)
+        exploded_df['Location'].astype(str) + "_" +
+        exploded_df['Date'].astype(str) + "_" +
+        exploded_df['Round No.'].astype(str) + "_" +
+        exploded_df['Channel'].astype(str)
     )
+
+    return exploded_df
+
+# --- Data explosion (wide → long format) ---
+def explode_spike_data(combined_data, date, round_no, only_valid_channels=False):
+    """Explode spike data and add metadata."""
+    exploded_df = explode_spike_times(combined_data)
+    exploded_df = add_neuron_metadata(exploded_df, date, round_no)
+
     if only_valid_channels:
+        from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+        reader = RecordingMetadataReader()
         valid_channels = reader.get_valid_channels(date, round_no)
         valid_channels_list = [str(ch) for ch in valid_channels]
         exploded_df = exploded_df[exploded_df['BaseChannel'].isin(valid_channels_list)]
 
     return exploded_df
 
-
-if __name__ == '__main__':
-    date = '2023-09-26'
-    round_no = 1
-    raw_unsorted_data, valid_channels, sorted_data = load_raw_data(date, round_no)
-    print(raw_unsorted_data)
-    print(sorted_data)
-    combined = combine_unsorted_with_sorted(raw_unsorted_data, sorted_data)
-    print(combined)
