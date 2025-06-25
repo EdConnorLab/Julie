@@ -9,7 +9,7 @@ import statsmodels.formula.api as smf
 from tqdm import tqdm  # progress bar
 from statsmodels.stats.multitest import multipletests
 
-from analyses.spike_count import prepare_binned_spike_data
+from analyses.spike_count import get_binned_spike_trials
 from analyses.statistical_tests import perform_statistical_test_on_dataframe_rows, permutation_anova_test
 
 
@@ -450,7 +450,7 @@ if __name__ == '__main__':
     date = '2023-09-26'
     round_no = 1
 
-    analysis_df = prepare_binned_spike_data(date, round_no, 0.05)
+    analysis_df = get_binned_spike_trials(date, round_no, 0.05)
     # formula = "SpikeCount ~ C(MonkeyName)"  # Stimulus identity
     formula = "SpikeCount ~ C(MonkeyGroup)"  # Stimulus group 간 차이
 

@@ -12,30 +12,54 @@ and aggregating spike data for downstream analyses (e.g., permutation ANOVA).
 
 """
 
-def prepare_exploded_spike_data(date, round_no, only_valid_channels=False, force_recompute=False):
+def load_exploded_data_from_cache(date, round_no, only_valid_channels=False, force_recompute=False):
     """Prepare exploded spike data (pre-binning)."""
     cache = ExplodedSpikeCacheManager()
     return cache.load_or_compute(date, round_no, only_valid_channels=only_valid_channels, force_recompute=force_recompute)
 
 
-def filter_good_neurons(exploded_df,
-                        min_total_spikes=500,
-                        min_firing_rate_hz=1.0,
-                        min_trial_ratio=0.7,
-                        min_trial_count=300):
+def filter_good_neurons(
+    exploded_df,
+    preset="default",
+    min_total_spikes=None,
+    min_firing_rate_hz=None,
+    min_trial_ratio=None,
+    min_trial_count=None
+):
     """
-    Filters neurons based on total spikes, firing rate, spike coverage across trials, and trial participation count.
+    Filter neurons based on total spikes, firing rate, trial ratio, and trial count.
 
     Parameters:
-    - exploded_df: DataFrame with columns ['NeuronID', 'SpikeTimes', 'EpochStartStop']
-    - min_total_spikes: minimum total spike count
-    - min_firing_rate_hz: minimum average firing rate in Hz
-    - min_trial_ratio: minimum ratio of trials where spikes are present
-    - min_trial_count: minimum number of trials the neuron participated in
+        exploded_df : pd.DataFrame
+        preset : str ("default", "strict", "lenient", or "none")
+        min_total_spikes : int or None
+        min_firing_rate_hz : float or None
+        min_trial_ratio : float or None
+        min_trial_count : int or None
 
     Returns:
-    - List of NeuronIDs that passed all filters
+        List[str] : NeuronIDs that passed all filters
     """
+
+    presets = {
+        "default": dict(min_total_spikes=500, min_firing_rate_hz=1.0, min_trial_ratio=0.7, min_trial_count=300),
+        "strict":  dict(min_total_spikes=1000, min_firing_rate_hz=2.0, min_trial_ratio=0.8, min_trial_count=400),
+        "lenient": dict(min_total_spikes=100, min_firing_rate_hz=0.5, min_trial_ratio=0.5, min_trial_count=100),
+        "none":    dict(min_total_spikes=0, min_firing_rate_hz=0.0, min_trial_ratio=0.0, min_trial_count=0),
+    }
+
+    params = presets.get(preset, {}).copy()
+
+    # Override if user provided custom values
+    if min_total_spikes is not None:
+        params["min_total_spikes"] = min_total_spikes
+    if min_firing_rate_hz is not None:
+        params["min_firing_rate_hz"] = min_firing_rate_hz
+    if min_trial_ratio is not None:
+        params["min_trial_ratio"] = min_trial_ratio
+    if min_trial_count is not None:
+        params["min_trial_count"] = min_trial_count
+
     neuron_stats = []
 
     for neuron_id, group in exploded_df.groupby("NeuronID"):
@@ -57,13 +81,12 @@ def filter_good_neurons(exploded_df,
 
     stats_df = pd.DataFrame(neuron_stats)
 
-    # Apply filters
     good_neurons = stats_df[
-        (stats_df["TotalSpikes"] >= min_total_spikes) &
-        (stats_df["MeanFiringRateHz"] >= min_firing_rate_hz) &
-        (stats_df["SpikeTrialRatio"] >= min_trial_ratio) &
-        (stats_df["TotalTrials"] >= min_trial_count)
-        ]["NeuronID"].tolist()
+        (stats_df["TotalSpikes"] >= params["min_total_spikes"]) &
+        (stats_df["MeanFiringRateHz"] >= params["min_firing_rate_hz"]) &
+        (stats_df["SpikeTrialRatio"] >= params["min_trial_ratio"]) &
+        (stats_df["TotalTrials"] >= params["min_trial_count"])
+    ]["NeuronID"].tolist()
 
     return good_neurons
 
@@ -97,12 +120,43 @@ def bin_spike_times(exploded_df, bin_size):
     return pd.DataFrame(binned_rows)
 
 
-def prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=False):
-    """Prepare binned spike data with spike counts."""
-    exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels)
-    good_neurons = filter_good_neurons(exploded_df)
-    filtered_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
-    binned_df = bin_spike_times(filtered_df, bin_size)
+def get_binned_spike_trials(
+    date,
+    round_no,
+    bin_size,
+    only_valid_channels=False,
+    filter_config=None
+):
+    """
+    Prepare binned spike data with optional neuron filtering.
+
+    Parameters:
+        date : str
+        round_no : int
+        bin_size : float
+        only_valid_channels : bool
+        filter_config : dict or None
+            Example:
+                {
+                    "apply": True,
+                    "preset": "strict",
+                    "kwargs": {
+                        "min_trial_count": 300
+                    }
+                }
+
+    Returns:
+        pd.DataFrame
+    """
+    exploded_df = load_exploded_data_from_cache(date, round_no, only_valid_channels)
+
+    if filter_config and filter_config.get("apply", False):
+        preset = filter_config.get("preset", "default")
+        kwargs = filter_config.get("kwargs", {})
+        good_neurons = filter_good_neurons(exploded_df, preset=preset, **kwargs)
+        exploded_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
+
+    binned_df = bin_spike_times(exploded_df, bin_size)
     return binned_df
 
 
@@ -129,15 +183,11 @@ def extract_spike_counts_from_windows(window_df):
         start_ms, end_ms = row['WindowStart_ms'], row['WindowEnd_ms']
         start_sec, end_sec = start_ms / 1000, end_ms / 1000
 
-        # Extract date and round from NeuronID (e.g., "AMG_2023-09-26_3_Channel.C_003_Unit 1")
-        parts = neuron_id.split('_', 4)
+        parsed = parse_neuron_id(neuron_id)
+        cache_key = (parsed['date'], parsed['round_no'])
 
-        date_str, round_no = parts[1], int(parts[2])
-        cache_key = (date_str, round_no)
-
-        # Use cache manager
         if cache_key not in cache:
-            exploded_df = prepare_exploded_spike_data(date_str, round_no)
+            exploded_df = load_exploded_data_from_cache(parsed['date'], parsed['round_no'])
             cache[cache_key] = exploded_df
         else:
             exploded_df = cache[cache_key]
@@ -187,13 +237,11 @@ def extract_spike_counts_from_cells(neurons_df):
 
     for _, row in tqdm(neurons_df_sorted.iterrows(), total=len(neurons_df_sorted), desc="Extracting spike counts"):
         neuron_id = row['NeuronID']
-        parts = neuron_id.split('_', 4)
-        date_str = parts[1]
-        round_no = int(parts[2])
-        cache_key = (date_str, round_no)
+        parsed = parse_neuron_id(neuron_id)
+        cache_key = (parsed['date'], parsed['round_no'])
 
         if cache_key not in cache:
-            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no)
+            cache[cache_key] = load_exploded_data_from_cache(parsed['date'], parsed['round_no'])
         exploded_df = cache[cache_key]
 
         matching_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]
@@ -205,3 +253,12 @@ def extract_spike_counts_from_cells(neurons_df):
         ])
 
     return pd.concat(all_rows, ignore_index=True)
+
+def parse_neuron_id(neuron_id):
+    parts = neuron_id.split('_', 4)
+    return {
+        "location": parts[0],
+        "date": parts[1],
+        "round_no": int(parts[2]),
+        "channel": parts[3]
+    }

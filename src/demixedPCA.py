@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from matplotlib import pyplot as plt
 
-from analyses.population_analysis import get_all_combined_exploded_spike_counts
+from analyses.population_analysis import load_all_filtered_spike_data
 from analyses.spike_rate import compute_mean_spike_rate_table
 
 # Parameters
@@ -162,7 +162,10 @@ def plot_dpca_components_grid(Z, factor_key='a', bin_labels=['low', 'high']):
 
 # Usage example (after loading exploded_df)
 if __name__ == "__main__":
-    exploded_df = get_all_combined_exploded_spike_counts(apply_filter=True, location='AMG')
+    exploded_df = load_all_filtered_spike_data(
+        location='AMG',
+        filter_config={"apply": True}
+    )
     binned = bin_spikes_per_trial(exploded_df)
     tensor, neuron_list, monkey_list, group_list = build_tensor(binned)
     tensor = np.transpose(tensor, (1,2,0,3))

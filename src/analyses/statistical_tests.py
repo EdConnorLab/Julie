@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import f_oneway, kruskal, mannwhitneyu, ttest_ind
 
-from analyses.spike_count import prepare_binned_spike_data, aggregate_trial_level
+from analyses.spike_count import get_binned_spike_trials, aggregate_trial_level
 
 
 # ================================
@@ -247,7 +247,7 @@ def generate_time_windows_for_given_window_size(window_size):
 if __name__ == '__main__':
     date = "2023-09-26"
     round_no = 2
-    analysis_df = prepare_binned_spike_data(date, round_no, 0.05)
+    analysis_df = get_binned_spike_trials(date, round_no, 0.05)
     filtered_df = analysis_df[analysis_df['MonkeyGroup'] == 'Zombies']
     zombies_trial_df = aggregate_trial_level(filtered_df)
 

@@ -4,7 +4,7 @@ from analyses.data_readers.recording_metadata_reader import RecordingMetadataRea
 from analyses.response_window_analysis import run_permutation_anova_by_window, run_glm_by_window
 from analyses.response_window_finder.threshold_window_detection import detect_response_windows_for_session
 from analyses.single_neuron_analysis import run_glm, run_permutation_anova, merge_glm_and_permutation_anova
-from analyses.spike_count import prepare_binned_spike_data, aggregate_trial_level, extract_spike_counts_from_windows
+from analyses.spike_count import get_binned_spike_trials, aggregate_trial_level, extract_spike_counts_from_windows
 
 
 def select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name="Zombies", bin_size=0.05,
@@ -13,7 +13,7 @@ def select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name="Zo
     for ind, row in metadata.iterrows():
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
-        binned_data = prepare_binned_spike_data(date, round, bin_size, True)
+        binned_data = get_binned_spike_trials(date, round, bin_size, True)
 
         if binned_data is None or binned_data.empty:
             print(f"Skipping {date} Round {round}: no good neurons")

@@ -15,7 +15,7 @@ from tqdm import tqdm
 import plotly.express as px
 
 from analyses.enums.monkey_names import get_monkeys_by_default_order
-from analyses.spike_count import extract_spike_counts_from_windows, prepare_exploded_spike_data
+from analyses.spike_count import extract_spike_counts_from_windows, load_exploded_data_from_cache
 from analyses.spike_rate import compute_mean_spike_rate_table, compute_mean_spike_rate_for_cells
 
 

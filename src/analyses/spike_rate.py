@@ -1,7 +1,7 @@
 import pandas as pd
 from tqdm import tqdm
 
-from analyses.spike_count import prepare_exploded_spike_data
+from analyses.spike_count import load_exploded_data_from_cache
 
 
 def compute_mean_spike_rate_for_windows(windows_df):
@@ -34,7 +34,7 @@ def compute_mean_spike_rate_for_windows(windows_df):
         cache_key = (date_str, round_no)
 
         if cache_key not in cache:
-            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no)
+            cache[cache_key] = load_exploded_data_from_cache(date_str, round_no)
         exploded_df = cache[cache_key]
 
         matching_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]
@@ -132,7 +132,7 @@ def compute_mean_spike_rate_for_cells(neurons_df):
         cache_key = (date_str, round_no)
 
         if cache_key not in cache:
-            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no)
+            cache[cache_key] = load_exploded_data_from_cache(date_str, round_no)
         exploded_df = cache[cache_key]
 
         matching_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]

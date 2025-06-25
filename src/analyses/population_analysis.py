@@ -8,7 +8,7 @@ import pandas as pd
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.enums.monkey_names import get_monkeys_by_default_order
-from analyses.spike_count import prepare_exploded_spike_data, filter_good_neurons, bin_spike_times
+from analyses.spike_count import load_exploded_data_from_cache, filter_good_neurons, bin_spike_times
 
 
 
@@ -188,41 +188,94 @@ def plot_glmm_estimates_from_model(model, reference_label="(ref)"):
 
     return plot_df  # return the data used in plot for inspection if needed
 
-def get_all_combined_exploded_spike_counts(group_name="Zombies", apply_filter=False, apply_binning=False, bin_size=0.05, location=None):
+def load_all_filtered_spike_data(
+        monkey_group_filter="Zombies",
+        filter_config=None,
+        binning_config=None,
+        location=None
+):
+    """
+    Load and filter exploded spike data across all sessions (dates × rounds).
+
+    Parameters:
+        monkey_group_filter: str
+            Name of stimulus monkey group to include (e.g., 'Zombies')
+        filter_config: dict or None
+            Neuron-level filtering. Example:
+                {
+                    "apply": True,
+                    "preset": "default",
+                    "kwargs": {
+                        "min_trial_count": 200
+                    }
+                }
+        binning_config: dict or None
+            Spike time binning. Example:
+                {
+                    "apply": True,
+                    "bin_size": 0.05
+                }
+        location: str or None
+            One of 'AMG', 'ER', 'Unknown', or None (no location filter)
+
+    Returns:
+        pd.DataFrame: Combined and filtered spike trial data
+    """
+
     reader = RecordingMetadataReader()
     metadata = reader.get_metadata_for_preliminary_analysis()
-
     all_dfs = []
 
     for _, row in metadata.iterrows():
-        date = str(row['Date'].strftime("%Y-%m-%d"))
-        round_no = int(row['Round No.'])
+        date = row['Date'].strftime("%Y-%m-%d")
+        round_no = int(row['Round No'])
 
-        exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels=True)
-        if apply_filter:
-            good_neurons = filter_good_neurons(exploded_df)
+        # Load and explode
+        exploded_df = load_exploded_data_from_cache(date, round_no, only_valid_channels=True)
+
+        # Location filter
+        if location is not None:
+            if location not in {'AMG', 'ER', 'Unknown'}:
+                raise ValueError("location must be one of 'AMG', 'ER', 'Unknown', or None.")
+            exploded_df = exploded_df[exploded_df["Location"] == location]
+
+        # Group filter
+        exploded_df = exploded_df[exploded_df['MonkeyGroup'] == monkey_group_filter].copy()
+
+        # Neuron-level filtering
+        if filter_config and filter_config.get("apply", False):
+            preset = filter_config.get("preset", "default")
+            kwargs = filter_config.get("kwargs", {})
+            good_neurons = filter_good_neurons(exploded_df, preset=preset, **kwargs)
             exploded_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
-        if location == 'AMG' or location == 'ER' or location == 'Unknown':
-            exploded_df = exploded_df[exploded_df["NeuronID"].str.startswith(location)]
-        elif location == None:
-            pass
-        else:
-            raise ValueError("location must be one of 'AMG', 'ER', 'Unknown', or None.")
-        exploded_df = exploded_df[exploded_df['MonkeyGroup'] == group_name].copy()
+
+        # Add spike count
         exploded_df['SpikeCount'] = exploded_df['SpikeTimes'].apply(len)
 
-        if apply_binning:
+        # Time binning
+        if binning_config and binning_config.get("apply", False):
+            bin_size = binning_config.get("bin_size", 0.05)
             exploded_df = bin_spike_times(exploded_df, bin_size)
 
         all_dfs.append(exploded_df)
 
-    combined_df = pd.concat(all_dfs, ignore_index=True)
-    return combined_df
+    return pd.concat(all_dfs, ignore_index=True)
 
 
 if __name__ == "__main__":
     # Running directional GLMMs on all neurons
-    exploded_df = get_all_combined_exploded_spike_counts(apply_filter=True, location='ER')
+    exploded_df = load_all_filtered_spike_data(
+        location='ER',
+        filter_config={
+            "apply": True,
+            "preset": "strict",  # 또는 "lenient", "default"
+            "kwargs": {
+                "min_total_spikes": 300,
+                "min_trial_count": 200
+            }
+        }
+    )
+
     exploded_df['SpikeCount'] = exploded_df['SpikeTimes'].apply(len)
 
     subject_monkey_index = 6

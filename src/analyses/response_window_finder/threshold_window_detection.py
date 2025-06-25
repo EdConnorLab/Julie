@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from analyses.spike_count import prepare_binned_spike_data, aggregate_timebin_level, extract_spike_counts_from_windows
+from analyses.spike_count import get_binned_spike_trials, aggregate_timebin_level, extract_spike_counts_from_windows
 
 
 def threshold_and_fill_gap(z_scored_data, threshold=0.6):
@@ -40,7 +40,7 @@ def list_addition(lists):
     return [sum(x) for x in zip_longest(*lists, fillvalue=0)]
 
 def compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group):
-    binned_spike_data = prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=True)
+    binned_spike_data = get_binned_spike_trials(date, round_no, bin_size, only_valid_channels=True)
     if binned_spike_data.empty:
         print(f"[Warning] No valid neurons after filtering on {date}, round {round_no}")
         return pd.DataFrame(columns=['NeuronID', 'TotalSpikeCountList'])
