@@ -644,7 +644,7 @@ def expand_window_level_regression_results_with_spike_rates_per_stimulus(
     return pd.DataFrame(expanded_rows)
 
 
-def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subject_idx, method='cosine', use_rate = False):
+def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subject_idx, method='correlation', use_rate = False):
     """
     Run RSA comparing neural and behavioral similarity (excluding subject monkey).
 
@@ -658,6 +658,7 @@ def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subj
     Returns:
         r, p, neural_rsm, social_rsm
     """
+    from sklearn.metrics.pairwise import cosine_similarity
 
     value_col = 'MeanSpikeRate' if use_rate else 'SpikeCount'
 
@@ -680,18 +681,29 @@ def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subj
     behavior_matrix = behavior_matrix[np.ix_(idxs, idxs)]
 
     # Neural RSM
-    neural_rsm = 1 - pd.DataFrame(
-        squareform(pdist(neural_matrix.T, metric=method)),
+    neural_rsm = pd.DataFrame(
+        cosine_similarity(neural_matrix.T),
+        index=filtered_monkeys,
+        columns=filtered_monkeys
+    )
+    # neural_rsm = pd.DataFrame(
+    #     np.corrcoef(neural_matrix.T),
+    #     index=filtered_monkeys,
+    #     columns=filtered_monkeys
+    # )
+
+    # Social RSM
+    social_rsm = pd.DataFrame(
+        cosine_similarity(behavior_matrix.T),
         index=filtered_monkeys,
         columns=filtered_monkeys
     )
 
-    # Social RSM
-    social_rsm = 1 - pd.DataFrame(
-        squareform(pdist(behavior_matrix.T, metric=method)),
-        index=filtered_monkeys,
-        columns=filtered_monkeys
-    )
+    # social_rsm = pd.DataFrame(
+    #     np.corrcoef(behavior_matrix.T),
+    #     index=filtered_monkeys,
+    #     columns=filtered_monkeys
+    # )
 
     # Flatten upper triangle for correlation
     mask = np.triu(np.ones_like(neural_rsm), k=1).astype(bool)
@@ -700,14 +712,14 @@ def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subj
     r, p = spearmanr(neural_vec, social_vec)
 
     # Plot
-    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-    sns.heatmap(neural_rsm, ax=ax[0], cmap='viridis')
-    ax[0].set_title("Neural RSM")
-    sns.heatmap(social_rsm, ax=ax[1], cmap='viridis')
-    ax[1].set_title("Social RSM")
-    plt.suptitle(f"RSA for {behavior_name}: r = {r:.3f}, p = {p:.3g} using {method}", fontsize=14)
-    plt.tight_layout()
-    plt.show()
+    # fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    # sns.heatmap(neural_rsm, ax=ax[0], cmap='viridis')
+    # ax[0].set_title("Neural RSM")
+    # sns.heatmap(social_rsm, ax=ax[1], cmap='viridis')
+    # ax[1].set_title("Social RSM")
+    # plt.suptitle(f"RSA for {behavior_name}: r = {r:.3f}, p = {p:.3g} using {method}", fontsize=14)
+    # plt.tight_layout()
+    # plt.show()
 
     return r, p, neural_rsm, social_rsm
 
@@ -798,6 +810,7 @@ if __name__ == "__main__":
     # Load spike windows and compute spike counts
     cells_df = pd.read_pickle('/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_significant_neurons_pANOVAorGLM_passed.pkl')
     spike_df = compute_mean_spike_rate_for_cells(cells_df)
+    '''
     # exploded_df = prepare_exploded_spike_data("2023-09-26", 1, True)
     # print(exploded_df)
     # spike_df = compute_mean_spike_rate_table(exploded_df)
@@ -903,32 +916,46 @@ if __name__ == "__main__":
         use_spikerate=True,
         n_components=3
     )
-
-    plot_behavioral_weights(pls_model, X_df)
-    plot_stimuli_in_component_space(pls_model, stim_monkeys)
-    print('RESULTS')
-    print(X_df)
-    print(Y_df)
-    print(pls_model.x_weights_)
-    print(pls_model.y_weights_)
-    interpret_behavioral_weights(pls_model, X_df, component=0, top_n=15, plot=True)
+'''
+    np.set_printoptions(linewidth=np.inf)
     # RSA
-    # rsa_results = []
-    # for name, mat in behavior_matrices.items():
-    #     r, p, neural_rsm, social_rsm = run_rsa_analysis(
-    #         spike_df=spike_df,
-    #         behavior_matrix=mat,
-    #         monkey_list=monkey_list,
-    #         subject_idx=6,
-    #         method='correlation',
-    #         use_rate = True
-    #     )
-    #
-    #     rsa_results.append({
-    #         'Behavior': name,
-    #         'RSA_r': r,
-    #         'RSA_p': p
-    #     })
-    #
-    # rsa_df = pd.DataFrame(rsa_results)
-    # print(rsa_df.sort_values(by='RSA_r', ascending=False))
+    rsa_results = []
+    for name, mat in behavior_matrices.items():
+        r, p, neural_rsm, social_rsm = run_rsa_analysis(
+            spike_df=spike_df,
+            behavior_matrix=mat,
+            behavior_name = name,
+            monkey_list=monkey_list,
+            subject_idx=6,
+            method='correlation',
+            use_rate = True
+        )
+
+        rsa_results.append({
+            'Behavior': name,
+            'RSA_r': r,
+            'RSA_p': p
+        })
+        social_dissim = 1 - social_rsm.values
+        print(name)
+        print(social_rsm)
+        from sklearn.manifold import MDS
+
+        mds = MDS(n_components=2, dissimilarity='precomputed', random_state=42)
+        social_coords = mds.fit_transform(social_dissim)
+
+        monkey_list_without_subject = monkey_list[:6] + monkey_list[7:]
+        plt.figure(figsize=(6, 6))
+        plt.scatter(social_coords[:, 0], social_coords[:, 1])
+
+        for i, mon in enumerate(monkey_list_without_subject):
+            plt.text(social_coords[i, 0], social_coords[i, 1], mon, fontsize=9)
+
+        plt.title(f"MDS projection of social similarity for {name} ")
+        plt.xlabel("MDS1")
+        plt.ylabel("MDS2")
+        plt.axis('equal')
+        plt.show()
+
+    rsa_df = pd.DataFrame(rsa_results)
+    print(rsa_df.sort_values(by='RSA_r', ascending=False))
