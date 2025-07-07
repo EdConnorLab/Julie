@@ -208,7 +208,7 @@ def get_all_combined_exploded_spike_counts(group_name="Zombies", apply_filter=Fa
             pass
         else:
             raise ValueError("location must be one of 'AMG', 'ER', 'Unknown', or None.")
-        exploded_df = exploded_df[exploded_df['MonkeyGroup'] == group_name].copy()
+        exploded_df = exploded_df[(exploded_df['MonkeyGroup'] == group_name) & (exploded_df['MonkeyName'] != "NewMonkey")]
         exploded_df['SpikeCount'] = exploded_df['SpikeTimes'].apply(len)
 
         if apply_binning:
