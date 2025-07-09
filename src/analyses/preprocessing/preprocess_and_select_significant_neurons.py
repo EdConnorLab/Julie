@@ -92,3 +92,4 @@ if __name__ == "__main__":
     significant_df.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_neurons_pANOVAorGLM_passed.pkl")
     detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
     detect_significant_windows(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
+    #
