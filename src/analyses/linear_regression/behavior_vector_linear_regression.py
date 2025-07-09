@@ -686,6 +686,11 @@ def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subj
         index=filtered_monkeys,
         columns=filtered_monkeys
     )
+    # neural_rsm = pd.DataFrame(
+    #     np.corrcoef(neural_matrix.T),
+    #     index=filtered_monkeys,
+    #     columns=filtered_monkeys
+    # )
 
     # Social RSM
     social_rsm = pd.DataFrame(
@@ -693,6 +698,12 @@ def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subj
         index=filtered_monkeys,
         columns=filtered_monkeys
     )
+
+    # social_rsm = pd.DataFrame(
+    #     np.corrcoef(behavior_matrix.T),
+    #     index=filtered_monkeys,
+    #     columns=filtered_monkeys
+    # )
 
     # Flatten upper triangle for correlation
     mask = np.triu(np.ones_like(neural_rsm), k=1).astype(bool)
