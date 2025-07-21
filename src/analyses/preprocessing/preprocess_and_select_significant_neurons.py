@@ -79,6 +79,7 @@ def detect_significant_windows(response_window_fpath, monkey_group,
     print(f"{significant_windows.shape[0]} significant windows detected")
     if save:
         significant_windows.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl")
+    return significant_windows
 
 
 if __name__ == "__main__":
@@ -90,6 +91,6 @@ if __name__ == "__main__":
     monkey_group = "Zombies"
     significant_df = select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir,save=False)
     significant_df.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_neurons_pANOVAorGLM_passed.pkl")
-    detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
-    detect_significant_windows(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
-    #
+    windows = detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
+    sig_windows = detect_significant_windows(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
+
