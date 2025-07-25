@@ -12,10 +12,11 @@ and aggregating spike data for downstream analyses (e.g., permutation ANOVA).
 
 """
 
-def prepare_exploded_spike_data(date, round_no, only_valid_channels=False):
+
+def prepare_exploded_spike_data(date, round_no, only_valid_channels=False, force_recompute=False):
     """Prepare exploded spike data (pre-binning)."""
     cache = ExplodedSpikeCacheManager()
-    return cache.load_or_compute(date, round_no, only_valid_channels=only_valid_channels)
+    return cache.load_or_compute(date, round_no, only_valid_channels=only_valid_channels, force_recompute=force_recompute)
 
 
 def filter_good_neurons(exploded_df,
