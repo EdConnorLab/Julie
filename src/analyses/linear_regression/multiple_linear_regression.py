@@ -92,21 +92,22 @@ def run_multiple_regression(spike_df, feature_df, regression_type='ols', alpha=1
         group = group.set_index('MonkeyName')
         monkeys_in_window = group.index.intersection(X_full.index)
 
-        if len(monkeys_in_window) < (n_components or feature_df.shape[1]) + 2:
-            print(
-                f"[SKIP] Neuron {neuron_id} | Window {w_start}-{w_end} | "
-                f"#Monkeys = {len(monkeys_in_window)},"
-                f" #Predictors = {(n_components or feature_df.shape[1])}")
-            continue
+        # if len(monkeys_in_window) < (n_components or feature_df.shape[1]) + 2:
+        #     print(
+        #         f"[SKIP] Neuron {neuron_id} | Window {w_start}-{w_end} | "
+        #         f"#Monkeys = {len(monkeys_in_window)},"
+        #         f" #Predictors = {(n_components or feature_df.shape[1])}")
+        #     continue
 
         y = group.loc[monkeys_in_window, 'MeanSpikeRate'].values
         X = X_full.loc[monkeys_in_window].values
-
+        neuron_window_id = neuron_id + " (" + str(w_start) + ", " + str(w_end) + ")"
         try:
             if regression_type == 'ols' or regression_type == 'pcr':
                 X = sm.add_constant(X)
                 model = sm.OLS(y, X).fit()
                 results.append({
+                    'NeuronWindowID' : neuron_window_id,
                     'NeuronID': neuron_id,
                     'WindowStart_ms': w_start,
                     'WindowEnd_ms': w_end,
@@ -119,6 +120,7 @@ def run_multiple_regression(spike_df, feature_df, regression_type='ols', alpha=1
                 model.fit(X, y)
                 y_pred = model.predict(X)
                 results.append({
+                    'NeuronWindowID': neuron_window_id,
                     'NeuronID': neuron_id,
                     'WindowStart_ms': w_start,
                     'WindowEnd_ms': w_end,
@@ -131,6 +133,7 @@ def run_multiple_regression(spike_df, feature_df, regression_type='ols', alpha=1
                 model.fit(X, y)
                 y_pred = model.predict(X)
                 results.append({
+                    'NeuronWindowID': neuron_window_id,
                     'NeuronID': neuron_id,
                     'WindowStart_ms': w_start,
                     'WindowEnd_ms': w_end,
@@ -143,6 +146,7 @@ def run_multiple_regression(spike_df, feature_df, regression_type='ols', alpha=1
                 model.fit(X, y)
                 y_pred = model.predict(X)
                 results.append({
+                    'NeuronWindowID': neuron_window_id,
                     'NeuronID': neuron_id,
                     'WindowStart_ms': w_start,
                     'WindowEnd_ms': w_end,
