@@ -39,6 +39,7 @@ def compute_mean_spike_rate_for_windows(windows_df):
 
         matching_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]
         if matching_trials.empty:
+            print('No matching trials found')
             continue
 
         rows = []
