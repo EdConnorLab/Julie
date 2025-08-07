@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import statsmodels.api as sm
 from sklearn.decomposition import PCA
-from sklearn.linear_model import Lasso, Ridge, ElasticNet
+from sklearn.linear_model import Lasso, Ridge, ElasticNet, LassoCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score
 from tqdm import tqdm
@@ -15,20 +15,33 @@ Linear Regression on using all types of behaviors at once (affiliation, agonism,
 -- Simple Linear Regression on entire social data 
 -- Principal Component Regression (PCR)
 '''
-
-def combine_all_three_behavioral_matrices(monkeys_to_remove=[]):
+def fetch_behavioral_data():
     parent_dir = "/home/connorlab/Documents/GitHub/Julie/social_data/zombies_social_data/"
     aff_df = pd.read_excel(parent_dir + "zombies_feature_df_affiliation.xlsx", index_col=0)
     sub_df = pd.read_excel(parent_dir + "zombies_feature_df_submission.xlsx", index_col=0)
     ago_df = pd.read_excel(parent_dir + "zombies_feature_df_agonism.xlsx", index_col=0)
-
-    # Clean column names: "Behavior Towards 94B" → "94B"
     def clean_col(colname):
         return colname.split()[-1]
 
     aff_df.columns = [clean_col(c) for c in aff_df.columns]
     sub_df.columns = [clean_col(c) for c in sub_df.columns]
     ago_df.columns = [clean_col(c) for c in ago_df.columns]
+    return aff_df, sub_df, ago_df
+
+def get_specific_behavioral_matrix(type_of_behavior):
+    aff_df, sub_df, ago_df = fetch_behavioral_data()
+    if type_of_behavior == 'affiliation':
+        return np.array(aff_df)
+    elif type_of_behavior == 'submission':
+        return np.array(sub_df)
+    elif type_of_behavior == 'agonism':
+        return np.array(ago_df)
+    else:
+        print('WARNING: type of behavior should be one of the following: affiliation, submission, agonism')
+
+
+def get_combined_behavioral_matrix(monkeys_to_remove=[]):
+    aff_df, sub_df, ago_df = fetch_behavioral_data()
 
     # Remove specific monkeys (e.g., '7124') from both rows and columns
     for m in monkeys_to_remove:
@@ -60,8 +73,6 @@ def combine_all_three_behavioral_matrices(monkeys_to_remove=[]):
         ])
         X.append(v)
     X = np.array(X)
-
-
     return X, monkeys
 
 
@@ -128,6 +139,13 @@ def run_multiple_regression(spike_df, feature_df, regression_type='ols', alpha=1
                     'coefficients': model.coef_.tolist(),
                     'intercept': model.intercept_
                 })
+            elif regression_type == 'lassocv':
+                # Find optimal alpha via CV
+                model = LassoCV(cv=5, max_iter=10000)
+                model.fit(X, y)
+                print(f"Optimal alpha: {model.alpha_}")
+                print(f"Selected features: {monkeys_in_window[model.coef_ != 0]}")
+
             elif regression_type == 'ridge':
                 model = Ridge(alpha=alpha, max_iter=10000)
                 model.fit(X, y)
@@ -185,7 +203,7 @@ def run_elasticnet_regression(spike_df, feature_df, alpha=1.0, n_components=None
 
 
 if __name__ == '__main__':
-    X, monkey_list = combine_all_three_behavioral_matrices()
+    X, monkey_list = get_combined_behavioral_matrix()
     monkey_group = "Zombies"
     subject_monkey_index = 6
     sig_windows = pd.read_pickle(
