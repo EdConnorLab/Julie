@@ -188,7 +188,7 @@ def plot_glmm_estimates_from_model(model, reference_label="(ref)"):
 
     return plot_df  # return the data used in plot for inspection if needed
 
-def get_all_combined_exploded_spike_counts(group_name="Zombies", apply_filter=False, apply_binning=False, bin_size=0.05, location=None):
+def get_all_combined_exploded_spike_counts(group_name="Zombies", apply_filter=False, apply_binning=False, bin_size=0.05, location=None, use_sorted=False):
     reader = RecordingMetadataReader()
     metadata = reader.get_metadata_for_preliminary_analysis()
 
@@ -198,7 +198,7 @@ def get_all_combined_exploded_spike_counts(group_name="Zombies", apply_filter=Fa
         date = str(row['Date'].strftime("%Y-%m-%d"))
         round_no = int(row['Round No.'])
 
-        exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels=True)
+        exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels=True, use_sorted=use_sorted)
         if apply_filter:
             good_neurons = filter_good_neurons(exploded_df)
             exploded_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]

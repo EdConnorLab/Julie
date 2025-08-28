@@ -4,7 +4,7 @@ from tqdm import tqdm
 from analyses.spike_count import prepare_exploded_spike_data
 
 
-def compute_mean_spike_rate_for_windows(windows_df):
+def compute_mean_spike_rate_for_windows(windows_df, use_sorted=False):
     """
     Compute mean spike rate within each neuron-specific time window.
 
@@ -34,7 +34,7 @@ def compute_mean_spike_rate_for_windows(windows_df):
         cache_key = (date_str, round_no)
 
         if cache_key not in cache:
-            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no)
+            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no, use_sorted=use_sorted)
         exploded_df = cache[cache_key]
 
         matching_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]
@@ -106,7 +106,7 @@ def compute_mean_spike_rate_table(exploded_df):
     df = get_mean_spike_rate_per_neuron_monkey(trial_level_spike_rate_df)
     return df
 
-def compute_mean_spike_rate_for_cells(neurons_df):
+def compute_mean_spike_rate_for_cells(neurons_df, use_sorted=False):
     """
     Compute mean spike rate for a list of significant neurons across trials.
 
@@ -133,7 +133,7 @@ def compute_mean_spike_rate_for_cells(neurons_df):
         cache_key = (date_str, round_no)
 
         if cache_key not in cache:
-            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no)
+            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no, use_sorted=use_sorted)
         exploded_df = cache[cache_key]
 
         matching_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]

@@ -87,7 +87,7 @@ def run_population_glmm(exploded_df, social_df, social_col='AffiliationTo_z'):
 if __name__ == "__main__":
     date = '2023-09-26'
     round_no = 1
-    exploded_df = prepare_exploded_spike_data(date, round_no, True)
+    exploded_df = prepare_exploded_spike_data(date, round_no, True, use_sorted=False)
     # trial_df = compute_trial_level_spike_rate(exploded_df)
     # mean_df = compute_mean_spike_rate(trial_df)
     # print(mean_df)

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from analyses.cache_utils import ExplodedSpikeCacheManager
+from analyses.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager
 from tqdm import tqdm
 from collections import defaultdict
 """
@@ -13,11 +13,16 @@ and aggregating spike data for downstream analyses (e.g., permutation ANOVA).
 """
 
 
-def prepare_exploded_spike_data(date, round_no, only_valid_channels=False, force_recompute=False):
+def prepare_exploded_spike_data(date, round_no, only_valid_channels=False, force_recompute=False, use_sorted=False):
     """Prepare exploded spike data (pre-binning)."""
-    cache = ExplodedSpikeCacheManager()
-    return cache.load_or_compute(date, round_no, only_valid_channels=only_valid_channels, force_recompute=force_recompute)
+    if use_sorted:
+        cache = SortedSpikeCacheManager()
+    else:
+        cache = ExplodedSpikeCacheManager()
 
+    return cache.load_or_compute(date, round_no,
+                                 only_valid_channels=only_valid_channels,
+                                 force_recompute=force_recompute)
 
 def filter_good_neurons(exploded_df,
                         min_total_spikes=500,
@@ -98,9 +103,9 @@ def bin_spike_times(exploded_df, bin_size):
     return pd.DataFrame(binned_rows)
 
 
-def prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=False):
+def prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=False, use_sorted=False):
     """Prepare binned spike data with spike counts."""
-    exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels)
+    exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels, use_sorted)
     good_neurons = filter_good_neurons(exploded_df)
     filtered_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
     binned_df = bin_spike_times(filtered_df, bin_size)
@@ -118,7 +123,7 @@ def aggregate_timebin_level(df):
     return df.groupby(['NeuronID', 'MonkeyGroup', 'TimeBinIndex'], as_index=False)['SpikeCount'].sum()
 
 
-def extract_spike_counts_from_windows(window_df):
+def extract_spike_counts_from_windows(window_df, use_sorted=False):
     """
     Extract spike counts for each neuron and time window from cached raw spike times.
     """
@@ -138,7 +143,7 @@ def extract_spike_counts_from_windows(window_df):
 
         # Use cache manager
         if cache_key not in cache:
-            exploded_df = prepare_exploded_spike_data(date_str, round_no)
+            exploded_df = prepare_exploded_spike_data(date_str, round_no, use_sorted=use_sorted)
             cache[cache_key] = exploded_df
         else:
             exploded_df = cache[cache_key]
@@ -165,7 +170,7 @@ def extract_spike_counts_from_windows(window_df):
     return pd.DataFrame(spike_count_rows)
 
 ## TODO: needs to be tested
-def extract_spike_counts_from_cells(neurons_df):
+def extract_spike_counts_from_cells(neurons_df, use_sorted=False):
     """
     Given a list of neurons with NeuronID,
     extract spike counts per trial from cached exploded spike data.
@@ -194,7 +199,7 @@ def extract_spike_counts_from_cells(neurons_df):
         cache_key = (date_str, round_no)
 
         if cache_key not in cache:
-            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no)
+            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no, use_sorted=use_sorted)
         exploded_df = cache[cache_key]
 
         matching_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]

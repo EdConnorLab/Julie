@@ -17,6 +17,18 @@ class GenericCacheManager:
         if path.exists():
             path.unlink()
 
+class SortedSpikeCacheManager(GenericCacheManager):
+    def __init__(self):
+        cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "sorted_spike_cache"
+        super().__init__(cache_dir)
+
+    def load_or_compute(self, date, round_no, only_valid_channels=False, force_recompute=False):
+        label = f"{date}_round_{round_no}"
+        path = self._get_cache_path(label)
+        if path.exists() and not force_recompute:
+            return pd.read_pickle(path)
+        raise FileNotFoundError(f"No sorted cache found for {label}")
+
 class ExplodedSpikeCacheManager(GenericCacheManager):
     def __init__(self):
         cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "exploded_spike_cache"
