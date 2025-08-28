@@ -1,4 +1,7 @@
+import argparse
 import os
+from datetime import datetime
+
 from clat.intan.amplifiers import read_amplifier_data_with_mmap
 from clat.intan.rhd import load_intan_rhd_format
 import numpy as np
@@ -51,68 +54,78 @@ if __name__ == '__main__':
     global_job_kwargs = dict(n_jobs=4, chunk_duration="1s")
     si.set_global_job_kwargs(**global_job_kwargs)
 
-    parent_folder = "/home/connorlab/Documents/IntanData/Cortana/"
+    p = argparse.ArgumentParser()
+    p.add_argument("--date", required=True)   # e.g., 2023-10-10
+    p.add_argument("--round", type=int, required=True)
+    args = p.parse_args()
 
-    for root, dirs, files in os.walk(parent_folder):
-        for d in dirs:
-            if "round" in d.lower():
-                round_dir = os.path.join(root, d) + os.sep  # ensures trailing slash/backslash
-                print("Found:", round_dir)
+    date = args.date
+    round = args.round
+
+    date_obj = datetime.strptime(date, "%Y-%m-%d")
+    date_str = date_obj.strftime("%y%m%d")  # → "230926"
+
+    # build paths safely
+    round_folder = f"{date_str}_round{round}"
+    base_dir = os.path.join(
+        "/home/connorlab/Documents/IntanData/Cortana", date, round_folder
+    )
 
 
-                # Read recording
-                # intan_file_directory = "/home/connorlab/Documents/IntanData/Cortana/2023-09-26/230926_round2/"
-                intan_file_directory = round_dir
-                sampling_frequency, channels = get_recording_session_info(intan_file_directory)
-                folder_name = os.path.basename(os.path.normpath(intan_file_directory))
-                print(f"sorting session: {folder_name}")
-                recording = si.read_binary(os.path.join(intan_file_directory, "amplifier.dat"),
-                                           sampling_frequency=sampling_frequency, dtype=np.int16,
-                                           num_channels=len(channels), gain_to_uV=0.195, offset_to_uV=0.0)
+    # for root, dirs, files in os.walk(parent_folder):
+    #     for d in dirs:
+    #         if "round" in d.lower():
+    #             round_dir = os.path.join(root, d) + os.sep  # ensures trailing slash/backslash
+    #             print("Found:", round_dir)
 
-                probe = generate_linear_probe(num_elec=32, ypitch=65,
-                                              contact_shapes="circle", contact_shape_params={"radius": 20})
-                device_channel_idx = compute_device_channel_index(channels)
-                probe.set_device_channel_indices(device_channel_idx)
-                recording = recording.set_probe(probe)
 
-                # Pre-Processing
-                recording_f = spre.bandpass_filter(recording, freq_min=300, freq_max=6000)
-                recording_preprocessed = spre.common_reference(recording_f, reference="global", operator="median")
+    # Read recording
+    intan_file_directory = base_dir
+    sampling_frequency, channels = get_recording_session_info(intan_file_directory)
+    folder_name = os.path.basename(os.path.normpath(intan_file_directory))
+    print(f"sorting session: {folder_name}")
+    recording = si.read_binary(os.path.join(intan_file_directory, "amplifier.dat"),
+                               sampling_frequency=sampling_frequency, dtype=np.int16,
+                               num_channels=len(channels), gain_to_uV=0.195, offset_to_uV=0.0)
 
-                # Sort
-                sorting_KS4 = ss.run_sorter(sorter_name="kilosort4", recording=recording_preprocessed,
-                                            docker_image="spikeinterface/kilosort4-base:4.0.38_cuda-12.0.0",
-                                            folder= os.path.join(intan_file_directory, "kilosort4_output"),
-                                            remove_existing_folder=True, verbose=True)
-                sorting_TDC = ss.run_sorter(sorter_name="tridesclous", recording=recording_preprocessed,
-                                            folder=os.path.join(intan_file_directory, "tridesclous_output"),
-                                            remove_existing_folder=True, verbose=True)
-                sorting_MS5 = ss.run_sorter(sorter_name="mountainsort5", recording=recording_preprocessed,
-                                            folder=os.path.join(intan_file_directory, "mountainsort5_output"),
-                                            docker_image="spikeinterface/mountainsort5-base:latest",
-                                            remove_existing_folder=True, verbose=True)
+    probe = generate_linear_probe(num_elec=32, ypitch=65,
+                                  contact_shapes="circle", contact_shape_params={"radius": 20})
+    device_channel_idx = compute_device_channel_index(channels)
+    probe.set_device_channel_indices(device_channel_idx)
+    recording = recording.set_probe(probe)
 
-                # Create Sorting Analyzer
-                analyzer_KS4 = si.create_sorting_analyzer(sorting=sorting_KS4, recording=recording_preprocessed, format='binary_folder', overwrite=True, folder=os.path.join(intan_file_directory,'analyzer_KS4_binary'))
-                analyzer_TDC = si.create_sorting_analyzer(sorting=sorting_TDC, recording=recording_preprocessed, format='binary_folder', overwrite=True, folder=os.path.join(intan_file_directory, 'analyzer_TDC_binary'))
-                analyzer_MS5 = si.create_sorting_analyzer(sorting=sorting_MS5, recording=recording_preprocessed, format='binary_folder', overwrite=True, folder=os.path.join(intan_file_directory, 'analyzer_MS5_binary'))
+    # Pre-Processing
+    recording_f = spre.bandpass_filter(recording, freq_min=300, freq_max=6000)
+    recording_preprocessed = spre.common_reference(recording_f, reference="global", operator="median")
 
-                # Compute Extensions
-                extensions_to_compute = [
-                    "random_spikes",
-                    "waveforms",
-                    "noise_levels",
-                    "templates",
-                    "spike_amplitudes",
-                    "unit_locations",
-                    "spike_locations",
-                    "correlograms",
-                    "template_similarity"
-                ]
+    # Sort
+    sorting_KS4 = ss.run_sorter(sorter_name="kilosort4", recording=recording_preprocessed,
+                                docker_image="spikeinterface/kilosort4-base:4.0.38_cuda-12.0.0",
+                                folder= os.path.join(intan_file_directory, "kilosort4_output"),
+                                remove_existing_folder=True, verbose=False)
+    sorting_TDC = ss.run_sorter(sorter_name="tridesclous", recording=recording_preprocessed,
+                                folder=os.path.join(intan_file_directory, "tridesclous_output"),
+                                remove_existing_folder=True, verbose=False)
+    sorting_MS5 = ss.run_sorter(sorter_name="mountainsort5", recording=recording_preprocessed,
+                                folder=os.path.join(intan_file_directory, "mountainsort5_output"),
+                                docker_image="spikeinterface/mountainsort5-base:latest",
+                                remove_existing_folder=True, verbose=False)
 
-                analyzer_KS4.compute(extensions_to_compute)
-                analyzer_TDC.compute(extensions_to_compute)
-                analyzer_MS5.compute(extensions_to_compute)
+    # Create Sorting Analyzer
+    analyzer_KS4 = si.create_sorting_analyzer(sorting=sorting_KS4, recording=recording_preprocessed, format='binary_folder', overwrite=True, folder=os.path.join(intan_file_directory,'analyzer_KS4_binary'))
+    analyzer_TDC = si.create_sorting_analyzer(sorting=sorting_TDC, recording=recording_preprocessed, format='binary_folder', overwrite=True, folder=os.path.join(intan_file_directory, 'analyzer_TDC_binary'))
+    analyzer_MS5 = si.create_sorting_analyzer(sorting=sorting_MS5, recording=recording_preprocessed, format='binary_folder', overwrite=True, folder=os.path.join(intan_file_directory, 'analyzer_MS5_binary'))
+
+    # Compute Extensions
+    extensions_to_compute = [
+        "random_spikes",
+        "waveforms",
+        "templates",
+        "correlograms"
+    ]
+
+    analyzer_KS4.compute(extensions_to_compute)
+    analyzer_TDC.compute(extensions_to_compute)
+    analyzer_MS5.compute(extensions_to_compute)
 
 
