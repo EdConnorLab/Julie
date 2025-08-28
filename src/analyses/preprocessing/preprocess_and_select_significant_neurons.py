@@ -8,12 +8,12 @@ from analyses.spike_count import prepare_binned_spike_data, aggregate_trial_leve
 
 
 def select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name="Zombies", bin_size=0.05,
-                                                        analysis_cache_dir="/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/", save=True):
+                                                        analysis_cache_dir="/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/", save=True, use_sorted=False):
     all_results = []
     for ind, row in metadata.iterrows():
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
-        binned_data = prepare_binned_spike_data(date, round, bin_size, True)
+        binned_data = prepare_binned_spike_data(date, round, bin_size, True, use_sorted=use_sorted)
 
         if binned_data is None or binned_data.empty:
             print(f"Skipping {date} Round {round}: no good neurons")
@@ -42,19 +42,23 @@ def select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name="Zo
 
 def detect_all_response_windows_for_all_neurons(metadata, group_name="Zombies",
                                                 analysis_cache_dir="/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/",
-                                                save=True):
+                                                save=True, use_sorted=False):
     all_results = []
     for ind, row in metadata.iterrows():
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
-        results = detect_response_windows_for_session(date, round, monkey_group=group_name, plot=False)
+        results = detect_response_windows_for_session(date, round, monkey_group=group_name, plot=False, use_sorted=use_sorted)
         all_results.append(results)
     final_df = pd.concat(all_results, ignore_index=True)
     final_df = final_df.sort_values(by=['NeuronID'])
     print(final_df.head())
     print(f"{final_df.shape[0]} windows detected")
+    if use_sorted:
+        file_name = f"sorted_units_{group_name}_response_windows.pkl"
+    else:
+        file_name = f"{group_name}_response_windows.pkl"
     if save:
-        final_df.to_pickle(analysis_cache_dir + f"{group_name}_response_windows.pkl")
+        final_df.to_pickle(analysis_cache_dir + file_name)
     return final_df
 
 def detect_significant_windows(response_window_fpath, monkey_group,
