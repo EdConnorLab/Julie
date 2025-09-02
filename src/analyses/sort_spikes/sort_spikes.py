@@ -6,6 +6,7 @@ from clat.intan.amplifiers import read_amplifier_data_with_mmap
 from clat.intan.rhd import load_intan_rhd_format
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from probeinterface import generate_linear_probe
 from probeinterface.plotting import plot_probe
@@ -54,13 +55,16 @@ if __name__ == '__main__':
     global_job_kwargs = dict(n_jobs=4, chunk_duration="1s")
     si.set_global_job_kwargs(**global_job_kwargs)
 
-    p = argparse.ArgumentParser()
-    p.add_argument("--date", required=True)   # e.g., 2023-10-10
-    p.add_argument("--round", type=int, required=True)
-    args = p.parse_args()
-
-    date = args.date
-    round = args.round
+    # For running shell script (running a list of different sesisons)
+    # p = argparse.ArgumentParser()
+    # p.add_argument("--date", required=True)   # e.g., 2023-10-10
+    # p.add_argument("--round", type=int, required=True)
+    # args = p.parse_args()
+    #
+    # date = args.date
+    # round = args.round
+    date = "2023-09-26"
+    round = 1
 
     date_obj = datetime.strptime(date, "%Y-%m-%d")
     date_str = date_obj.strftime("%y%m%d")  # → "230926"
@@ -71,13 +75,11 @@ if __name__ == '__main__':
         "/home/connorlab/Documents/IntanData/Cortana", date, round_folder
     )
 
-
     # for root, dirs, files in os.walk(parent_folder):
     #     for d in dirs:
     #         if "round" in d.lower():
     #             round_dir = os.path.join(root, d) + os.sep  # ensures trailing slash/backslash
     #             print("Found:", round_dir)
-
 
     # Read recording
     intan_file_directory = base_dir
@@ -127,5 +129,3 @@ if __name__ == '__main__':
     analyzer_KS4.compute(extensions_to_compute)
     analyzer_TDC.compute(extensions_to_compute)
     analyzer_MS5.compute(extensions_to_compute)
-
-
