@@ -55,7 +55,7 @@ if __name__ == '__main__':
     global_job_kwargs = dict(n_jobs=4, chunk_duration="1s")
     si.set_global_job_kwargs(**global_job_kwargs)
 
-    # For running shell script (running a list of different sesisons)
+    # For running shell script (running a list of different sessions)
     # p = argparse.ArgumentParser()
     # p.add_argument("--date", required=True)   # e.g., 2023-10-10
     # p.add_argument("--round", type=int, required=True)

@@ -30,13 +30,16 @@ def write_summary_and_exit(msg="no units in agreement"):
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser()
-    p.add_argument("--date", required=True)   # e.g., 2023-10-10
-    p.add_argument("--round", type=int, required=True)
-    args = p.parse_args()
+    # For running shell script (running a list of different sessions)
+    # p = argparse.ArgumentParser()
+    # p.add_argument("--date", required=True)   # e.g., 2023-10-10
+    # p.add_argument("--round", type=int, required=True)
+    # args = p.parse_args()
 
-    date = args.date
-    round = args.round
+    # date = args.date
+    # round = args.round
+    date = "2023-09-26"
+    round = 1
 
     date_obj = datetime.strptime(date, "%Y-%m-%d")
     date_str = date_obj.strftime("%y%m%d")  # → "230926"
@@ -184,6 +187,13 @@ if __name__ == "__main__":
     )
     print(f"shape of sorted dataframe {sorted_spikes.shape}")
     print(f"shape of merged dataframe {merged_sorted_spikes_df.shape}")
+    merged_sorted_spikes_df['NeuronID'] = (
+            merged_sorted_spikes_df['Location'].astype(str) + "_" +
+            merged_sorted_spikes_df['Date'].astype(str) + "_" +
+            merged_sorted_spikes_df['Round No.'].astype(str) + "_" +
+            merged_sorted_spikes_df['Channel'].astype(str)
+    )
+
     file_name = date + "_round_" + str(round) + ".pkl"
     merged_sorted_spikes_df.to_pickle('/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache/' + pkl_file_name)
     print(f"newly generated sorted spike cache saved as... {pkl_file_name}")
