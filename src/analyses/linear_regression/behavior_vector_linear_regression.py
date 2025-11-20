@@ -228,50 +228,53 @@ def run_directional_vector_linear_regression_cell_level(
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
     mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col].mean()
     spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values= value_col)
-
+    spike_matrix = spike_matrix.reindex(columns=monkey_list)
+    print(spike_matrix.shape)
     for neuron_id, row in tqdm(spike_matrix.iterrows(), total=len(spike_matrix), desc="Computing cell-level linear regression with directional vectors"):
+        print(neuron_id)
         for src_idx, src_monkey in enumerate(monkey_list):
             if src_idx == subject_idx:
                 continue
-            # y = np.delete(behavior_matrix[src_idx], [src_idx, subject_idx])
-            # z-score y
-            raw_y = behavior_matrix[src_idx].copy()
-            mask = np.ones_like(raw_y, dtype=bool)
-            mask[[src_idx, subject_idx]] = False
-            y = zscore(raw_y[mask])
 
-            x_row = row.drop(index=[monkey_list[src_idx], monkey_list[subject_idx]], errors='ignore')
-            x = x_row.values.astype(float)
+            raw_x = behavior_matrix[src_idx].copy()
+            mask = np.ones_like(raw_x, dtype=bool)
+            mask[[src_idx, subject_idx]] = False
+            x = raw_x[mask]
+            # print(" ")
+            # print(f"----------------- {behavior_name} {monkey_list[src_idx]} ----------------- ")
+            # print('x')
+            # print(x)
+
+            target_monkeys = [m for i, m in enumerate(monkey_list) if i not in (src_idx, subject_idx)]
+            y_row = row[target_monkeys]
+            y = y_row.values.astype(float)
+            # print('y')
+            # print(y)
             # check variance
-            if np.var(x) < 1e-3 or np.var(y) < 1e-3:  # threshold adjustable (e.g. 0.0001)
+            if np.var(y) < 1e-3 or np.var(x) < 1e-3:  # threshold adjustable (e.g. 0.0001)
                 print(
                     f"Skipped {neuron_id} {src_monkey}: variance too small (x_var={np.var(x):.6f}, y_var={np.var(y):.6f})")
                 continue
 
-            if len(x) != len(y):
+            if len(y) != len(x):
                 print(f"Length mismatch for {neuron_id} (source: {monkey_list[src_idx]})")
                 continue
 
             try:
                 X = sm.add_constant(x)
-                if model_type == 'ols':
-                    model = sm.OLS(y, X).fit()
-                    r_squared = model.rsquared
-                elif model_type == 'glm':
-                    model = sm.GLM(y, X, family=sm.families.Poisson()).fit()
-                    r_squared = None
-                else:
-                    raise ValueError("model_type must be 'ols' or 'glm'")
+                model = sm.OLS(y, X).fit()
+                r_squared = model.rsquared
 
                 # Permutation test
-                if permutation_test and model_type == 'ols':
+                if permutation_test:
                     null_distribution = []
                     for _ in range(n_perm):
-                        y_perm = np.random.permutation(y)
-                        model_perm = sm.OLS(y_perm, X).fit()
+                        x_perm = np.random.permutation(x)
+                        X_perm = sm.add_constant(x_perm)
+                        model_perm = sm.OLS(y, X_perm).fit()
                         null_distribution.append(model_perm.rsquared)
                     null_distribution = np.array(null_distribution)
-                    p_perm = (np.sum(null_distribution >= r_squared) + 1) / (n_perm + 1)
+                    p_perm = (np.sum(null_distribution >= r_squared)) / (n_perm)
                 else:
                     p_perm = None
 
@@ -284,7 +287,10 @@ def run_directional_vector_linear_regression_cell_level(
                     'coef': model.params[1],
                     'intercept': model.params[0],
                     'p_value': model.pvalues[1],
-                    'p_perm': p_perm
+                    'p_perm': p_perm,
+                    'Behavior_Vector': x,
+                    'Design_Matrix': X,
+                    'Neural_Response': y
                 })
 
                 if plot and r_squared > 0.6:
@@ -295,7 +301,7 @@ def run_directional_vector_linear_regression_cell_level(
                     plt.scatter(x, y_pred, color='green', label='Prediction', alpha=0.6)
                     plt.plot(x, y_pred, label='Fit', color='black', alpha=0.6)
                     plt.xlabel(f'{behavior_name} {monkey_list[src_idx]} (z-scored)')
-                    plt.ylabel('Neural Response (z-scored)')
+                    plt.ylabel('Neural Response')
                     plt.title(f'{neuron_id} (R-sq {r_squared:.3f})')
                     plt.legend()
                     plt.grid(True)
@@ -701,14 +707,14 @@ def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subj
     r, p = spearmanr(neural_vec, social_vec)
 
     # Plot
-    # fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-    # sns.heatmap(neural_rsm, ax=ax[0], cmap='viridis')
-    # ax[0].set_title("Neural RSM")
-    # sns.heatmap(social_rsm, ax=ax[1], cmap='viridis')
-    # ax[1].set_title("Social RSM")
-    # plt.suptitle(f"RSA for {behavior_name}: r = {r:.3f}, p = {p:.3g} using {method}", fontsize=14)
-    # plt.tight_layout()
-    # plt.show()
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    sns.heatmap(neural_rsm, ax=ax[0], cmap='viridis')
+    ax[0].set_title("Neural RSM")
+    sns.heatmap(social_rsm, ax=ax[1], cmap='viridis')
+    ax[1].set_title("Social RSM")
+    plt.suptitle(f"RSA for {behavior_name}: r = {r:.3f}, p = {p:.3g} using {method}", fontsize=14)
+    plt.tight_layout()
+    plt.show()
 
     return r, p, neural_rsm, social_rsm
 
