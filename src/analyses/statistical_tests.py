@@ -66,6 +66,54 @@ def permutation_anova_test(groups, num_permutations=1000):
     p_value = np.mean([f_stat >= observed_f_stat for f_stat in permutation_f_stats])
     return observed_f_stat, p_value, permutation_f_stats
 
+def permutation_kruskal_test(groups, num_permutations=1000, random_state=None):
+    """
+    Permutation-based Kruskal–Wallis H-test.
+
+    Parameters
+    ----------
+    groups : list of array-like
+        Each element is an array or list representing one group.
+    num_permutations : int, optional
+        Number of random permutations (default: 1000).
+    random_state : int, optional
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    observed_H : float
+        Observed Kruskal–Wallis H statistic.
+    p_value : float
+        Permutation-based p-value (proportion of permuted H ≥ observed H).
+    permutation_H_stats : list of float
+        Distribution of permuted H statistics.
+    """
+
+    rng = np.random.default_rng(random_state)
+    groups = [np.asarray(g) for g in groups if len(g) > 0]
+    if len(groups) < 2:
+        raise ValueError("At least two non-empty groups are required for Kruskal–Wallis test.")
+
+    # Compute observed statistic
+    observed_H, _ = kruskal(*groups)
+
+    # Combine all data and record original group sizes
+    data = np.concatenate(groups)
+    group_sizes = [len(g) for g in groups]
+
+    permutation_H_stats = []
+    for _ in range(num_permutations):
+        rng.shuffle(data)
+        permuted_groups = np.split(data, np.cumsum(group_sizes)[:-1])
+        H_stat, _ = kruskal(*permuted_groups)
+        permutation_H_stats.append(H_stat)
+
+    # Compute permutation p-value (one-sided)
+    p_value = np.mean([H >= observed_H for H in permutation_H_stats])
+
+    return observed_H, p_value, permutation_H_stats
+
+
 # ================================
 # Row-wise DataFrame tests
 # ================================
