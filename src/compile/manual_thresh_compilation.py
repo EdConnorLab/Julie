@@ -15,18 +15,6 @@ from clat.util import time_util
 from clat.util.connection import Connection
 
 
-def main():
-    # Main Parameters
-    compile_data(day=date(2023, 11, 7),
-                 # start_time=time(9, 10, 0),
-                 # end_time=time(18, 7, 0),
-                 experiment_filename="231107_round1")
-
-    # compile_data(day=date(2023, 9, 13),
-    #              start_time=time(17, 0, 0),
-    #              end_time=time(17, 59, 0),
-    #              )
-
 def compile_data(day: date = None,
                  start_time: time = None,
                  end_time: time = None,
@@ -143,4 +131,7 @@ def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time:
 
 
 if __name__ == "__main__":
-    main()
+    compile_data(day=date(2023, 11, 7),
+                 # start_time=time(9, 10, 0),
+                 # end_time=time(18, 7, 0),
+                 experiment_filename="231107_round1")
