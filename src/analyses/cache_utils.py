@@ -22,12 +22,17 @@ class SortedSpikeCacheManager(GenericCacheManager):
         cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "sorted_spike_cache"
         super().__init__(cache_dir)
 
-    def load_or_compute(self, date, round_no, only_valid_channels=False, force_recompute=False):
+    def load_or_compute(self, date, round_no):
         label = f"{date}_round_{round_no}"
         path = self._get_cache_path(label)
-        if path.exists() and not force_recompute:
-            return pd.read_pickle(path)
-        raise FileNotFoundError(f"No sorted cache found for {label}")
+        if path.exists():
+            print(f"[SortedCache] Loading {path}")
+            df = pd.read_pickle(path)
+            print(df.head(5))
+            return df
+        else:
+            print(f"No sorted cache found for {label}... Returning an empty dataframe")
+            return pd.DataFrame()
 
 class ExplodedSpikeCacheManager(GenericCacheManager):
     def __init__(self):

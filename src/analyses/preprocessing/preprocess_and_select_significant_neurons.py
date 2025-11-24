@@ -47,8 +47,12 @@ def detect_all_response_windows_for_all_neurons(metadata, group_name="Zombies",
     for ind, row in metadata.iterrows():
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
-        results = detect_response_windows_for_session(date, round, monkey_group=group_name, plot=False, use_sorted=use_sorted)
-        all_results.append(results)
+        try:
+            results = detect_response_windows_for_session(date, round, monkey_group=group_name, use_sorted=use_sorted, plot=False)
+        except:
+            continue
+        if results is not None:
+            all_results.append(results)
     final_df = pd.concat(all_results, ignore_index=True)
     final_df = final_df.sort_values(by=['NeuronID'])
     print(final_df.head())
@@ -63,7 +67,7 @@ def detect_all_response_windows_for_all_neurons(metadata, group_name="Zombies",
 
 def detect_significant_windows(response_window_fpath, monkey_group,
                                analysis_cache_dir="/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/",
-                               save = True):
+                               save=True):
     windows = pd.read_pickle(response_window_fpath)
     spike_counts_windows = extract_spike_counts_from_windows(windows)
     group_specific_spike_counts_for_windows = spike_counts_windows[spike_counts_windows['MonkeyGroup'] == monkey_group]
@@ -81,8 +85,12 @@ def detect_significant_windows(response_window_fpath, monkey_group,
     significant_windows = all_results[(all_results["GLM_significant"]) | (all_results["Permutation_significant"])]
     print(significant_windows.head())
     print(f"{significant_windows.shape[0]} significant windows detected")
+    if "sorted" in str(response_window_fpath):
+        filename = f"sorted_units_{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl"
+    else:
+        filename = f"{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl"
     if save:
-        significant_windows.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl")
+        significant_windows.to_pickle(analysis_cache_dir + filename)
     return significant_windows
 
 
