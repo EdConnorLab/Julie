@@ -1,7 +1,7 @@
 import pandas as pd
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from analyses.response_window_analysis import run_permutation_anova_by_window, run_glm_by_window
+from analyses.response_window_analysis import run_permutation_anova_by_window, run_glm_by_window, run_permutation_kruskal_wallis_by_window
 from analyses.response_window_finder.threshold_window_detection import detect_response_windows_for_session
 from analyses.single_neuron_analysis import run_glm, run_permutation_anova, merge_glm_and_permutation_anova
 from analyses.spike_count import prepare_binned_spike_data, aggregate_trial_level, extract_spike_counts_from_windows
@@ -47,7 +47,7 @@ def detect_all_response_windows_for_all_neurons(metadata, group_name="Zombies",
     for ind, row in metadata.iterrows():
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
-        results = detect_response_windows_for_session(date, round, monkey_group=group_name, plot=False, use_sorted=use_sorted)
+        results = detect_response_windows_for_session(date, round, monkey_group=group_name, plot=False)
         all_results.append(results)
     final_df = pd.concat(all_results, ignore_index=True)
     final_df = final_df.sort_values(by=['NeuronID'])
@@ -61,9 +61,9 @@ def detect_all_response_windows_for_all_neurons(metadata, group_name="Zombies",
         final_df.to_pickle(analysis_cache_dir + file_name)
     return final_df
 
-def detect_significant_windows(response_window_fpath, monkey_group,
-                               analysis_cache_dir="/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/",
-                               save = True):
+def detect_significant_windows_using_pANOVA(response_window_fpath, monkey_group,
+                                            analysis_cache_dir="/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/",
+                                            save = True):
     windows = pd.read_pickle(response_window_fpath)
     spike_counts_windows = extract_spike_counts_from_windows(windows)
     group_specific_spike_counts_for_windows = spike_counts_windows[spike_counts_windows['MonkeyGroup'] == monkey_group]
@@ -80,11 +80,32 @@ def detect_significant_windows(response_window_fpath, monkey_group,
     all_results = merge_glm_and_permutation_anova(glm_results, panova_results)
     significant_windows = all_results[(all_results["GLM_significant"]) | (all_results["Permutation_significant"])]
     print(significant_windows.head())
-    print(f"{significant_windows.shape[0]} significant windows detected")
+    print(f"{significant_windows.shape[0]} significant windows detected (permutation ANOVA)")
     if save:
         significant_windows.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl")
     return significant_windows
 
+def detect_significant_windows_using_KW(response_window_fpath, monkey_group,
+                                            analysis_cache_dir="/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/",
+                                            save = True):
+    windows = pd.read_pickle(response_window_fpath)
+    spike_counts_windows = extract_spike_counts_from_windows(windows)
+    group_specific_spike_counts_for_windows = spike_counts_windows[spike_counts_windows['MonkeyGroup'] == monkey_group]
+    results_df, significant_df = run_permutation_kruskal_wallis_by_window(group_specific_spike_counts_for_windows,
+                                             category_col='MonkeyName',
+                                             neuron_col='NeuronID',
+                                             count_col='SpikeCount',
+                                             window_start_col='WindowStart_ms',
+                                             window_end_col='WindowEnd_ms',
+                                             n_permutations=10000,
+                                             alpha=0.05,
+                                             plot=False)
+    significant_windows = results_df[(results_df["Permutation_significant"])]
+    print(significant_windows.head())
+    print(f"{significant_windows.shape[0]} significant windows detected (permutation KW) ")
+    if save:
+        significant_windows.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_windows_KW_passed.pkl")
+    return significant_windows
 
 if __name__ == "__main__":
 
@@ -93,8 +114,10 @@ if __name__ == "__main__":
     reader = RecordingMetadataReader()
     metadata = reader.get_metadata_for_preliminary_analysis()
     monkey_group = "Zombies"
-    significant_df = select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir,save=False)
-    significant_df.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_neurons_pANOVAorGLM_passed.pkl")
+    # significant_df = select_all_significant_neurons_using_glm_and_pANOVA(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir,save=False)
+    # significant_df.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_neurons_pANOVAorGLM_passed.pkl")
     windows = detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
-    sig_windows = detect_significant_windows(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
+    sig_windows_kw = detect_significant_windows_using_KW(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
+    sig_windows_anova = detect_significant_windows_using_pANOVA(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
+
 
