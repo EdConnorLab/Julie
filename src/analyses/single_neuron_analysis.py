@@ -169,6 +169,28 @@ def plot_permutation_anova_distribution(perm_f_stats, observed_f_stat, neuron_id
     plt.show()
     # plt.close()
 
+
+def plot_permutation_kw_distribution(perm_h_stats, observed_h_stat, neuron_id, category_name, output_dir="permutation_kw_plots"):
+    os.makedirs(output_dir, exist_ok=True)
+    if perm_h_stats is None or observed_h_stat is None or len(perm_h_stats) == 0 or np.isnan(observed_h_stat):
+        print(f"[Plot skipped] Invalid data for {neuron_id}")
+        return
+
+    plt.figure(figsize=(6, 4))
+    plt.hist(perm_h_stats, bins=30, color='skyblue', alpha=0.7, label='Permutation null')
+    plt.axvline(observed_h_stat, color='red', linestyle='--', label=f'Observed H = {observed_h_stat:.3f}')
+
+    plt.xlabel('H-statistic')
+    plt.ylabel('Frequency')
+    plt.title(f'Neuron {neuron_id} | {category_name} Permutation Kruskal-Wallis')
+    plt.legend()
+
+    filename = f"Neuron {neuron_id}_{category_name}_permutation_kruskal_wallis.png"
+    plt.tight_layout()
+    # plt.savefig(os.path.join(output_dir, filename))
+    plt.show()
+    # plt.close()
+
 def plot_permutation_anova_results_summary(results_df):
     plt.figure(figsize=(12, 5))
 
