@@ -95,23 +95,25 @@ def permutation_kruskal_test(groups, num_permutations=1000, random_state=None):
         raise ValueError("At least two non-empty groups are required for Kruskal–Wallis test.")
 
     # Compute observed statistic
-    observed_H, _ = kruskal(*groups)
+    observed_H, _ = kruskal(*groups, nan_policy='omit')
 
     # Combine all data and record original group sizes
     data = np.concatenate(groups)
     group_sizes = [len(g) for g in groups]
+    cuts = np.cumsum(group_sizes)[:-1]
 
-    permutation_H_stats = []
+    perm_H = []
     for _ in range(num_permutations):
-        rng.shuffle(data)
-        permuted_groups = np.split(data, np.cumsum(group_sizes)[:-1])
-        H_stat, _ = kruskal(*permuted_groups)
-        permutation_H_stats.append(H_stat)
+        permuted = rng.permutation(data)
+        perm_groups = np.split(permuted, cuts)
+        H_stat, _ = kruskal(*perm_groups, nan_policy='omit')
+        perm_H.append(H_stat)
 
-    # Compute permutation p-value (one-sided)
-    p_value = np.mean([H >= observed_H for H in permutation_H_stats])
+    # finite-sample p-value
+    perm_H = np.asarray(perm_H)
+    p_value = (np.sum(perm_H >= observed_H) + 1) / (num_permutations + 1)
 
-    return observed_H, p_value, permutation_H_stats
+    return observed_H, p_value, perm_H.tolist()
 
 
 # ================================
