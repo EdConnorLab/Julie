@@ -75,7 +75,7 @@ def get_monkeys_by_rank(groupname: str):
 
     if groupname in group_to_class:
         cls = group_to_class[groupname]  # Get the corresponding class
-        return cls.RANK.value  # Get ordered values
+        return [m.value for m in cls.RANK.value]
     else:
         raise ValueError(f"Unknown group name: {groupname}")
 
@@ -92,3 +92,24 @@ def get_monkeys_by_default_order(groupname: str):
         return [m.value for m in cls.__members__.values() if m.name != "RANK"]
     else:
         raise ValueError(f"Unknown group name: {groupname}")
+
+def get_monkey_group_from_monkey_of_interest(monkey_of_interest):
+    group_to_class = {
+        "Zombies": Zombies,
+        "Best Frans": BestFrans,
+        "Instigators": Instigators,
+        "Stranger Things": StrangerThings,
+    }
+
+    moi = str(monkey_of_interest).strip()
+
+    for group_name, cls in group_to_class.items():
+        # iterate members; skip the special RANK member
+        for member in cls:
+            if member.name == "RANK":
+                continue
+            if member.value == moi:
+                return group_name
+
+    raise ValueError(f"Unknown monkey: {monkey_of_interest}")
+
