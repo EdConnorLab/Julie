@@ -101,6 +101,7 @@ if __name__ == '__main__':
     recording_preprocessed = spre.common_reference(recording_f, reference="global", operator="median")
 
     # Sort
+    # Note: if i have to take out one sorter (due to memory issues) then take out TDC as its output takes up the most space
     sorting_KS4 = ss.run_sorter(sorter_name="kilosort4", recording=recording_preprocessed,
                                 docker_image="spikeinterface/kilosort4-base:4.0.38_cuda-12.0.0",
                                 folder= os.path.join(intan_file_directory, "kilosort4_output"),
