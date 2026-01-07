@@ -320,37 +320,3 @@ if __name__ == '__main__':
     analysis_df = prepare_binned_spike_data(date, round_no, 0.05)
     # formula = "SpikeCount ~ C(MonkeyName)"  # Stimulus identity
     formula = "SpikeCount ~ C(MonkeyGroup)"  # Stimulus group 간 차이
-
-    # glm_results = run_glm(analysis_df, formula=formula)
-    #
-    # print(glm_results.head())
-    # # ---- multiple comparison correction ---
-    # # glm_results 에서 P-value 컬럼 선택
-    # pvals = glm_results['P>|z|']
-    #
-    # # correction 방법: 'fdr_bh' (False Discovery Rate, Benjamini/Hochberg)
-    # reject, pvals_corrected, _, _ = multipletests(pvals, method='fdr_bh')
-    #
-    # # glm_results 에 corrected p-value 와 reject 여부 추가
-    # glm_results['pval_corrected'] = pvals_corrected
-    # glm_results['significant'] = reject
-    # glm_results.to_excel('glm_results.xlsx')
-    # plot_glm_coefficients(glm_results)
-    #
-    # # ---- permutation test
-    # perm_results = permutation_test(
-    #     analysis_df,
-    #     n_permutations=1000,
-    #     neuron_col='NeuronID',
-    #     category_col='MonkeyGroup',  # stimulus group
-    #     count_col='SpikeCount'
-    # )
-    #
-    # print(perm_results.head())
-    #
-    # # ---- multiple comparison correction ---
-    # reject, pvals_corrected, _, _ = multipletests(perm_results['P-value'], method='fdr_bh')
-    # perm_results['pval_corrected'] = pvals_corrected
-    # perm_results['significant'] = reject
-    # plot_permutation_results(perm_results)
-    #
