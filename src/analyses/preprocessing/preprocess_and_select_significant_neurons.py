@@ -23,7 +23,7 @@ def select_all_significant_neurons_using_pKW(metadata, group_name="Zombies", bin
         results, sig_results = run_permutation_kruskal_wallis(group_specific_trial_df, category_col='MonkeyName', plot=False)
         all_results.append(results)
     final_df = pd.concat(all_results, ignore_index=True)
-    significant_df = final_df[final_df["Permutation_significant"]]
+    significant_df = final_df[final_df["p-value"] < 0.05]
     print('All significant neurons passing KW with permutation test:')
     print(significant_df.head())
     if save:
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     monkey_group = "Zombies"
 
     # Single Neuron Processing
-    significant_df = select_all_significant_neurons_using_pKW(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir,save=True)
+    significant_df = select_all_significant_neurons_using_pKW(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir, save=True, use_sorted=True)
 
     # Response Window Processing
 
@@ -137,5 +137,5 @@ if __name__ == "__main__":
     # windows = detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
 
     # Filter only the significant ones
-    sig_windows_kw = detect_significant_windows_using_pKW(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
+    # sig_windows_kw = detect_significant_windows_using_pKW(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
 

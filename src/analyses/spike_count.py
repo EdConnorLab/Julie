@@ -105,7 +105,7 @@ def bin_spike_times(exploded_df, bin_size):
 
 def prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=False, use_sorted=False):
     """Prepare binned spike data with spike counts."""
-    exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels, use_sorted)
+    exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels=only_valid_channels, force_recompute=False, use_sorted=use_sorted)
     good_neurons = filter_good_neurons(exploded_df)
     filtered_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
     binned_df = bin_spike_times(filtered_df, bin_size)
