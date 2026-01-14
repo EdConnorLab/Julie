@@ -54,7 +54,7 @@ def permutation_anova_test(groups, num_permutations=1000):
     """Permutation-based one-way ANOVA."""
     data = np.concatenate(groups)
     original_group_sizes = [len(group) for group in groups]
-    observed_f_stat, _ = f_oneway(*groups)
+    observed_f_stat, _ = anova_test(groups)
 
     permutation_f_stats = []
     for _ in range(num_permutations):
@@ -63,8 +63,8 @@ def permutation_anova_test(groups, num_permutations=1000):
         f_stat, _ = anova_test(new_groups)
         permutation_f_stats.append(f_stat)
 
-    p_value = np.mean([f_stat >= observed_f_stat for f_stat in permutation_f_stats])
-    return observed_f_stat, p_value, permutation_f_stats
+    p_perm = np.mean([f_stat >= observed_f_stat for f_stat in permutation_f_stats])
+    return observed_f_stat, p_perm, permutation_f_stats
 
 def permutation_kruskal_test(groups, num_permutations=1000, random_state=None):
     """Permutation-based Kruskal–Wallis H-test."""
@@ -86,14 +86,14 @@ def permutation_kruskal_test(groups, num_permutations=1000, random_state=None):
     for _ in range(num_permutations):
         permuted = rng.permutation(data)
         perm_groups = np.split(permuted, cuts)
-        H_stat, _ = kruskal(*perm_groups, nan_policy='omit')
+        H_stat, _ = kruskal_test(perm_groups, nan_policy='omit')
         perm_H.append(H_stat)
 
     # finite-sample p-value
     perm_H = np.asarray(perm_H)
-    p_value = (np.sum(perm_H >= observed_H) + 1) / (num_permutations + 1)
+    p_perm = (np.sum(perm_H >= observed_H) + 1) / (num_permutations + 1)
 
-    return observed_H, p_value, perm_H.tolist()
+    return observed_H, p_perm, perm_H.tolist()
 
 
 # ================================
