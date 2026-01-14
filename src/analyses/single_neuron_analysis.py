@@ -53,7 +53,7 @@ def run_permutation_kruskal_wallis(
             all_results.append({
                 'NeuronID': neuron,
                 'H-statistic': h_stat,
-                'p-value': p_value
+                'p-value': p_value # for permutation test
             })
 
             if plot:
@@ -109,7 +109,7 @@ def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', 
             all_results.append({
                 'NeuronID': neuron,
                 'F-statistic': f_stat,
-                'p-value': p_value
+                'p-value': p_value  # for permutation test
             })
 
             if plot:
