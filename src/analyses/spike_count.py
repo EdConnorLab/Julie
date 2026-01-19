@@ -3,6 +3,9 @@ import pandas as pd
 from analyses.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager
 from tqdm import tqdm
 from collections import defaultdict
+
+from analyses.spike_source import SpikeSource, SISortedSpikeSource, MixedManualSpikeSource
+
 """
 Data Preparation Module for Spike Data Analysis
 -----------------------------------------------
@@ -108,13 +111,16 @@ def bin_spike_times(exploded_df, bin_size):
 
     return pd.DataFrame(binned_rows)
 
-def prepare_binned_spike_data(date, round_no, bin_size, curated_channels_only=False, use_sorted=False):
+def prepare_binned_spike_data(
+    date,
+    round_no,
+    bin_size,
+    curated_channels_only=False,
+    *,
+    source: SpikeSource | None = None,
+):
     """Prepare binned spike data with spike counts."""
-    if use_sorted:
-        exploded_df = load_si_sorted_spikes(date, round_no, force_recompute=False)
-    else:
-        exploded_df = load_mixed_manual_spikes(date, round_no, curated_channels_only = curated_channels_only, force_recompute=False)
-
+    exploded_df = source.load(date, round_no)
     if exploded_df is None or getattr(exploded_df, "empty", True):
         return pd.DataFrame()
 
@@ -126,8 +132,7 @@ def prepare_binned_spike_data(date, round_no, bin_size, curated_channels_only=Fa
     if filtered_df.empty:
         return pd.DataFrame()
 
-    binned_df = bin_spike_times(filtered_df, bin_size)
-    return binned_df
+    return bin_spike_times(filtered_df, bin_size)
 
 
 # --- Aggregate ---
@@ -141,7 +146,7 @@ def aggregate_timebin_level(df):
     return df.groupby(['NeuronID', 'MonkeyGroup', 'TimeBinIndex'], as_index=False)['SpikeCount'].sum()
 
 
-def extract_spike_counts_from_windows(window_df, use_sorted=False):
+def extract_spike_counts_from_windows(window_df: pd.DataFrame, source: SpikeSource) -> pd.DataFrame:
     """
     Extract spike counts for each neuron and time window from cached raw spike times.
     """
@@ -154,18 +159,13 @@ def extract_spike_counts_from_windows(window_df, use_sorted=False):
         start_sec, end_sec = start_ms / 1000, end_ms / 1000
 
         # Extract date and round from NeuronID (e.g., "AMG_2023-09-26_3_Channel.C_003_Unit 1")
-        parts = neuron_id.split('_', 4)
-
-        date_str, round_no = parts[1], int(parts[2])
+        date_str = row["Date"]
+        round_no = int(row["Round No."])
         cache_key = (date_str, round_no)
 
         # Use cache manager
         if cache_key not in cache:
-            if use_sorted:
-                exploded_df = load_si_sorted_spikes(date_str, round_no, force_recompute=False)
-            else:
-                exploded_df = load_mixed_manual_spikes(date_str, round_no, curated_channels_only=False,
-                                                  force_recompute=False)
+            exploded_df = source.load(date_str, round_no)
             cache[cache_key] = exploded_df
         else:
             exploded_df = cache[cache_key]

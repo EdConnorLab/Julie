@@ -317,6 +317,6 @@ if __name__ == '__main__':
     date = '2023-09-26'
     round_no = 1
 
-    analysis_df = prepare_binned_spike_data(date, round_no, 0.05)
+    # analysis_df = prepare_binned_spike_data(date, round_no, 0.05)
     # formula = "SpikeCount ~ C(MonkeyName)"  # Stimulus identity
     formula = "SpikeCount ~ C(MonkeyGroup)"  # Stimulus group 간 차이

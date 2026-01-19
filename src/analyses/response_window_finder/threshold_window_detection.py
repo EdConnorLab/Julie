@@ -1,4 +1,5 @@
 from itertools import zip_longest
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -7,14 +8,12 @@ from tqdm import tqdm
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.spike_count import prepare_binned_spike_data, aggregate_timebin_level, extract_spike_counts_from_windows
+from analyses.spike_source import SISortedSpikeSource, MixedManualSpikeSource, SpikeSource
 
 
 def threshold_and_fill_gap(z_scored_data, threshold=0.6):
     # Find change points where the z-score exceeds the threshold
-    change_points = []
-    for t in range(len(z_scored_data)):
-        if z_scored_data[t] > threshold:
-            change_points.append(t)
+    change_points = np.flatnonzero(np.asarray(z_scored_data) > threshold).tolist()
     change_points = sorted(list(set(change_points)))
     filled = fill_gap_if_one_data_point_away(change_points, z_scored_data)
     return filled
@@ -39,16 +38,47 @@ def fill_gap_if_one_data_point_away(change_points, norm_data, threshold=0.5):
 def list_addition(lists):
     return [sum(x) for x in zip_longest(*lists, fillvalue=0)]
 
-def compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group, use_sorted=False):
-    binned_spike_data = prepare_binned_spike_data(date, round_no, bin_size, curated_channels_only=True, use_sorted=use_sorted)
-    if binned_spike_data.empty:
+def compute_timebinned_spikecount_per_neuron(
+    date: str,
+    round_no: int,
+    bin_size: float,
+    monkey_group: str,
+    *,
+    source: Optional[SpikeSource] = None,
+) -> pd.DataFrame:
+    """
+    Returns a dataframe:
+      NeuronID | TotalSpikeCountList  (list of spike counts per time bin)
+    """
+
+    # Backward compatible behavior:
+    # - if caller passes source, it wins
+    # - otherwise infer from use_sorted
+
+    binned_spike_data = prepare_binned_spike_data(
+        date,
+        round_no,
+        bin_size,
+        curated_channels_only= True,
+        source=source
+    )
+
+    if binned_spike_data is None or binned_spike_data.empty:
         print(f"[Warning] No valid neurons after filtering on {date}, round {round_no}")
-        return pd.DataFrame(columns=['NeuronID', 'TotalSpikeCountList'])
+        return pd.DataFrame(columns=["NeuronID", "TotalSpikeCountList"])
 
     bin_level_spike_data = aggregate_timebin_level(binned_spike_data)
-    group_data = bin_level_spike_data[bin_level_spike_data['MonkeyGroup'] == monkey_group]
-    group_data = group_data.sort_values(['NeuronID', 'TimeBinIndex'])
-    spikecount_df = group_data.groupby('NeuronID')['SpikeCount'].apply(list).reset_index(name='TotalSpikeCountList')
+
+    group_data = bin_level_spike_data[bin_level_spike_data["MonkeyGroup"] == monkey_group]
+    if group_data.empty:
+        return pd.DataFrame(columns=["NeuronID", "TotalSpikeCountList"])
+
+    group_data = group_data.sort_values(["NeuronID", "TimeBinIndex"])
+    spikecount_df = (
+        group_data.groupby("NeuronID")["SpikeCount"]
+        .apply(list)
+        .reset_index(name="TotalSpikeCountList")
+    )
     return spikecount_df
 
 
@@ -114,77 +144,79 @@ def z_score(data):
         return (data - np.mean(data)) / np.std(data)
 
 
-def detect_response_windows_for_session(date, round_no, use_sorted=False, bin_size=0.05, monkey_group='Zombies', threshold=0.5,
-                                        plot=False):
-    """
-    Detect significant response windows for a given session.
-
-    Parameters:
-    - date: str, e.g., '2023-09-26'
-    - round_no: int
-    - bin_size: float
-    - monkey_group: str
-    - threshold: float, z-scored threshold for window detection
-    - plot: bool, whether to plot each neuron's window detection
-
-    Returns:
-    - results_df: pd.DataFrame with columns ['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']
-    """
-
+def detect_response_windows_for_session(
+    date: str,
+    round_no: int,
+    *,
+    source: SpikeSource,               # ✅ required
+    bin_size: float = 0.05,
+    monkey_group: str = "Zombies",
+    threshold: float = 0.5,
+    plot: bool = False,
+) -> pd.DataFrame:
     results = []
+
     rounded_time = np.round(np.arange(bin_size, 3.50, bin_size), 2)
 
-    timebin_spikecount_list = compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group, use_sorted=use_sorted)
+    timebin_spikecount_list = compute_timebinned_spikecount_per_neuron(
+        date,
+        round_no,
+        bin_size,
+        monkey_group,
+        source=source,                  # ✅ propagate
+    )
+
     for _, r in timebin_spikecount_list.iterrows():
-        data = r['TotalSpikeCountList']
-        neuron = r['NeuronID']
-        normalized_data = z_score(data)
+        data = r["TotalSpikeCountList"]
+        neuron = r["NeuronID"]
+        normalized_data = z_score(np.asarray(data))
 
         change_points = threshold_and_fill_gap(normalized_data, threshold)
         windows = extract_consecutive_ranges(change_points)
         filtered_windows = remove_consecutive_tuples(windows)
         time_windows = find_corresponding_values_for_index_ranges(filtered_windows, rounded_time)
 
-        if len(time_windows) > 0:
-            for start_time, end_time in time_windows:
-                results.append({
-                    'NeuronID': neuron,
-                    'WindowStart_ms': int(start_time * 1000),
-                    'WindowEnd_ms': int(end_time * 1000)
-                })
+        for start_time, end_time in time_windows:
+            results.append({
+                "NeuronID": neuron,
+                "WindowStart_ms": int(start_time * 1000),
+                "WindowEnd_ms": int(end_time * 1000),
+                "Date": date,              # ✅ add session identity (see #2)
+                "Round No.": int(round_no)
+            })
 
-            if plot:
-                y_values_at_change_points = [data[i] for i in change_points]
-                t_values_at_change_points = [rounded_time[i] for i in change_points]
+        if plot:
+            y_values_at_change_points = [data[i] for i in change_points]
+            t_values_at_change_points = [rounded_time[i] for i in change_points]
 
-                plt.figure(figsize=(12, 6))
-                overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
+            plt.figure(figsize=(12, 6))
+            overall_max_for_simple_thresholding = np.maximum.reduce([normalized_data, data])
 
-                if normalized_data is not None:
-                    plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
-                    for start, end in filtered_windows:
-                        plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
-                                          rounded_time[end], color='red', alpha=0.4)
+            if normalized_data is not None:
+                plt.plot(rounded_time[:len(normalized_data)], normalized_data, label='Normalized Data')
+                for start, end in filtered_windows:
+                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
+                                      rounded_time[end], color='red', alpha=0.4)
 
-                if data is not None:
-                    plt.plot(rounded_time[:len(data)], data, label='Data')
-                    for start, end in filtered_windows:
-                        plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
-                                          rounded_time[end], color='red', alpha=0.4)
-                    plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
+            if data is not None:
+                plt.plot(rounded_time[:len(data)], data, label='Data')
+                for start, end in filtered_windows:
+                    plt.fill_betweenx([0, max(overall_max_for_simple_thresholding)], rounded_time[start],
+                                      rounded_time[end], color='red', alpha=0.4)
+                plt.scatter(t_values_at_change_points, y_values_at_change_points, color='red', zorder=5)
 
-                plt.axhline(y=threshold, color='green', linestyle='--', label='Threshold')
-                plt.title(f'{neuron} --- window: {time_windows}')
-                plt.xlabel('Time')
-                plt.ylabel('Value')
-                plt.legend()
-                plt.show()
+            plt.axhline(y=threshold, color='green', linestyle='--', label='Threshold')
+            plt.title(f'{neuron} --- window: {time_windows}')
+            plt.xlabel('Time')
+            plt.ylabel('Value')
+            plt.legend()
+            plt.show()
 
     results_df = pd.DataFrame(results)
     if results_df.empty:
-        return pd.DataFrame(columns=['NeuronID', 'WindowStart_ms', 'WindowEnd_ms'])
-    results_df = results_df.sort_values(by=['NeuronID'])
-    return results_df
+        return pd.DataFrame(columns=["NeuronID", "WindowStart_ms", "WindowEnd_ms", "Date", "Round No."])
+    return results_df.sort_values(["Date", "Round No.", "NeuronID"]).reset_index(drop=True)
+
 
 
 if __name__ == '__main__':
