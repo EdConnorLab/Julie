@@ -16,7 +16,7 @@ from channel_enum_resolvers import convert_to_enum
 def plot_rasters_for_specific_round(date, round_no):
     metadata_reader = RecordingMetadataReader()
     experiment_data_filename = metadata_reader.get_pickle_filename_for_specific_round(date, round_no)
-    channels = metadata_reader.get_valid_channels(date, round_no)
+    channels = metadata_reader.get_curated_channels(date, round_no)
     script_dir = Path(__file__).parent
     file_path = (script_dir / '..' / '..' / '..' / 'Cortana' / 'compiled' / experiment_data_filename).resolve()
     raw_data = read_pickle(file_path)

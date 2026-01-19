@@ -39,8 +39,8 @@ def fill_gap_if_one_data_point_away(change_points, norm_data, threshold=0.5):
 def list_addition(lists):
     return [sum(x) for x in zip_longest(*lists, fillvalue=0)]
 
-def compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group):
-    binned_spike_data = prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=True)
+def compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group, use_sorted=False):
+    binned_spike_data = prepare_binned_spike_data(date, round_no, bin_size, curated_channels_only=True, use_sorted=use_sorted)
     if binned_spike_data.empty:
         print(f"[Warning] No valid neurons after filtering on {date}, round {round_no}")
         return pd.DataFrame(columns=['NeuronID', 'TotalSpikeCountList'])
@@ -114,7 +114,7 @@ def z_score(data):
         return (data - np.mean(data)) / np.std(data)
 
 
-def detect_response_windows_for_session(date, round_no, bin_size=0.05, monkey_group='Zombies', threshold=0.5,
+def detect_response_windows_for_session(date, round_no, use_sorted=False, bin_size=0.05, monkey_group='Zombies', threshold=0.5,
                                         plot=False):
     """
     Detect significant response windows for a given session.
@@ -134,7 +134,7 @@ def detect_response_windows_for_session(date, round_no, bin_size=0.05, monkey_gr
     results = []
     rounded_time = np.round(np.arange(bin_size, 3.50, bin_size), 2)
 
-    timebin_spikecount_list = compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group)
+    timebin_spikecount_list = compute_timebinned_spikecount_per_neuron(date, round_no, bin_size, monkey_group, use_sorted=use_sorted)
     for _, r in timebin_spikecount_list.iterrows():
         data = r['TotalSpikeCountList']
         neuron = r['NeuronID']

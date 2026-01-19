@@ -86,7 +86,7 @@ def permutation_kruskal_test(groups, num_permutations=1000, random_state=None):
     for _ in range(num_permutations):
         permuted = rng.permutation(data)
         perm_groups = np.split(permuted, cuts)
-        H_stat, _ = kruskal_test(perm_groups, nan_policy='omit')
+        H_stat, _ = kruskal_test(perm_groups)
         perm_H.append(H_stat)
 
     # finite-sample p-value

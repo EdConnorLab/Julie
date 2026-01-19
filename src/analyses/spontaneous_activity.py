@@ -40,9 +40,9 @@ def get_all_spikes_within_interval_by_channel(spike_timestamps_by_channel, inter
 
 
 def compute_spontaneous_firing_rate_by_channel(spontaneous_spikes_by_channel, total_inter_trial_duration,
-                                               valid_channels):
+                                               curated_channels):
     spontaneous_firing_rate_by_channel = {}
-    for channel in valid_channels:
+    for channel in curated_channels:
         spikes = get_value_from_dict_with_channel(channel, spontaneous_spikes_by_channel)
         if spikes is not None:
             spontaneous_spike_count = len(spikes)

@@ -10,7 +10,6 @@ from analyses.linear_regression.behavior_vector_linear_regression import \
     run_rsa_analysis, run_directional_vector_linear_regression_window_level, \
     expand_window_level_regression_results_with_spike_rates_per_stimulus
 
-from analyses.spike_count import extract_spike_counts_from_cells
 from analyses.spike_rate import compute_mean_spike_rate_for_cells, compute_mean_spike_rate_for_windows
 
 

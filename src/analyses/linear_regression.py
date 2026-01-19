@@ -83,38 +83,3 @@ def run_population_glmm(exploded_df, social_df, social_col='AffiliationTo_z'):
     model = mixedlm(f"SpikeCount ~ {social_col}", data=merged_df, groups=merged_df['NeuronID'])
     result = model.fit()
     return result.summary()
-
-if __name__ == "__main__":
-    date = '2023-09-26'
-    round_no = 1
-    exploded_df = prepare_exploded_spike_data(date, round_no, True, use_sorted=False)
-    # trial_df = compute_trial_level_spike_rate(exploded_df)
-    # mean_df = compute_mean_spike_rate(trial_df)
-    # print(mean_df)
-    file_name = '../social_data/zombies_social_data/zombies_feature_df_affiliation.xlsx'
-    affiliation_df = pd.read_excel(file_name)
-
-    # base_dir = '../social_data/zombies_social_data/'
-    # zombies_affiliation_from_file_name = 'zombies_affiliation_from.csv'
-    # zombies_submission_from_file_name = 'zombies_submission_from.csv'
-    # zombies_agonism_from_file_name = 'zombies_agonism_from.csv'
-    # zombies_affiliation_to_file_name = 'zombies_affiliation_to.csv'
-    # zombies_submission_to_file_name = 'zombies_submission_to.csv'
-    # zombies_agonism_to_file_name = 'zombies_agonism_to.csv'
-    # zombies_aff_from = pd.read_csv(base_dir + zombies_affiliation_from_file_name)
-    # zombies_aff_to = pd.read_csv(base_dir + zombies_affiliation_to_file_name)
-    # zombies_sub_from = pd.read_csv(base_dir + zombies_submission_from_file_name)
-    # zombies_sub_to = pd.read_csv(base_dir + zombies_submission_to_file_name)
-    # zombies_agon_from = pd.read_csv(base_dir + zombies_agonism_from_file_name)
-    # zombies_agon_to = pd.read_csv(base_dir + zombies_agonism_to_file_name)
-    #
-    #
-    # df = run_trial_level_regression(
-    #     date='2023-09-26',
-    #     round_no=1,
-    #     social_df=zombies_aff_to,
-    #     social_col='AffiliationTo_z',
-    #     model_type='glm'  # or 'glm'
-    #
-    # )
-    # print(df)

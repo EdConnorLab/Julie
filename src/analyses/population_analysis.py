@@ -198,7 +198,7 @@ def get_all_combined_exploded_spike_counts(group_name="Zombies", apply_filter=Fa
         date = str(row['Date'].strftime("%Y-%m-%d"))
         round_no = int(row['Round No.'])
 
-        exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels=True, use_sorted=use_sorted)
+        exploded_df = prepare_exploded_spike_data(date, round_no, curated_channels_only=True, use_sorted=use_sorted)
         if apply_filter:
             good_neurons = filter_good_neurons(exploded_df)
             exploded_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]

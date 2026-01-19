@@ -40,7 +40,7 @@ class RecordingMetadataReader(ExcelDataReader):
         recording_metadata = pd.merge(channels_tab, locations_tab, on=['Date', 'Round No.'])
         return recording_metadata
 
-    def get_valid_channels(self, date, round_number) -> list:
+    def get_curated_channels(self, date, round_number) -> list:
         matching_round = self.recording_metadata[
             (self.recording_metadata['Date'] == str(date)) & (
                     self.recording_metadata['Round No.'] == int(round_number))]
@@ -87,7 +87,7 @@ class RecordingMetadataReader(ExcelDataReader):
         pickle_filename = self.get_pickle_filename_for_specific_round(date, round_number)
         compiled_dir = (Path(__file__).resolve().parent.parent.parent.parent / monkey / 'compiled')
         pickle_filepath = os.path.join(compiled_dir, pickle_filename)
-        valid_channels = set(self.get_valid_channels(date, round_number))
+        valid_channels = set(self.get_curated_channels(date, round_number))
 
         # for sorted rounds
         base_dir = Path("/home/connorlab/Documents/IntanData")
