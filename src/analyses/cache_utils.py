@@ -20,13 +20,31 @@ class GenericCacheManager:
 class SortedSpikeCacheManager(GenericCacheManager):
     def __init__(self):
         cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "sorted_spike_cache"
+        self.summary_dir = Path(__file__).resolve().parents[2] / "Cortana" / "sorted_spike_summary"
         super().__init__(cache_dir)
+
+    def _summary_path(self, date: str, round_no: int) -> Path:
+        # matches: 231024_round1_sorting_summary.txt
+        yymmdd = date.replace("-", "")[2:]
+        return self.summary_dir / f"{yymmdd}_round{round_no}_sorting_summary.txt"
+
+    def _summary_says_no_units(self, path: Path) -> bool:
+        if not path.exists():
+            return False
+        text = path.read_text().lower()
+        return "no units in agreement" in text
 
     def load_or_compute(self, date, round_no, only_valid_channels=False, force_recompute=False):
         label = f"{date}_round_{round_no}"
-        path = self._get_cache_path(label)
-        if path.exists() and not force_recompute:
-            return pd.read_pickle(path)
+        pkl_path = self._get_cache_path(label)
+
+        if pkl_path.exists() and not force_recompute:
+            return pd.read_pickle(pkl_path)
+
+        summary_path = self._summary_path(date, round_no)
+        if self._summary_says_no_units(summary_path):
+            return None  # valid session, nothing to analyze
+
         raise FileNotFoundError(f"No sorted cache found for {label}")
 
 class ExplodedSpikeCacheManager(GenericCacheManager):
@@ -34,14 +52,14 @@ class ExplodedSpikeCacheManager(GenericCacheManager):
         cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "exploded_spike_cache"
         super().__init__(cache_dir)
 
-    def load_or_compute(self, date, round_no, only_valid_channels=False, force_recompute=False):
+    def load_or_compute(self, date, round_no, curated_channels_only=False, force_recompute=False):
         label = f"{date}_round_{round_no}"
         path = self._get_cache_path(label)
         if path.exists() and not force_recompute:
             return pd.read_pickle(path)
         print(f"[Cache] Using file: {path}")
         combined_data = load_and_combine_data(date, round_no)
-        exploded_df = explode_spike_data(combined_data, date, round_no, only_valid_channels)
+        exploded_df = explode_spike_data(combined_data, date, round_no, curated_channels_only)
         exploded_df.to_pickle(path)
 
         return exploded_df

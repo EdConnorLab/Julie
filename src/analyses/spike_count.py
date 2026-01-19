@@ -13,16 +13,16 @@ and aggregating spike data for downstream analyses (e.g., permutation ANOVA).
 """
 
 
-def prepare_exploded_spike_data(date, round_no, only_valid_channels=False, force_recompute=False, use_sorted=False):
-    """Prepare exploded spike data (pre-binning)."""
-    if use_sorted:
-        cache = SortedSpikeCacheManager()
-    else:
-        cache = ExplodedSpikeCacheManager()
-
+def load_mixed_manual_spikes(date, round_no, *, curated_channels_only=False, force_recompute=False):
+    cache = ExplodedSpikeCacheManager()
     return cache.load_or_compute(date, round_no,
-                                 only_valid_channels=only_valid_channels,
+                                 curated_channels_only=curated_channels_only,
                                  force_recompute=force_recompute)
+
+def load_si_sorted_spikes(date, round_no, *, force_recompute=False):
+    cache = SortedSpikeCacheManager()
+    return cache.load_or_compute(date, round_no, force_recompute=force_recompute)
+
 
 def filter_good_neurons(exploded_df,
                         min_total_spikes=500,
@@ -42,6 +42,12 @@ def filter_good_neurons(exploded_df,
     Returns:
     - List of NeuronIDs that passed all filters
     """
+    if exploded_df is None or getattr(exploded_df, "empty", True):
+        return []
+
+    if "NeuronID" not in exploded_df.columns:
+        return []
+
     neuron_stats = []
 
     for neuron_id, group in exploded_df.groupby("NeuronID"):
@@ -102,12 +108,24 @@ def bin_spike_times(exploded_df, bin_size):
 
     return pd.DataFrame(binned_rows)
 
-
-def prepare_binned_spike_data(date, round_no, bin_size, only_valid_channels=False, use_sorted=False):
+def prepare_binned_spike_data(date, round_no, bin_size, curated_channels_only=False, use_sorted=False):
     """Prepare binned spike data with spike counts."""
-    exploded_df = prepare_exploded_spike_data(date, round_no, only_valid_channels=only_valid_channels, force_recompute=False, use_sorted=use_sorted)
+    if use_sorted:
+        exploded_df = load_si_sorted_spikes(date, round_no, force_recompute=False)
+    else:
+        exploded_df = load_mixed_manual_spikes(date, round_no, curated_channels_only = curated_channels_only, force_recompute=False)
+
+    if exploded_df is None or getattr(exploded_df, "empty", True):
+        return pd.DataFrame()
+
     good_neurons = filter_good_neurons(exploded_df)
+    if not good_neurons:
+        return pd.DataFrame()
+
     filtered_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
+    if filtered_df.empty:
+        return pd.DataFrame()
+
     binned_df = bin_spike_times(filtered_df, bin_size)
     return binned_df
 
@@ -143,7 +161,11 @@ def extract_spike_counts_from_windows(window_df, use_sorted=False):
 
         # Use cache manager
         if cache_key not in cache:
-            exploded_df = prepare_exploded_spike_data(date_str, round_no, use_sorted=use_sorted)
+            if use_sorted:
+                exploded_df = load_si_sorted_spikes(date_str, round_no, force_recompute=False)
+            else:
+                exploded_df = load_mixed_manual_spikes(date_str, round_no, curated_channels_only=False,
+                                                  force_recompute=False)
             cache[cache_key] = exploded_df
         else:
             exploded_df = cache[cache_key]
@@ -198,8 +220,8 @@ def extract_spike_counts_from_cells(neurons_df, use_sorted=False):
         round_no = int(parts[2])
         cache_key = (date_str, round_no)
 
-        if cache_key not in cache:
-            cache[cache_key] = prepare_exploded_spike_data(date_str, round_no, use_sorted=use_sorted)
+        # if cache_key not in cache:
+            # cache[cache_key] = prepare_exploded_spike_data(date_str, round_no, use_sorted=use_sorted)
         exploded_df = cache[cache_key]
 
         matching_trials = exploded_df[exploded_df['NeuronID'] == neuron_id]

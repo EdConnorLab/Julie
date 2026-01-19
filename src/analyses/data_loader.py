@@ -7,7 +7,7 @@ from analyses.intan_data_processor.single_unit_analysis import read_sorted_data
 
 def load_raw_data(date, round_number):
     reader = RecordingMetadataReader()
-    pickle_filepath, valid_channels, round_path = reader.get_metadata_for_spike_analysis(date, round_number)
+    pickle_filepath, curated_channels, round_path = reader.get_metadata_for_spike_analysis(date, round_number)
     raw_trial_data = read_pickle(pickle_filepath)
 
     sorted_file = round_path / 'sorted_spikes.pkl'
@@ -16,7 +16,7 @@ def load_raw_data(date, round_number):
     else:
         sorted_data = None
 
-    return raw_trial_data, valid_channels, sorted_data
+    return raw_trial_data, curated_channels, sorted_data
 
 
 def combine_unsorted_with_sorted(raw_unsorted_data, sorted_data):
@@ -78,7 +78,7 @@ def load_and_combine_data(date, round_no):
 
 
 # --- Data explosion (wide → long format) ---
-def explode_spike_data(combined_data, date, round_no, only_valid_channels=False):
+def explode_spike_data(combined_data, date, round_no, curated_channels_only=False):
     """Explode spike times into long-format DataFrame with metadata."""
     reader = RecordingMetadataReader()
     rows = []
@@ -122,10 +122,10 @@ def explode_spike_data(combined_data, date, round_no, only_valid_channels=False)
             exploded_df['Round No.'].astype(str) + "_" +
             exploded_df['Channel'].astype(str)
     )
-    if only_valid_channels:
-        valid_channels = reader.get_valid_channels(date, round_no)
-        valid_channels_list = [str(ch) for ch in valid_channels]
-        exploded_df = exploded_df[exploded_df['BaseChannel'].isin(valid_channels_list)]
+    if curated_channels_only:
+        curated_channels = reader.get_curated_channels(date, round_no)
+        curated_channel_list = [str(ch) for ch in curated_channels]
+        exploded_df = exploded_df[exploded_df['BaseChannel'].isin(curated_channel_list)]
 
     return exploded_df
 

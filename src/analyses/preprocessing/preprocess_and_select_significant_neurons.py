@@ -9,6 +9,7 @@ from analyses.spike_count import prepare_binned_spike_data, aggregate_trial_leve
 def select_all_significant_neurons_using_pKW(metadata, group_name="Zombies", bin_size=0.05,
                                              analysis_cache_dir="/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/", save=True, use_sorted=False):
     all_results = []
+    all_sig_results = []
     for ind, row in metadata.iterrows():
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
@@ -21,9 +22,10 @@ def select_all_significant_neurons_using_pKW(metadata, group_name="Zombies", bin
         monkey_group_df = binned_data[binned_data['MonkeyGroup'] == group_name]
         group_specific_trial_df = aggregate_trial_level(monkey_group_df)
         results, sig_results = run_permutation_kruskal_wallis(group_specific_trial_df, category_col='MonkeyName', plot=False)
-        all_results.append(results)
-    final_df = pd.concat(all_results, ignore_index=True)
-    significant_df = final_df[final_df["p-value"] < 0.05]
+        # all_results.append(results)
+        all_sig_results.append(sig_results)
+    # final_df = pd.concat(all_results, ignore_index=True)
+    significant_df = pd.concat(all_sig_results, ignore_index=True)
     print('All significant neurons passing KW with permutation test:')
     print(significant_df.head())
     if save:
@@ -33,6 +35,7 @@ def select_all_significant_neurons_using_pKW(metadata, group_name="Zombies", bin
 def select_all_significant_neurons_using_pANOVA(metadata, group_name="Zombies", bin_size=0.05,
                                                 analysis_cache_dir="/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/", save=True, use_sorted=False):
     all_results = []
+    all_sig_results = []
     for ind, row in metadata.iterrows():
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
@@ -44,12 +47,11 @@ def select_all_significant_neurons_using_pANOVA(metadata, group_name="Zombies", 
 
         monkey_group_df = binned_data[binned_data['MonkeyGroup'] == group_name]
         group_specific_trial_df = aggregate_trial_level(monkey_group_df)
-        perm_anova_results, perm_anova_sig_results = run_permutation_anova(group_specific_trial_df, category_col='MonkeyName', plot=False)
-        all_results.append(perm_anova_results)
-    final_df = pd.concat(all_results, ignore_index=True)
-    # print(final_df.head())
-    # Keep neurons that passed permANOVA
-    significant_df = final_df[final_df["Permutation_significant"]]
+        results, sig_results = run_permutation_anova(group_specific_trial_df, category_col='MonkeyName', plot=False)
+        # all_results.append(results)
+        all_sig_results.append(sig_results)
+    # final_df = pd.concat(all_results, ignore_index=True)
+    significant_df = pd.concat(all_sig_results, ignore_index=True)
     print('All significant neurons passing permANOVA:')
     print(significant_df.head())
     if save:
@@ -64,7 +66,7 @@ def detect_all_response_windows_for_all_neurons(metadata, group_name="Zombies",
     for ind, row in metadata.iterrows():
         date = str(row['Date'].strftime('%Y-%m-%d'))
         round = int(row['Round No.'])
-        results = detect_response_windows_for_session(date, round, monkey_group=group_name, plot=False)
+        results = detect_response_windows_for_session(date, round, use_sorted=use_sorted, monkey_group=group_name, plot=False)
         all_results.append(results)
     final_df = pd.concat(all_results, ignore_index=True)
     final_df = final_df.sort_values(by=['NeuronID'])
@@ -117,7 +119,7 @@ def detect_significant_windows_using_pKW(response_window_fpath, monkey_group,
     print(significant_df.head())
     print(f"{significant_df.shape[0]} significant windows detected (permutation KW) ")
     if save:
-        significant_df.to_pickle(analysis_cache_dir + f"{monkey_group}_significant_windows_pKW_passed.pkl")
+        significant_df.to_pickle(analysis_cache_dir + f"sorted_{monkey_group}_significant_windows_pKW_passed.pkl")
     return significant_df
 
 if __name__ == "__main__":
@@ -129,13 +131,13 @@ if __name__ == "__main__":
     monkey_group = "Zombies"
 
     # Single Neuron Processing
-    significant_df = select_all_significant_neurons_using_pKW(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir, save=True, use_sorted=True)
+    # significant_df = select_all_significant_neurons_using_pKW(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir, save=True, use_sorted=True)
 
     # Response Window Processing
 
     # Detect all
-    # windows = detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir)
+    # windows = detect_all_response_windows_for_all_neurons(metadata, group_name = monkey_group, analysis_cache_dir=analysis_cache_dir, use_sorted=True)
 
     # Filter only the significant ones
-    # sig_windows_kw = detect_significant_windows_using_pKW(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
+    sig_windows_kw = detect_significant_windows_using_pKW(f"/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/sorted_units_{monkey_group}_response_windows.pkl", monkey_group=monkey_group)
 

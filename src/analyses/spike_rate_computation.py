@@ -47,7 +47,7 @@ raw_unsorted_data is a pandas dataframe with the following columns:
 
 def get_raw_spike_tstamp_data(date, round_number):
     reader = RecordingMetadataReader()
-    _, valid_channels, round_dir_path = reader.get_metadata_for_spike_analysis(date, round_number)
+    _, curated_channels, round_dir_path = reader.get_metadata_for_spike_analysis(date, round_number)
     spike_path = os.path.join(round_dir_path, "spike.dat")
     spike_tstamps_for_channels, sample_rate = fetch_spike_tstamps_from_file(spike_path)
     return spike_tstamps_for_channels, sample_rate
