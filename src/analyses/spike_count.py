@@ -16,16 +16,6 @@ and aggregating spike data for downstream analyses (e.g., permutation ANOVA).
 """
 
 
-def load_mixed_manual_spikes(date, round_no, *, curated_channels_only=False, force_recompute=False):
-    cache = ExplodedSpikeCacheManager()
-    return cache.load_or_compute(date, round_no,
-                                 curated_channels_only=curated_channels_only,
-                                 force_recompute=force_recompute)
-
-def load_si_sorted_spikes(date, round_no, *, force_recompute=False):
-    cache = SortedSpikeCacheManager()
-    return cache.load_or_compute(date, round_no, force_recompute=force_recompute)
-
 
 def filter_good_neurons(exploded_df,
                         min_total_spikes=500,
@@ -115,7 +105,6 @@ def prepare_binned_spike_data(
     date,
     round_no,
     bin_size,
-    curated_channels_only=False,
     *,
     source: SpikeSource | None = None,
 ):

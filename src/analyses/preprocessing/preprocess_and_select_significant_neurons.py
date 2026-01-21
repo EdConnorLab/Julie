@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Tuple
-
 import pandas as pd
 
 
@@ -16,7 +15,7 @@ from analyses.spike_count import (
 )
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.response_window_analysis import run_permutation_kruskal_wallis_by_window, run_permutation_anova_by_window
-from analyses.spike_source import SpikeSource, SISortedSpikeSource
+from analyses.spike_source import SpikeSource, SISortedSpikeSource, MixedManualSpikeSource
 
 
 @dataclass(frozen=True)
@@ -61,9 +60,7 @@ def _select_all_significant_neurons(
             date,
             round_no,
             cfg.bin_size,
-            True,  # keep your existing curated_channels_only usage
-            use_sorted=(source.name == "si_sorted"),  # for legacy internals (safe)
-            source=source,
+            source=source
         )
 
         if binned is None or binned.empty:
@@ -128,7 +125,7 @@ def detect_all_response_windows_for_all_neurons(
         df = detect_response_windows_for_session(
             date,
             round_no,
-            use_sorted=use_sorted,
+            source = source,
             monkey_group=cfg.group_name,
             plot=False,
         )
@@ -225,8 +222,8 @@ if __name__ == "__main__":
     cfg = PreprocessConfig(group_name="Zombies", bin_size=0.05, analysis_cache_dir=Path(analysis_cache_dir), save=False)
 
     # pick ONE source for the whole run
-    source: SpikeSource = SISortedSpikeSource()
-    # source: SpikeSource = MixedManualSpikeSource(curated_channels_only=True)
+    # source: SpikeSource = SISortedSpikeSource()
+    source: SpikeSource = MixedManualSpikeSource(curated_channels_only=True)
 
     # 1) significant neurons
     # sig_neurons = select_all_significant_neurons_using_pKW(metadata, cfg, source=source)
@@ -234,5 +231,6 @@ if __name__ == "__main__":
     # 2) detect windows
     windows = detect_all_response_windows_for_all_neurons(metadata, cfg, source=source)
 
+    source: SpikeSource = SISortedSpikeSource()
     # 3) significant windows
     sig_windows_kw = detect_significant_windows_using_pKW(windows, cfg, source=source)

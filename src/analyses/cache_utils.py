@@ -3,6 +3,8 @@ from pathlib import Path
 import pandas as pd
 
 from analyses.data_loader import load_and_combine_data, explode_spike_data
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+
 
 class GenericCacheManager:
     def __init__(self, cache_dir):
@@ -34,7 +36,7 @@ class SortedSpikeCacheManager(GenericCacheManager):
         text = path.read_text().lower()
         return "no units in agreement" in text
 
-    def load_or_compute(self, date, round_no, only_valid_channels=False, force_recompute=False):
+    def load_or_compute(self, date, round_no, force_recompute=False):
         label = f"{date}_round_{round_no}"
         pkl_path = self._get_cache_path(label)
 
@@ -47,23 +49,60 @@ class SortedSpikeCacheManager(GenericCacheManager):
 
         raise FileNotFoundError(f"No sorted cache found for {label}")
 
+
+
 class ExplodedSpikeCacheManager(GenericCacheManager):
     def __init__(self):
         cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "exploded_spike_cache"
         super().__init__(cache_dir)
 
+    def _filter_curated(self, df: pd.DataFrame, date: str, round_no: int) -> pd.DataFrame:
+        """
+        Filter to curated channels only (view-layer filter).
+        Assumes df has BaseChannel (your explode_spike_data adds it).
+        """
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        reader = RecordingMetadataReader()
+        curated_channels = reader.get_curated_channels(date, round_no)
+        curated_channel_list = [str(ch) for ch in curated_channels]
+
+        if not curated_channel_list:
+            return pd.DataFrame()
+
+        if "BaseChannel" not in df.columns:
+            # fallback: try to derive from Channel
+            if "Channel" in df.columns:
+                base = df["Channel"].astype(str).str.split("_Unit", n=1).str[0]
+                return df.loc[base.isin(curated_channel_list)].copy()
+            return pd.DataFrame()
+
+        return df.loc[df["BaseChannel"].isin(curated_channel_list)].copy()
+
     def load_or_compute(self, date, round_no, curated_channels_only=False, force_recompute=False):
+        """
+        Canonical cache = ALL channels.
+        curated_channels_only only affects the returned df, never the cached contents.
+        """
         label = f"{date}_round_{round_no}"
         path = self._get_cache_path(label)
+
+        # 1) Load canonical cache if exists
         if path.exists() and not force_recompute:
-            return pd.read_pickle(path)
+            df_all = pd.read_pickle(path)
+            return self._filter_curated(df_all, date, round_no) if curated_channels_only else df_all
+
+        # 2) Compute ALL channels (ignore curated flag when writing)
         print(f"[Cache] Using file: {path}")
         combined_data = load_and_combine_data(date, round_no)
-        exploded_df = explode_spike_data(combined_data, date, round_no, curated_channels_only)
-        exploded_df.to_pickle(path)
 
-        return exploded_df
+        # IMPORTANT: compute canonical ALL-channels explosion
+        df_all = explode_spike_data(combined_data, date, round_no, curated_channels_only=False)
+        df_all.to_pickle(path)
 
+        # 3) Return filtered view if requested
+        return self._filter_curated(df_all, date, round_no) if curated_channels_only else df_all
 
 class BehaviorMatrixCacheManager(GenericCacheManager):
     def __init__(self):

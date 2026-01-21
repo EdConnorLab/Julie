@@ -1,3 +1,5 @@
+import warnings
+
 import pandas as pd
 from pandas import read_pickle
 
@@ -123,9 +125,11 @@ def explode_spike_data(combined_data, date, round_no, curated_channels_only=Fals
             exploded_df['Channel'].astype(str)
     )
     if curated_channels_only:
-        curated_channels = reader.get_curated_channels(date, round_no)
-        curated_channel_list = [str(ch) for ch in curated_channels]
-        exploded_df = exploded_df[exploded_df['BaseChannel'].isin(curated_channel_list)]
+        warnings.warn(
+            "curated_channels_only in explode_spike_data is deprecated; "
+            "filtering is now handled at load time",
+            DeprecationWarning,
+        )
 
     return exploded_df
 
