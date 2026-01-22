@@ -15,9 +15,9 @@ db = mysql.connector.connect(
     database='bixby_training',
 )
 
-start_time = "2025-06-18 13:00:00"
-stop_time = "2025-06-18 13:54:00"
-eye = "right"
+start_time = "2026-01-22 12:50:00"
+stop_time = "2026-01-22 12:55:00"
+eye = "left"
 iscan_id = eye + "Iscan"
 calibration_degree = 10
 

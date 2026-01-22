@@ -211,7 +211,7 @@ def run_glm_by_window(df,
         return pd.DataFrame()
 
 
-def correct_glm_by_window_pvalues(glm_df, p_col='P>|z|'):
+def fdr_correction_on_windowed_glm_results(glm_df, p_col='P>|z|'):
     """
     Apply FDR correction per NeuronID on windowed GLM results.
 
@@ -242,22 +242,6 @@ def correct_glm_by_window_pvalues(glm_df, p_col='P>|z|'):
 
     return min_pvals_df
 
-def get_significant_windows(glm_df, p_col='P>|z|', alpha=0.05):
-    """
-    Return significant (NeuronID, Time Window) rows from windowed GLM results.
-
-    Parameters
-    ----------
-    glm_df : DataFrame
-        Output of run_glm_by_window
-    p_col : str
-        p-value column (default = 'P>|z|')
-    alpha : float
-        Significance threshold (default = 0.05)
-
-    Returns
-    -------
-    DataFrame with only significant windows
-    """
-    return glm_df[glm_df[p_col] < alpha].copy()
+def filter_for_significant_windows(windows_df, p_col='p-value', alpha=0.05):
+    return windows_df[windows_df[p_col] < alpha].copy()
 

@@ -37,7 +37,7 @@ class MixedManualSpikeSource:
 @dataclass(frozen=True)
 class SISortedSpikeSource:
     """
-    SI-sorted cache.
+    SpikeInterface-sorted cache.
     Returns None when no units / missing.
     """
     force_recompute: bool = False

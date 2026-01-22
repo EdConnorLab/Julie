@@ -173,7 +173,7 @@ def detect_significant_windows_using_pANOVA(
         plot=False,
     )
 
-    sig = panova_results[panova_results["Permutation_significant"]] if not panova_results.empty else pd.DataFrame()
+    sig = panova_results[panova_results["p-value"]<alpha] if not panova_results.empty else pd.DataFrame()
     _save_pickle(sig, cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_significant_windows_pANOVA_passed.pkl", cfg.save)
     return sig
 

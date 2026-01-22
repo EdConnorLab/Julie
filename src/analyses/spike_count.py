@@ -107,7 +107,9 @@ def prepare_binned_spike_data(
     bin_size,
     *,
     source: SpikeSource | None = None,
-):
+) -> pd.DataFrame:
+    source = source or MixedManualSpikeSource()  # sensible default
+
     """Prepare binned spike data with spike counts."""
     exploded_df = source.load(date, round_no)
     if exploded_df is None or getattr(exploded_df, "empty", True):

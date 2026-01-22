@@ -59,7 +59,6 @@ def compute_timebinned_spikecount_per_neuron(
         date,
         round_no,
         bin_size,
-        curated_channels_only= True,
         source=source
     )
 
