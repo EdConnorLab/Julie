@@ -59,7 +59,7 @@ def get_metadata_for_ANOVA_passed_cells_time_windowed():
 def create_overall_plot_for_single_feature_linear_regression_analysis(feature_matrix, response):
     """
     Creates 2x2 plot for different behavior types (Agonism, Submission, Affiliation) for each neuron and combine
-    them into one figure -- three 2x2 raster_plots one for each behavior type
+    them into one figure -- three 2x2 mixed_manual_raster_plots one for each behavior type
 
     @param feature_matrix:
     """

@@ -147,7 +147,7 @@ def detect_response_windows_for_session(
     date: str,
     round_no: int,
     *,
-    source: SpikeSource,               # ✅ required
+    source: SpikeSource,
     bin_size: float = 0.05,
     monkey_group: str = "Zombies",
     threshold: float = 0.5,

@@ -803,7 +803,7 @@ if __name__ == "__main__":
     }
 
     # Load spike windows and compute spike counts
-    cells_df = pd.read_pickle('/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_significant_neurons_pANOVAorGLM_passed.pkl')
+    cells_df = pd.read_pickle('/old/old_analysis_cache/Zombies_significant_neurons_pANOVAorGLM_passed.pkl')
     spike_df = compute_mean_spike_rate_for_cells(cells_df)
     '''
     # exploded_df = prepare_exploded_spike_data("2023-09-26", 1, True)

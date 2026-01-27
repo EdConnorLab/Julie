@@ -149,11 +149,11 @@ def compute_mean_spike_rate_for_cells(neurons_df, use_sorted=False):
     return mean_rate_df
 
 if __name__ == "__main__":
-    neurons_df = pd.read_pickle('/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_significant_neurons_pANOVAorGLM_passed.pkl')
+    neurons_df = pd.read_pickle('/old/old_analysis_cache/Zombies_significant_neurons_pANOVAorGLM_passed.pkl')
     neuron_mean_rate = compute_mean_spike_rate_for_cells(neurons_df)
     print(neuron_mean_rate.columns)
     print(neuron_mean_rate.head())
-    windows_df = pd.read_pickle("/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/Zombies_significant_windows_pANOVAorGLM_passed.pkl")
+    windows_df = pd.read_pickle("/old/old_analysis_cache/Zombies_significant_windows_pANOVAorGLM_passed.pkl")
     window_mean_rate = compute_mean_spike_rate_for_windows(windows_df)
     print(window_mean_rate.columns)
     print(window_mean_rate.head())

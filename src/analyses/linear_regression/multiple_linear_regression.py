@@ -209,7 +209,7 @@ if __name__ == '__main__':
     sig_windows = pd.read_pickle(
         f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl')
     ed_sig_windows = pd.read_pickle(
-        '/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/used_for_R01/R01_ed_list_duplicate_removed_without_full_window.pkl')
+        '/old/Ed and ANOVA/used_for_R01/R01_ed_list_duplicate_removed_without_full_window.pkl')
     mean_spike_rate_windows = compute_mean_spike_rate_for_windows(ed_sig_windows)
     spike_rate = mean_spike_rate_windows[mean_spike_rate_windows['MonkeyGroup'] == 'Zombies']
     X_df = pd.DataFrame(X, index=monkey_list)

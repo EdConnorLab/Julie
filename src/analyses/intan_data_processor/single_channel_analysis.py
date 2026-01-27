@@ -39,7 +39,7 @@ def main():
 
 
 def save_raster_plots(fig, date, round_no, channel):
-    base_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/raster_plots"
+    base_dir = "/mixed_manual_raster_plots"
     date_formatted = date.replace('-', '')[2:]
     folder_name = f"{date_formatted}_round{round_no}_new"
     # Full path to the new directory
@@ -53,7 +53,7 @@ def save_raster_plots(fig, date, round_no, channel):
     plt.close(fig)
 
 def save_raster_plots_by_neuron(fig, neuron_id):
-    base_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/raster_plots"
+    base_dir = "/mixed_manual_raster_plots"
     save_folder_path = os.path.join(base_dir)
     individual_save_path_png = os.path.join(save_folder_path, f"{neuron_id}.png")
     fig.savefig(individual_save_path_png)
@@ -171,7 +171,7 @@ def plot_raster_for_monkeys(raw_data, channel, experiment_name=None):
 
     ## SAVE PLOTS
     script_dir = Path(__file__).parent
-    base_save_dir = (script_dir / '..' / '..' / 'raster_plots').resolve()
+    base_save_dir = (script_dir / '..' / '..' / 'mixed_manual_raster_plots').resolve()
     if experiment_name is not None:
         save_dir = os.path.join(base_save_dir, experiment_name)
         os.makedirs(save_dir, exist_ok=True)
@@ -202,7 +202,7 @@ def plot_channel_histograms(data, channel):
     group_plot = plot_average_among_groups(channel_data, channel)
 
     ## SAVE PLOTS
-    # base_save_dir = "/home/r2_allen/git/EStimShape/EStimShapeAnalysis/raster_plots/analyses"
+    # base_save_dir = "/home/r2_allen/git/EStimShape/EStimShapeAnalysis/mixed_manual_raster_plots/analyses"
     # experiment_name = path_to_data_pickle_file.split("/")[-1].split(".")[0]
     # save_dir = os.path.join(base_save_dir, experiment_name)
     # os.makedirs(save_dir, exist_ok=True)

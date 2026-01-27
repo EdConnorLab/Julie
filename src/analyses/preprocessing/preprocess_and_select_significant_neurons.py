@@ -219,18 +219,22 @@ if __name__ == "__main__":
     reader = RecordingMetadataReader()
     metadata = reader.get_metadata_for_preliminary_analysis()
 
-    cfg = PreprocessConfig(group_name="Zombies", bin_size=0.05, analysis_cache_dir=Path(analysis_cache_dir), save=False)
+    cfg = PreprocessConfig(group_name="Zombies", bin_size=0.05, analysis_cache_dir=Path(analysis_cache_dir), save=True)
 
     # pick ONE source for the whole run
-    # source: SpikeSource = SISortedSpikeSource()
-    source: SpikeSource = MixedManualSpikeSource(curated_channels_only=True)
+    source: SpikeSource = SISortedSpikeSource()
+    # source: SpikeSource = MixedManualSpikeSource(curated_channels_only=True)
 
     # 1) significant neurons
-    # sig_neurons = select_all_significant_neurons_using_pKW(metadata, cfg, source=source)
+    sig_neurons = select_all_significant_neurons_using_pKW(metadata, cfg, source=source)
+    # sig_neurons = select_all_significant_neurons_using_pANOVA(
+    #     metadata=metadata,
+    #     cfg=cfg,
+    #     source=source)
 
     # 2) detect windows
     windows = detect_all_response_windows_for_all_neurons(metadata, cfg, source=source)
 
-    source: SpikeSource = SISortedSpikeSource()
+    # source: SpikeSource = SISortedSpikeSource()
     # 3) significant windows
     sig_windows_kw = detect_significant_windows_using_pKW(windows, cfg, source=source)
