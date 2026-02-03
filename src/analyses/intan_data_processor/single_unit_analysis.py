@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from analyses.enums.monkey_names import get_monkeys_by_rank
 from compile.sorted_units_compilation import read_pickle
 
-matplotlib.use("Qt5Agg")
+# matplotlib.use("Qt5Agg")
 
 
 def main():
