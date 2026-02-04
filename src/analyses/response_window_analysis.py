@@ -48,6 +48,11 @@ def run_permutation_kruskal_wallis_by_window(df,
             alpha=alpha
         )
 
+        # extract date and round no.
+        parts = neuron.split('_')
+        date_str = str(parts[1])
+        round_no = int(parts[2])
+
         for result in results:
             index, H_stat, p_value = result
             all_results.append({
@@ -55,7 +60,9 @@ def run_permutation_kruskal_wallis_by_window(df,
                 'WindowStart_ms': win_start,
                 'WindowEnd_ms': win_end,
                 'H-statistic': H_stat,
-                'p-value': p_value
+                'p-value': p_value,
+                'Date': date_str,
+                'Round No.': round_no
             })
 
             if plot:
@@ -106,7 +113,7 @@ def run_permutation_anova_by_window(df,
     group_cols = [neuron_col, window_start_col, window_end_col]
     grouped_df = df.groupby(group_cols)
 
-    for (neuron, win_start, win_end), sub_df in tqdm(grouped_df, desc="Running Perm ANOVA per (Neuron, Window)"):
+    for (date_str, round_no, neuron, win_start, win_end), sub_df in tqdm(grouped_df, desc="Running Perm ANOVA per (Neuron, Window)"):
         grouped = sub_df.groupby(category_col)[count_col].apply(list)
 
         # Skip if not enough groups
@@ -122,6 +129,11 @@ def run_permutation_anova_by_window(df,
             alpha=alpha
         )
 
+        # extract date and round no.
+        parts = neuron.split('_')
+        date_str = str(parts[1])
+        round_no = int(parts[2])
+
         for result in results:
             index, f_stat, p_value = result
             all_results.append({
@@ -129,7 +141,9 @@ def run_permutation_anova_by_window(df,
                 'WindowStart_ms': win_start,
                 'WindowEnd_ms': win_end,
                 'F-statistic': f_stat,
-                'p-value': p_value
+                'p-value': p_value,
+                'Date': date_str,
+                'Round No.': round_no
             })
 
             if plot:
@@ -180,10 +194,10 @@ def run_glm_by_window(df,
     """
     all_results = []
 
-    group_cols = [neuron_col, window_start_col, window_end_col]
+    group_cols = ["Date", "Round No.",neuron_col, window_start_col, window_end_col]
     grouped = df.groupby(group_cols)
 
-    for (neuron, win_start, win_end), sub_df in tqdm(grouped, desc="Running GLM per (Neuron, Window)"):
+    for (date_str, round_no, neuron, win_start, win_end), sub_df in tqdm(grouped, desc="Running GLM per (Neuron, Window)"):
         if sub_df['SpikeCount'].sum() == 0:
             continue  # skip zero-activity windows
 
@@ -193,6 +207,8 @@ def run_glm_by_window(df,
             summary['NeuronID'] = neuron
             summary['WindowStart_ms'] = win_start
             summary['WindowEnd_ms'] = win_end
+            summary['Date'] = date_str
+            summary['Round No.'] = round_no
             all_results.append(summary)
         except Exception as e:
             print(f"Error in neuron {neuron}, window {win_start}-{win_end}: {e}")

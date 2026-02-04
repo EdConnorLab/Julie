@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, Optional
 
+from analyses.spike_count import extract_spike_counts_from_windows
 from analyses.spike_source import SpikeSource
 
 
