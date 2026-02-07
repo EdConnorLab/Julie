@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from numpy import array, searchsorted, unique, stack, asarray, arange, argmin
 from pandas import DataFrame
 
-matplotlib.use("Qt5Agg")
+# matplotlib.use("Qt5Agg")
 
 db = mysql.connector.connect(
     user='xper_rw',

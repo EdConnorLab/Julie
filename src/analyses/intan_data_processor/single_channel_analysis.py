@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 from analyses.enums.monkey_names import get_monkeys_by_rank
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 
-matplotlib.use("Qt5Agg")
+# matplotlib.use("Qt5Agg")
 
 
 def main():
