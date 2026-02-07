@@ -121,8 +121,8 @@ class BehaviorMatrixCacheManager(GenericCacheManager):
             return pd.read_pickle(path)
 
         project_root = Path(__file__).resolve().parents[2]  # /home/.../Julie
-        full_excel_path = project_root / "social_data" / xlsx_path  # 상대경로 붙이기
-        full_excel_path = full_excel_path.resolve()  # 절대경로로 변환
+        full_excel_path = project_root / "social_data" / xlsx_path
+        full_excel_path = full_excel_path.resolve()
 
         df = pd.read_excel(full_excel_path)
 

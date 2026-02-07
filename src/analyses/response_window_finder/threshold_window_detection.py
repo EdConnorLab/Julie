@@ -180,7 +180,7 @@ def detect_response_windows_for_session(
                 "NeuronID": neuron,
                 "WindowStart_ms": int(start_time * 1000),
                 "WindowEnd_ms": int(end_time * 1000),
-                "Date": date,              # ✅ add session identity (see #2)
+                "Date": date,
                 "Round No.": int(round_no)
             })
 

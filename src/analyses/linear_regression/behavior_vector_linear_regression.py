@@ -15,8 +15,7 @@ from tqdm import tqdm
 import plotly.express as px
 
 from analyses.enums.monkey_names import get_monkeys_by_default_order
-from analyses.spike_count import extract_spike_counts_from_windows, prepare_exploded_spike_data
-from analyses.spike_rate import compute_mean_spike_rate_table, compute_mean_spike_rate_for_cells
+from analyses.spike_rate import compute_mean_spike_rate_table
 
 
 def run_linear_regression_using_sklearn(x, y):
@@ -804,7 +803,7 @@ if __name__ == "__main__":
 
     # Load spike windows and compute spike counts
     cells_df = pd.read_pickle('/old/old_analysis_cache/Zombies_significant_neurons_pANOVAorGLM_passed.pkl')
-    spike_df = compute_mean_spike_rate_for_cells(cells_df)
+    # spike_df = compute_mean_spike_rate_for_cells(cells_df)
     '''
     # exploded_df = prepare_exploded_spike_data("2023-09-26", 1, True)
     # print(exploded_df)

@@ -26,6 +26,10 @@ class PreprocessConfig:
     analysis_cache_dir: Path = Path("/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/")
     save: bool = True
 
+def _load_pickle_if_exists(path: Path) -> pd.DataFrame | None:
+    if path.exists():
+        return pd.read_pickle(path)
+    return None
 
 def iter_sessions_from_metadata(metadata: pd.DataFrame) -> Iterable[Tuple[str, int]]:
     """
@@ -184,9 +188,26 @@ def detect_significant_windows_using_pKW(
     cfg: PreprocessConfig,
     *,
     source: SpikeSource,
+    windows_path: str | Path | None = None,
     n_permutations: int = 10000,
     alpha: float = 0.05,
 ) -> pd.DataFrame:
+    # 1) Decide where windows should come from
+    if windows is None:
+        if windows_path is None:
+            windows_path = cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_response_windows.pkl"
+        else:
+            windows_path = Path(windows_path)
+
+        loaded = _load_pickle_if_exists(windows_path)
+        if loaded is None or loaded.empty:
+            print(f"[detect_significant_windows_using_pKW] No windows found at: {windows_path}")
+            out = pd.DataFrame()
+            _save_pickle(out, cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_significant_windows_pKW_passed.pkl", cfg.save)
+            return out
+
+        windows = loaded
+
     spike_counts_windows = extract_spike_counts_from_windows(windows, source=source)
 
     group_df = spike_counts_windows[spike_counts_windows["MonkeyGroup"] == cfg.group_name]
@@ -227,15 +248,16 @@ if __name__ == "__main__":
     # source: SpikeSource = MixedManualSpikeSource(curated_channels_only=True)
 
     # 1) significant neurons
-    sig_neurons = select_all_significant_neurons_using_pKW(metadata, cfg, source=source)
+    # sig_neurons = select_all_significant_neurons_using_pKW(metadata, cfg, source=source)
     # sig_neurons = select_all_significant_neurons_using_pANOVA(
     #     metadata=metadata,
     #     cfg=cfg,
     #     source=source)
 
     # 2) detect windows
-    windows = detect_all_response_windows_for_all_neurons(metadata, cfg, source=source)
+    # windows = detect_all_response_windows_for_all_neurons(metadata, cfg, source=source)
 
     # source: SpikeSource = SISortedSpikeSource()
     # 3) significant windows
-    sig_windows_kw = detect_significant_windows_using_pKW(windows, cfg, source=source)
+    windows_path = cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_response_windows.pkl"
+    sig_windows_kw = detect_significant_windows_using_pKW(None,cfg=cfg, windows_path=windows_path, source=source)
