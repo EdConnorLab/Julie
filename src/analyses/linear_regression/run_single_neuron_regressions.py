@@ -150,16 +150,16 @@ def main():
             all_window_results.append(results_df)
 
         all_window_results_df = pd.concat(all_window_results, ignore_index=True)
-        all_window_results_sorted = all_window_results_df.sort_values(by=["p_value", "R-squared"], ascending=False)
-
+        print('all window results..........................')
+        print(all_window_results_df)
         out_windows = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_windows_pKW.pkl"
-        all_window_results_sorted.to_pickle(out_windows)
+        all_window_results_df.to_pickle(out_windows)
 
         # expand (your existing function)
-        filtered_df = all_window_results_sorted[
-            (all_window_results_sorted["p_value"] < 0.05) &
-            (all_window_results_sorted["R-squared"] > 0.5) &
-            (all_window_results_sorted.get("p_perm", 0.0) < 0.05)
+        filtered_df = all_window_results_df[
+            (all_window_results_df["p_value"] < 0.05) &
+            (all_window_results_df["R-squared"] > 0.5) &
+            (all_window_results_df.get("p_perm", 0.0) < 0.05)
             ]
 
         expanded_results = expand_window_level_regression_results_with_spike_rates_per_stimulus(
@@ -171,6 +171,7 @@ def main():
             use_spikerate=True
         )
         out_windows_expanded = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_windows_pKW_expanded.pkl"
+        print('saving the results')
         expanded_results.to_pickle(out_windows_expanded)
 
     '''

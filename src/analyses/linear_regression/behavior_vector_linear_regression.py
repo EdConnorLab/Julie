@@ -140,7 +140,7 @@ def run_directional_vector_linear_regression_window_level(
 
     # Add back mapping from NeuronWindowID → NeuronID + Window
     id_map = mean_spikes[['NeuronWindowID', 'NeuronID', 'WindowStart_ms', 'WindowEnd_ms']].drop_duplicates()
-    for unit_id, row in tqdm(spike_matrix.iterrows(), total=len(spike_matrix), desc="Computing window-level linear regression with directional vectors"):
+    for unit_id, row in tqdm(spike_matrix.iterrows(), total=len(spike_matrix), desc="Computing window lin reg",  dynamic_ncols=True):
         meta = id_map[id_map['NeuronWindowID'] == unit_id].iloc[0]
         neuron_id = meta['NeuronID']
         win_start = meta['WindowStart_ms']
