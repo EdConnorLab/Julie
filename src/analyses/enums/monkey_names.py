@@ -65,51 +65,42 @@ class StrangerThings(Enum):
     RANK = [S_M1, S_F1, S_F2, S_F3, S_F4, S_J1, S_J2, S_J3, S_J4, S_J5, S_J6]
 
 
-def get_monkeys_by_rank(groupname: str):
-    group_to_class = {
-        "Zombies": Zombies,
-        "Best Frans": BestFrans,
-        "Instigators": Instigators,
-        "Stranger Things": StrangerThings,
-    }
 
-    if groupname in group_to_class:
-        cls = group_to_class[groupname]  # Get the corresponding class
-        return [m.value for m in cls.RANK.value]
-    else:
+
+_GROUP_TO_CLASS = {
+    "Zombies": Zombies,
+    "Best Frans": BestFrans,
+    "Instigators": Instigators,
+    "Stranger Things": StrangerThings,
+}
+
+
+def _get_group_class(groupname: str):
+    try:
+        return _GROUP_TO_CLASS[groupname]
+    except KeyError:
         raise ValueError(f"Unknown group name: {groupname}")
+
+
+def get_monkeys_by_rank(groupname: str):
+    cls = _get_group_class(groupname)
+    # RANK.value is already a list of name strings (not enum members),
+    # because inside an Enum class body, references like Z_M1 resolve
+    # to the raw string value, not the enum member.
+    return list(cls.RANK.value)
+
 
 def get_monkeys_by_default_order(groupname: str):
-    group_to_class = {
-        "Zombies": Zombies,
-        "Best Frans": BestFrans,
-        "Instigators": Instigators,
-        "Stranger Things": StrangerThings,
-    }
+    cls = _get_group_class(groupname)
+    return [m.value for m in cls.__members__.values() if m.name != "RANK"]
 
-    if groupname in group_to_class:
-        cls = group_to_class[groupname]  # Get the corresponding class
-        return [m.value for m in cls.__members__.values() if m.name != "RANK"]
-    else:
-        raise ValueError(f"Unknown group name: {groupname}")
 
 def get_monkey_group_from_monkey_of_interest(monkey_of_interest):
-    group_to_class = {
-        "Zombies": Zombies,
-        "Best Frans": BestFrans,
-        "Instigators": Instigators,
-        "Stranger Things": StrangerThings,
-    }
-
     moi = str(monkey_of_interest).strip()
-
-    for group_name, cls in group_to_class.items():
-        # iterate members; skip the special RANK member
+    for group_name, cls in _GROUP_TO_CLASS.items():
         for member in cls:
             if member.name == "RANK":
                 continue
             if member.value == moi:
                 return group_name
-
     raise ValueError(f"Unknown monkey: {monkey_of_interest}")
-
