@@ -90,7 +90,7 @@ def main():
     # ----------------------------
     # 1) Cell-level directional regression on significant neurons (pKW output)
     # ----------------------------
-    '''
+
     sig_neurons_path = cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_significant_neurons_pKW_passed.pkl"
     sig_neurons = pd.read_pickle(sig_neurons_path)
 
@@ -124,7 +124,7 @@ def main():
     out_cells = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_single_neurons_pKW.pkl"
     directional_all_neuron_results_sorted.to_pickle(out_cells)
     print(directional_all_neuron_results_sorted)
-    '''
+
 
     # ----------------------------
     # 2) Window-level directional regression on significant windows (optional)
@@ -174,63 +174,8 @@ def main():
         print('saving the results')
         expanded_results.to_pickle(out_windows_expanded)
 
-    '''
-    # Directional Linear Regression (OLS) on Significant Cells
-    sig_neurons = pd.read_pickle(f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_significant_neurons_pANOVAorGLM_passed.pkl')
-    # mean_spike_rate_neurons = compute_mean_spike_rate_for_cells(sig_neurons)
-    # directional_neuron_results = []
-    # for name, mat in behavior_matrices.items():
-    #     neuron_results_df = run_directional_vector_linear_regression_cell_level(
-    #         mean_spike_rate_neurons, mat, name, monkey_group, monkey_list, subject_monkey_index, use_spikerate=True
-    #     )
-    #     directional_neuron_results.append(neuron_results_df)
-    # directional_all_neuron_results_df = pd.concat(directional_neuron_results, ignore_index=True)
-    # directional_all_neuron_results_sorted = directional_all_neuron_results_df.sort_values(by=['p_value','R-squared'], ascending=False)
-    # filtered_df = directional_all_neuron_results_df[
-    #     (directional_all_neuron_results_df['p_value'] < 0.05) &
-    #     (directional_all_neuron_results_df['R-squared'] > 0.5)
-    #     ]
-    # directional_all_neuron_results_sorted.to_pickle(f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/{monkey_group}_dir_ols_on_single_neurons.pkl')
-    # print(directional_all_neuron_results_sorted)
-    # mean_spike_rate = compute_mean_spike_rate_for_cells(filtered_df)
-
-    # Marginal Linear Regression (OLS) on Significant Cells
-    # marginal_neuron_results = []
-    # for name, mat in behavior_matrices.items():
-    #     neuron_results_df = run_directional_vector_linear_regression(
-    #         mean_spike_rate_neurons, mat, name, monkey_group, monkey_list, subject_monkey_index, use_spikerate=True
-    #     )
-    #     marginal_neuron_results.append(neuron_results_df)
-    # marginal_all_neuron_results_df = pd.concat(marginal_neuron_results, ignore_index=True)
-    # marginal_all_neuron_results_sorted = marginal_all_neuron_results_df.sort_values(by=['p_value','R-squared'], ascending=False)
-    # marginal_all_neuron_results_sorted.to_pickle(f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/{monkey_group}_marg_ols_on_single_neurons.pkl')
-    # print(marginal_all_neuron_results_sorted)
-
-    # Directional Linear Regression (OLS) on Significant Windows
-    sig_windows = pd.read_pickle(
-        f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl')
-    mean_spike_rate_windows = compute_mean_spike_rate_for_windows(sig_windows)
-    # all_window_results = []
-    # for name, mat in behavior_matrices.items():
-    #     results_df = run_directional_vector_linear_regression_window_level(
-    #         mean_spike_rate_windows, mat, name, monkey_group, monkey_list, subject_monkey_index, use_spikerate=True, permutation_test=True, n_perm=1000
-    #     )
-    #     all_window_results.append(results_df)
-    # all_window_results_df = pd.concat(all_window_results, ignore_index=True)
-    # all_window_results_sorted = all_window_results_df.sort_values(by=['p_value','R-squared'], ascending=False)
-    # all_window_results_sorted.to_pickle(f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/{monkey_group}_dir_ols_on_windows.pkl')
-    all_window_results_df = pd.read_pickle(f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/{monkey_group}_dir_ols_on_windows.pkl')
-    filtered_df = all_window_results_df[
-        (all_window_results_df['p_value'] < 0.05) &
-        (all_window_results_df['R-squared'] > 0.5) &
-        (all_window_results_df['p_perm'] < 0.05)
-        ]
-    expanded_results = expand_window_level_regression_results_with_spike_rates_per_stimulus(mean_spike_rate_windows, filtered_df, monkey_group, monkey_list, subject_monkey_index, use_spikerate=True)
-    expanded_results.to_pickle(f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/{monkey_group}_dir_ols_on_windows_expanded.pkl')
-    # window_dir_results = pd.read_pickle('/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/Zombies_dir_ols_on_windows.pkl')
-    # print(window_dir_results)
-    # mean_spike_rate = compute_mean_spike_rate_for_windows(filtered_df)
-
+if __name__ == "__main__":
+    main()
     ### RSA
     # rsa_results = []
     # for name, mat in behavior_matrices.items():
@@ -250,6 +195,3 @@ def main():
     #         'RSA_p': p
     #     })
     #     print(f"RSA for {name}: r={r:.3f}, p={p:.3f}")
-    '''
-if __name__ == "__main__":
-    main()
