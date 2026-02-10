@@ -5,133 +5,121 @@ import pytz
 from clat.compile.task.cached_task_fields import CachedTaskFieldList
 from clat.compile.task.classic_database_task_fields import TaskIdField
 from clat.compile.task.compile_task_id import PngSlideIdCollector
-from src.compile.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
-from compile.julie_intan_file_per_experiment_fields import SpikeTimesForChannelsField_Experiment, \
-    EpochStartStopField_Experiment, PeriStimulusSpikeTimesForChannelsField_Experiment
-from compile.julie_intan_file_per_trial_fields import SpikeTimesForChannelsField, EpochStartStopField
-from clat.compile.task.task_field import TaskFieldList, get_data_from_tasks, TaskField
-from compile.julie_one_file_spike_parsing import OneFileParser
 from clat.util import time_util
 from clat.util.connection import Connection
 
+from src.compile.julie_database_fields import FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField
+from compile.julie_intan_file_per_experiment_fields import SpikeTimesForChannelsField_Experiment, EpochStartStopField_Experiment
+from compile.julie_intan_file_per_trial_fields import SpikeTimesForChannelsField, EpochStartStopField
+from compile.julie_one_file_spike_parsing import OneFileParser
 
-def compile_data(day: date = None,
+# ── Constants ────────────────────────────────────────────────────────────────
+
+TIMEZONE = pytz.timezone("US/Eastern")
+INTAN_BASE_PATH = "/home/connorlab/Documents/IntanData/Cortana"
+DB_HOST = "172.30.6.59"
+FULL_DAY = (time(0, 0, 0), time(23, 59, 59))
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _to_unix_range(day: date, start_time: time, end_time: time) -> tuple[float, float]:
+    """Convert a day + start/end times to a (start_unix, end_unix) tuple."""
+    start = TIMEZONE.localize(datetime.combine(day, start_time))
+    end = TIMEZONE.localize(datetime.combine(day, end_time))
+    return time_util.to_unix(start), time_util.to_unix(end)
+
+
+def _make_connections(day: date):
+    """Create the xper recording and photo_metadata DB connections for a given day."""
+    date_no_hyphens = day.strftime("%Y%m%d")
+    conn_xper = Connection(f"{date_no_hyphens}_recording", host=DB_HOST)
+    conn_photo = Connection("photo_metadata", host=DB_HOST)
+    return conn_xper, conn_photo
+
+
+def _collect_task_ids(conn_xper, day: date, start_time: time, end_time: time):
+    """Collect completed task IDs within the given time window."""
+    time_range = _to_unix_range(day, start_time, end_time)
+    return PngSlideIdCollector(conn_xper).collect_complete_task_ids(time_range)
+
+
+def _base_fields(conn_xper, conn_photo) -> CachedTaskFieldList:
+    """Return the common metadata fields shared by both read paths."""
+    fields = CachedTaskFieldList()
+    fields.append(TaskIdField(conn_xper))
+    fields.append(FileNameField(conn_xper=conn_xper))
+    fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
+    fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
+    fields.append(MonkeyGroupField(conn_xper=conn_xper, conn_photo=conn_photo))
+    return fields
+
+
+# ── Read functions ───────────────────────────────────────────────────────────
+
+def read_per_experiment(day: date, experiment_name: str,
+                        start_time: time = FULL_DAY[0],
+                        end_time: time = FULL_DAY[1]):
+    """Compile data from a single Intan file generated per experiment."""
+    conn_xper, conn_photo = _make_connections(day)
+    task_ids = _collect_task_ids(conn_xper, day, start_time, end_time)
+
+    intan_file_path = os.path.join(INTAN_BASE_PATH, day.strftime("%Y-%m-%d"), experiment_name)
+    parser = OneFileParser()
+    (unfiltered_spikes, filtered_spikes,
+     epoch_start_stop, sample_rate) = parser.parse_with_peristimulus_spikes(intan_file_path)
+
+    fields = _base_fields(conn_xper, conn_photo)
+    fields.append(SpikeTimesForChannelsField_Experiment(conn_xper, filtered_spikes))
+    fields.append(EpochStartStopField_Experiment(conn_xper, epoch_start_stop))
+    # fields.append(PeriStimulusSpikeTimesForChannelsField_Experiment(conn_xper, unfiltered_spike_tstamps_for_channels_by_task_id))
+
+    return fields.to_data(task_ids)
+
+
+def read_per_trial(day: date, start_time: time, end_time: time):
+    """Compile data from individual Intan files generated per trial."""
+    conn_xper, conn_photo = _make_connections(day)
+    task_ids = _collect_task_ids(conn_xper, day, start_time, end_time)
+
+    intan_data_path = os.path.join(INTAN_BASE_PATH, day.strftime("%Y-%m-%d"))
+
+    fields = _base_fields(conn_xper, conn_photo)
+    fields.append(SpikeTimesForChannelsField(intan_data_path=intan_data_path))
+    fields.append(EpochStartStopField(intan_data_path=intan_data_path))
+
+    return fields.to_data(task_ids)
+
+
+# ── Main entry point ────────────────────────────────────────────────────────
+
+def compile_data(day: date,
                  start_time: time = None,
                  end_time: time = None,
                  experiment_filename: str = None):
     """
-    if providing experiment_filename, only day is required. start and end_time can be provided to speed up code but is optional.
-        -this is for compiling from a single file per experiment.
+    Compile neural recording data for a given day.
 
-    if NOT providing experiment_filename, day, start_time, and end_time are required
-        - this is for compiling data from a single file per trial.
+    If `experiment_filename` is provided, reads from a single file per experiment
+    (start_time / end_time are optional, defaulting to the full day).
+
+    Otherwise, reads from per-trial files and `start_time` / `end_time` are required.
     """
-
     if experiment_filename is not None:
-        data = collect_raw_data_single_file_for_experiment(day=day, start_time=time(0, 0, 0), end_time=time(23, 59, 59),
-                                                           experiment_name=experiment_filename)
+        data = read_per_experiment(day, experiment_filename, start_time or FULL_DAY[0], end_time or FULL_DAY[1])
         filename = f"{experiment_filename}.pkl"
     else:
-        data = collect_raw_data_new_file_per_trial(day=day, start_time=start_time, end_time=end_time)
-        filename = f"{day.strftime('%Y-%m-%d')}_{start_time.strftime('%H-%M-%S')}_to_{end_time.strftime('%H-%M-%S')}.pkl"
+        if start_time is None or end_time is None:
+            raise ValueError("start_time and end_time are required when no experiment_filename is provided.")
+        data = read_per_trial(day, start_time, end_time)
+        filename = f"{day:%Y-%m-%d}_{start_time:%H-%M-%S}_to_{end_time:%H-%M-%S}.pkl"
 
-    # Clean rows with empty SpikeTimes
-    data = data[data['RawSpikeTimes'].notna()]
-
-    # Save Data
-    # save_dir = "/"
-    # # filename = f"{day.strftime('%Y-%m-%d')}_{start_time.strftime('%H-%M-%S')}_to_{end_time.strftime('%H-%M-%S')}.pkl"
-    # save_path = os.path.join(save_dir, filename)
-    # data.to_pickle(save_path)
-    print(data.to_string())
-    return data
-
-
-def collect_raw_data_single_file_for_experiment(*, day: date, start_time: time, end_time: time, experiment_name: str):
-    # Find path of intan files to read from
-    day_path = day.strftime("%Y-%m-%d")
-    date_no_hyphens = day_path.replace('-', '')
-    conn_xper = Connection(f"{date_no_hyphens}_recording", host="172.30.6.59")
-    conn_photo = Connection("photo_metadata", host="172.30.6.59")
-    intan_base_path = "/home/connorlab/Documents/IntanData/Cortana"
-    intan_data_path = os.path.join(intan_base_path, day_path)
-    intan_file_path = os.path.join(intan_data_path, experiment_name)
-
-    # Determine Start and End Unix Times to Collect Data From
-    start_unix, end_unix = calc_start_and_end_unix_times(day, start_time, end_time)
-
-    # Collect task Ids
-    task_id_collector = PngSlideIdCollector(conn_xper)
-    time_range = (start_unix, end_unix)
-    task_ids = task_id_collector.collect_complete_task_ids(time_range)
-
-    # Parse Spikes
-    parser = OneFileParser()
-    # spike_tstamps_for_channels_by_task_id, epoch_start_stop_by_task_id, sample_rate = parser.parse(intan_file_path)
-    unfiltered_spike_tstamps_for_channels_by_task_id, spike_tstamps_for_channels_by_task_id, epoch_start_stop_by_task_id, sample_rate = parser.parse_with_peristimulus_spikes(intan_file_path)
-
-    # Task Fields
-    fields = CachedTaskFieldList()
-    fields.append(TaskIdField(conn_xper))
-    fields.append(FileNameField(conn_xper=conn_xper))
-    fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(MonkeyGroupField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(SpikeTimesForChannelsField_Experiment(conn_xper, spike_tstamps_for_channels_by_task_id))
-    fields.append(PeriStimulusSpikeTimesForChannelsField_Experiment(conn_xper, unfiltered_spike_tstamps_for_channels_by_task_id))
-    fields.append(EpochStartStopField_Experiment(conn_xper, epoch_start_stop_by_task_id))
-    # Get data
-    data = fields.to_data(task_ids)
-    return data
-
-
-def calc_start_and_end_unix_times(day, start_time, end_time):
-    timezone = pytz.timezone('US/Eastern')
-    start_datetime = datetime.combine(day, start_time)
-    start_datetime = timezone.localize(start_datetime)
-    start_unix = time_util.to_unix(start_datetime)
-    end_datetime = datetime.combine(day, end_time)
-    end_datetime = timezone.localize(end_datetime)
-    end_unix = time_util.to_unix(end_datetime)
-    return start_unix, end_unix
-
-
-def collect_raw_data_new_file_per_trial(*, day: date = date.today(), start_time: time = time(0, 0, 0), end_time: time = time(23, 59, 59)):
-    # day to string
-    day_path = day.strftime("%Y-%m-%d")
-
-    # remove hyphens from date
-    date_no_hyphens = day_path.replace('-', '')
-    conn_xper = Connection(f"{date_no_hyphens}_recording", host="172.30.6.59")
-    conn_photo = Connection("photo_metadata", host="172.30.6.59")
-    intan_base_path = "/run/user/1003/gvfs/sftp:host=172.30.6.58/home/connorlab/Documents/IntanData"
-    intan_data_path = os.path.join(intan_base_path, day_path)
-
-    # Collect task IDS
-
-    start_unix, end_unix = calc_start_and_end_unix_times(day, start_time, end_time)
-
-    task_id_collector = PngSlideIdCollector(conn_xper)
-    time_range = (start_unix, end_unix)
-    task_ids = task_id_collector.collect_complete_task_ids(time_range)
-
-    # Task Fields
-    fields = CachedTaskFieldList()
-    fields.append(TaskIdField(conn_xper))
-    fields.append(FileNameField(conn_xper=conn_xper))
-    fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(MonkeyGroupField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(SpikeTimesForChannelsField(intan_data_path=intan_data_path))
-    fields.append(EpochStartStopField(intan_data_path=intan_data_path))
-    # Get data
-    data = fields.to_data(task_ids)
+    data = data[data["RawSpikeTimes"].notna()]
     print(data.to_string())
     return data
 
 
 if __name__ == "__main__":
-    compile_data(day=date(2023, 11, 7),
-                 # start_time=time(9, 10, 0),
-                 # end_time=time(18, 7, 0),
-                 experiment_filename="231107_round1")
+    compile_data(
+        day=date(2023, 11, 7),
+        experiment_filename="231107_round1",
+    )
