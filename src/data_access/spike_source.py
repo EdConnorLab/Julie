@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Protocol
 import pandas as pd
 
-from analyses.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager
+from data_access.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager
 
 
 class SpikeSource(Protocol):

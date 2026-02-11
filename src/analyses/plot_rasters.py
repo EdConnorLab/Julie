@@ -10,7 +10,7 @@ import pandas as pd
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.raster_plotting import plot_raster_by_group
 from analyses.intan_data_processor.single_channel_analysis import plot_raster_for_channel
-from analyses.spike_source import SpikeSource, MixedManualSpikeSource, SISortedSpikeSource
+from data_access.spike_source import SpikeSource, MixedManualSpikeSource, SISortedSpikeSource
 
 
 # ── Save helpers ─────────────────────────────────────────────────────────────

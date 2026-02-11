@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import numpy as np
 
-from analyses.data_loader import get_raw_spike_tstamp_data, load_raw_data
+from data_access.data_loader import get_raw_spike_tstamp_data, load_raw_data
 from analyses.spike_utils import get_spike_count
 from channel_enum_resolvers import get_value_from_dict_with_channel
 

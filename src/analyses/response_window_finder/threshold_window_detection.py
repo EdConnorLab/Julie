@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-from analyses.spike_count import prepare_binned_spike_data, aggregate_timebin_level, extract_spike_counts_from_windows
-from analyses.spike_source import SISortedSpikeSource, MixedManualSpikeSource, SpikeSource
+from analyses.spike_count import prepare_binned_spike_data, aggregate_timebin_level
+from data_access.spike_source import SpikeSource
 
 
 def threshold_and_fill_gap(z_scored_data, threshold=0.6):

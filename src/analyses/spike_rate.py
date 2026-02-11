@@ -4,7 +4,7 @@ from typing import Dict, Tuple, Optional
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.spike_count import extract_spike_counts_from_windows
-from analyses.spike_source import SpikeSource
+from data_access.spike_source import SpikeSource
 
 
 def _add_trial_spike_rate_columns(exploded_df: pd.DataFrame) -> pd.DataFrame:

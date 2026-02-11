@@ -1,4 +1,3 @@
-import argparse
 import os
 import sys
 from datetime import datetime
@@ -6,17 +5,11 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import spikeinterface as si
-import spikeinterface.extractors as se
-import spikeinterface.preprocessing as spre
 import spikeinterface.sorters as ss
-import spikeinterface.postprocessing as spost
-import spikeinterface.qualitymetrics as sqm
 import spikeinterface.comparison as sc
-import spikeinterface.exporters as sexp
-import spikeinterface.curation as scur
 import spikeinterface.widgets as sw
 
-from analyses.sort_spikes.sort_spikes import get_recording_session_info
+from spikesorting.sort_spikes.sort_spikes import get_recording_session_info
 
 
 
@@ -167,7 +160,7 @@ if __name__ == "__main__":
     sorted_spikes = pd.DataFrame(sorted_spikes_with_taskid)
     pkl_file_name = date + "_round_" + str(round) + ".pkl"
     print(f"Reading {pkl_file_name} from exploded spike cache for getting sorted spikes")
-    unsorted_exploded_spikes_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/exploded_spike_cache/"
+    unsorted_exploded_spikes_dir = "/exploded_spike_cache/"
     unsorted = pd.read_pickle(unsorted_exploded_spikes_dir + pkl_file_name)
     print(f"shape of unsorted dataframe {unsorted.shape}")
     print(f"num of unique TaskID from unsorted: {unsorted['TaskField'].nunique()}")

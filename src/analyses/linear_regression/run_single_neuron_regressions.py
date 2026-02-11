@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from typing import Dict
 
@@ -7,16 +6,16 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from analyses.cache_utils import BehaviorMatrixCacheManager
+from data_access.cache_utils import BehaviorMatrixCacheManager
 from analyses.enums.monkey_names import get_monkeys_by_default_order
 from analyses.linear_regression.behavior_vector_linear_regression import \
     run_directional_vector_linear_regression_cell_level, \
-    run_rsa_analysis, run_directional_vector_linear_regression_window_level, \
+    run_directional_vector_linear_regression_window_level, \
     expand_window_level_regression_results_with_spike_rates_per_stimulus
 from analyses.preprocessing.preprocess_and_select_significant_neurons import PreprocessConfig
 
 from analyses.spike_rate import compute_mean_spike_rate_for_windows_from_source, compute_mean_spike_rate_for_cells_from_source
-from analyses.spike_source import SpikeSource, SISortedSpikeSource
+from data_access.spike_source import SpikeSource, SISortedSpikeSource
 
 
 def plot_single_neuron_profile(df, neuron_id):

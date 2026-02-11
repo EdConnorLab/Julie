@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from analyses.data_loader import load_raw_data
+from data_access.data_loader import load_raw_data
 from analyses.enums.monkey_names import Zombies
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.response_window_finder.threshold_window_detection import compute_timebinned_spikecount_per_neuron

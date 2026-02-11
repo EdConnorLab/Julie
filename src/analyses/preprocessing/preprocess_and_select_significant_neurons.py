@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Tuple
+from typing import Callable, Iterable, Tuple
 import pandas as pd
 
 
@@ -16,7 +15,7 @@ from analyses.spike_count import (
 )
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.response_window_analysis import run_permutation_kruskal_wallis_by_window, run_permutation_anova_by_window
-from analyses.spike_source import SpikeSource, SISortedSpikeSource, MixedManualSpikeSource
+from data_access.spike_source import SpikeSource, SISortedSpikeSource
 
 
 @dataclass(frozen=True)
