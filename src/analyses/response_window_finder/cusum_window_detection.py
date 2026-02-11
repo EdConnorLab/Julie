@@ -1,8 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from analyses.data_loader import load_raw_data
 from analyses.enums.monkey_names import Zombies
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+from analyses.response_window_finder.threshold_window_detection import compute_timebinned_spikecount_per_neuron
 
 
 def cusum(data, mu, k=0.9, h=1):
@@ -105,10 +107,11 @@ if __name__ == '__main__':
         # channels_to_read = convert_to_enum(row['Cell'])
         # date = "2023-10-04"
         # round_no = 3
-        raw_unsorted_data, valid_channels, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
+        raw_unsorted_data, valid_channels, sorted_data = load_raw_data(date, round_no)
         # valid_channels = [Channel.C_002]
-        spike_counts_unsorted_data = compute_timebinned_spikecount_per_neuron(raw_unsorted_data, zombies, valid_channels,
-                                                                              time_chunk_size)
+        spike_counts_unsorted_data = compute_timebinned_spikecount_per_neuron(
+            date_only, round_no, time_chunk_size, "Zombies"
+        )
         # if sorted_data is not None:
         #     print(f"sorted data exists for {date}, {round_no}")
         #     spike_counts_sorted_data = compute_total_sum_of_spikes(sorted_data, zombies, valid_channels, time_chunk_size)

@@ -15,8 +15,7 @@ from analyses.linear_regression.behavior_vector_linear_regression import \
     expand_window_level_regression_results_with_spike_rates_per_stimulus
 from analyses.preprocessing.preprocess_and_select_significant_neurons import PreprocessConfig
 
-from analyses.spike_rate import compute_mean_spike_rate_for_cells_from_source, compute_mean_spike_rate_for_windows_from_source, \
-    compute_mean_spike_rate_for_cells_from_source
+from analyses.spike_rate import compute_mean_spike_rate_for_windows_from_source, compute_mean_spike_rate_for_cells_from_source
 from analyses.spike_source import SpikeSource, SISortedSpikeSource
 
 

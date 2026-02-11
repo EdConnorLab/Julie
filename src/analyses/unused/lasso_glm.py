@@ -1,13 +1,12 @@
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from monkey_names import Zombies
 from sklearn.linear_model import LassoCV, Lasso
 from sklearn.preprocessing import StandardScaler
 
 import social_data_processor
 from analyses.unused.initial_4feature_lin_reg import construct_feature_matrix_from_behavior_data, \
-    get_metadata_for_ANOVA_passed_cells_time_windowed, compute_average_spike_rates_for_list_of_cells_with_time_windows
+    get_metadata_for_ANOVA_passed_cells_time_windowed
 
 '''
 Perform LassoCV (since there are only 9 data points, rather than doing Lasso) 

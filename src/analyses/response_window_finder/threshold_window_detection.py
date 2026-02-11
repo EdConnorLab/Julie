@@ -4,9 +4,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-from tqdm import tqdm
 
-from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.spike_count import prepare_binned_spike_data, aggregate_timebin_level, extract_spike_counts_from_windows
 from analyses.spike_source import SISortedSpikeSource, MixedManualSpikeSource, SpikeSource
 

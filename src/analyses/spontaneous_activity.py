@@ -1,9 +1,10 @@
 from typing import List, Tuple
 
 import numpy as np
+
+from analyses.data_loader import get_raw_spike_tstamp_data, load_raw_data
+from analyses.spike_utils import get_spike_count
 from channel_enum_resolvers import get_value_from_dict_with_channel
-from single_channel_analysis import get_spike_count
-from spike_rate_computation import get_raw_data_and_channels_from_files, get_raw_spike_tstamp_data
 
 
 def get_inter_trial_intervals(trial_epochs: List[Tuple[float, float]]) -> Tuple[List[Tuple[float, float]], float]:
@@ -59,14 +60,14 @@ def get_average_spontaneous_firing_rate(date, round_no):
     # Get raw spike data
     raw_spike_timestamp_data, sample_rate = get_raw_spike_tstamp_data(date, round_no)
     # Get trial epochs
-    raw_unsorted_data, valid_channels, sorted_data = get_raw_data_and_channels_from_files(date, round_no)
+    raw_unsorted_data, curated_channels, sorted_data = load_raw_data(date, round_no)
     trial_intervals = raw_unsorted_data['EpochStartStop']
     inter_trial_intervals, total_duration = get_inter_trial_intervals(trial_intervals.tolist())
     spontaneous_spikes_by_channel = get_all_spikes_within_interval_by_channel(raw_spike_timestamp_data,
                                                                               inter_trial_intervals)
     average_spontaneous_firing_rate_by_channel = compute_spontaneous_firing_rate_by_channel(
         spontaneous_spikes_by_channel, total_duration,
-        valid_channels)
+        curated_channels)
     return average_spontaneous_firing_rate_by_channel
 
 

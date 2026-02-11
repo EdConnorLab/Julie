@@ -1,6 +1,5 @@
 import pandas as pd
 import statsmodels.formula.api as smf
-from scipy.stats import zscore
 from statsmodels.formula.api import mixedlm
 import statsmodels.api as sm
 
