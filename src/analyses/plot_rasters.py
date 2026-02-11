@@ -1,5 +1,7 @@
 """
 plot_rasters.py — Batch raster plotting using SpikeSource abstraction.
+
+Supports single-neuron rasters and multi-unit comparison (overlaid / side-by-side).
 """
 
 import os
@@ -8,8 +10,12 @@ from pathlib import Path
 import pandas as pd
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from analyses.raster_plotting import plot_raster_by_group
-from analyses.intan_data_processor.single_channel_analysis import plot_raster_for_channel
+from analyses.raster_plotting import (
+    plot_raster_by_group,
+    plot_multiunit_raster_overlaid,
+    plot_multiunit_raster_sidebyside,
+)
+from analyses.single_channel_plots import plot_raster_for_channel
 from data_access.spike_source import SpikeSource, MixedManualSpikeSource, SISortedSpikeSource
 
 
@@ -67,6 +73,57 @@ def plot_rasters_for_source(source: SpikeSource, date: str, round_no: int,
             title=f"Raster Plot (by Rank): {neuron_id}",
             save_path=save_path,
         )
+
+
+# ── Multi-unit comparison rasters ───────────────────────────────────────────
+
+def plot_multiunit_rasters(source: SpikeSource, date: str, round_no: int,
+                           base_channel: str, *,
+                           mode="overlaid",
+                           save=False,
+                           title=None):
+    """
+    Plot rasters for all units on the same base channel, either overlaid or side-by-side.
+
+    Parameters
+    ----------
+    source : SpikeSource
+    date, round_no : session identifiers
+    base_channel : str
+        Base channel name (e.g. "C-003"). All units on this channel are plotted.
+    mode : {"overlaid", "sidebyside"}
+        "overlaid"   — all units on the same axes, different colors (default).
+        "sidebyside" — one subplot column per unit.
+    save : bool
+    title : str, optional
+    """
+    df = source.load(date, round_no)
+    if df is None:
+        print(f"No data from {source.name} for {date} round {round_no}")
+        return
+
+    units_on_channel = df[df["BaseChannel"] == base_channel]
+    if units_on_channel.empty:
+        print(f"No units found on base channel {base_channel}")
+        return
+
+    unit_ids = units_on_channel["NeuronID"].dropna().unique().tolist()
+    unit_dfs = {}
+    for uid in unit_ids:
+        label = uid.rsplit("_", 1)[-1] if "_" in uid else uid
+        unit_dfs[label] = df[df["NeuronID"] == uid]
+
+    if not title:
+        title = f"Multi-unit raster ({mode}): {base_channel} — {date} round {round_no}"
+
+    save_path = None
+    if save:
+        save_path = os.path.join(RASTER_SAVE_DIR, f"{date}_round{round_no}_{base_channel}_{mode}.png")
+
+    if mode == "sidebyside":
+        plot_multiunit_raster_sidebyside(unit_dfs, title=title, save_path=save_path)
+    else:
+        plot_multiunit_raster_overlaid(unit_dfs, title=title, save_path=save_path)
 
 
 # ── Convenience wrappers ─────────────────────────────────────────────────────
