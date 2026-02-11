@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, Optional
 
+from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.spike_count import extract_spike_counts_from_windows
 from analyses.spike_source import SpikeSource
 
@@ -125,6 +126,33 @@ def compute_mean_spike_rate_for_cells_from_source(
     )
     return mean_rate
 
+def compute_population_spike_rates_for_anatomical_region(
+        source: SpikeSource,
+        anatomical_region: str = "AMG",
+) -> pd.DataFrame:
+    if anatomical_region not in ("ER", "AMG"):
+        raise ValueError(f"anatomical_region must be 'ER' or 'AMG', got '{anatomical_region}'")
+    reader = RecordingMetadataReader()
+    region = reader.get_metadata_for_brain_region(anatomical_region)
+
+    all_trials = []
+    for _, row in region.iterrows():
+        date = row['Date'].strftime('%Y-%m-%d')
+        round_no = row['Round No.']
+
+        exploded_df = source.load(date, round_no)
+        if exploded_df is None or exploded_df.empty:
+            continue
+
+        trials = _add_trial_spike_rate_columns(exploded_df)
+        all_trials.append(trials)
+
+    if not all_trials:
+        return pd.Series(dtype=float)
+
+    combined = pd.concat(all_trials, ignore_index=True)
+    population_spike_rate = combined.groupby('MonkeyName')['SpikeRate'].mean()
+    return population_spike_rate
 
 if __name__ == "__main__":
     pass

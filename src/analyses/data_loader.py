@@ -1,10 +1,20 @@
+import os
 import warnings
 
 import pandas as pd
+from clat.intan.spike_file import fetch_spike_tstamps_from_file
 from pandas import read_pickle
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.intan_data_processor.single_unit_analysis import read_sorted_data
+
+
+def get_raw_spike_tstamp_data(date, round_number):
+    reader = RecordingMetadataReader()
+    _, curated_channels, round_dir_path = reader.get_metadata_for_spike_analysis(date, round_number)
+    spike_path = os.path.join(round_dir_path, "spike.dat")
+    spike_tstamps_for_channels, sample_rate = fetch_spike_tstamps_from_file(spike_path)
+    return spike_tstamps_for_channels, sample_rate
 
 
 def load_raw_data(date, round_number):

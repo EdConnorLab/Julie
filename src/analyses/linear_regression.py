@@ -4,7 +4,6 @@ from scipy.stats import zscore
 from statsmodels.formula.api import mixedlm
 import statsmodels.api as sm
 
-from analyses.spike_count import prepare_exploded_spike_data
 from analyses.spike_rate import compute_mean_spike_rate_table
 
 
