@@ -9,7 +9,7 @@ import spikeinterface.sorters as ss
 from clat.intan.rhd import load_intan_rhd_format
 from probeinterface import generate_linear_probe
 
-from compile.compile_common import INTAN_BASE_PATH
+from compile.compile_common import INTAN_BASE_PATH, DEFAULT_MONKEY
 
 # 32-channel linear probe: maps contact index → Intan native_order
 PROBE_CHANNEL_ORDER = np.array([
@@ -38,10 +38,10 @@ def compute_device_channel_index(enabled_channels):
     return device_channel_idx
 
 
-def build_intan_session_path(date_str, round_no):
+def build_intan_session_path(date_str, round_no, monkey=DEFAULT_MONKEY):
     date_obj = datetime.strptime(date_str, "%Y-%m-%d")
     round_folder = f"{date_obj.strftime('%y%m%d')}_round{round_no}"
-    return os.path.join(INTAN_BASE_PATH, date_str, round_folder)
+    return os.path.join(INTAN_BASE_PATH, monkey, date_str, round_folder)
 
 
 def load_and_preprocess_recording(intan_dir):
@@ -117,8 +117,8 @@ def create_analyzers(sorting_KS4, sorting_TDC, sorting_MS5, recording_preprocess
     return analyzer_KS4, analyzer_TDC, analyzer_MS5
 
 
-def run_spike_sorting(date_str, round_no):
-    intan_dir = build_intan_session_path(date_str, round_no)
+def run_spike_sorting(date_str, round_no, monkey=DEFAULT_MONKEY):
+    intan_dir = build_intan_session_path(date_str, round_no, monkey)
     print(f"Sorting session: {os.path.basename(intan_dir)}")
 
     recording_preprocessed = load_and_preprocess_recording(intan_dir)
@@ -134,6 +134,7 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description="Run 3-sorter spike sorting on an Intan session")
     p.add_argument("--date", required=True, help="e.g. 2023-09-26")
     p.add_argument("--round", type=int, required=True, dest="round_no")
+    p.add_argument("--monkey", default=DEFAULT_MONKEY, help="Subject monkey folder name (default: Cortana)")
     args = p.parse_args()
 
-    run_spike_sorting(args.date, args.round_no)
+    run_spike_sorting(args.date, args.round_no, args.monkey)

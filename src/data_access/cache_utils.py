@@ -2,8 +2,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from compile.compile_common import DEFAULT_MONKEY
 from data_access.data_loader import load_and_combine_data, explode_spike_data
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class GenericCacheManager:
@@ -20,9 +23,9 @@ class GenericCacheManager:
             path.unlink()
 
 class SortedSpikeCacheManager(GenericCacheManager):
-    def __init__(self):
-        cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "sorted_spike_cache"
-        self.summary_dir = Path(__file__).resolve().parents[2] / "Cortana" / "sorted_spike_summary"
+    def __init__(self, monkey: str = DEFAULT_MONKEY):
+        cache_dir = PROJECT_ROOT / monkey / "sorted_spike_cache"
+        self.summary_dir = PROJECT_ROOT / monkey / "sorted_spike_summary"
         super().__init__(cache_dir)
 
     def _summary_path(self, date: str, round_no: int) -> Path:
@@ -52,8 +55,8 @@ class SortedSpikeCacheManager(GenericCacheManager):
 
 
 class ExplodedSpikeCacheManager(GenericCacheManager):
-    def __init__(self):
-        cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "exploded_spike_cache"
+    def __init__(self, monkey: str = DEFAULT_MONKEY):
+        cache_dir = PROJECT_ROOT / monkey / "exploded_spike_cache"
         super().__init__(cache_dir)
 
     def _filter_curated(self, df: pd.DataFrame, date: str, round_no: int) -> pd.DataFrame:
@@ -105,8 +108,8 @@ class ExplodedSpikeCacheManager(GenericCacheManager):
         return self._filter_curated(df_all, date, round_no) if curated_channels_only else df_all
 
 class BehaviorMatrixCacheManager(GenericCacheManager):
-    def __init__(self):
-        cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "behavior_matrix_cache"
+    def __init__(self, monkey: str = DEFAULT_MONKEY):
+        cache_dir = PROJECT_ROOT / monkey / "behavior_matrix_cache"
         super().__init__(cache_dir)
 
     def load_or_cache(self, xlsx_path, label, transpose=False, drop_first_col=True, force_recompute=False, ext='pkl'):

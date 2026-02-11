@@ -15,7 +15,8 @@ from src.compile.julie_database_fields import (
 
 # ── Constants ────────────────────────────────────────────────────────────────
 TIMEZONE = pytz.timezone("US/Eastern")
-INTAN_BASE_PATH = "/home/connorlab/Documents/IntanData/Cortana"
+INTAN_BASE_PATH = "/home/connorlab/Documents/IntanData"
+DEFAULT_MONKEY = "Cortana"
 DB_HOST = "172.30.6.59"
 FULL_DAY = (time(0, 0, 0), time(23, 59, 59))
 
@@ -30,12 +31,12 @@ def make_connections(day: date):
     return conn_xper, conn_photo
 
 
-def intan_day_path(day: date) -> str:
-    return os.path.join(INTAN_BASE_PATH, day.strftime("%Y-%m-%d"))
+def intan_day_path(day: date, monkey: str = DEFAULT_MONKEY) -> str:
+    return os.path.join(INTAN_BASE_PATH, monkey, day.strftime("%Y-%m-%d"))
 
 
-def intan_experiment_path(day: date, experiment_name: str) -> str:
-    return os.path.join(intan_day_path(day), experiment_name)
+def intan_experiment_path(day: date, experiment_name: str, monkey: str = DEFAULT_MONKEY) -> str:
+    return os.path.join(intan_day_path(day, monkey), experiment_name)
 
 
 # ── Time utilities ───────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import pandas as pd
 from clat.intan.channels import Channel
 
 from analyses.data_readers.excel_data_reader import ExcelDataReader
+from compile.compile_common import INTAN_BASE_PATH, DEFAULT_MONKEY
 
 
 def standardize_date(date_input):
@@ -81,7 +82,7 @@ class RecordingMetadataReader(ExcelDataReader):
         else:
             raise ValueError('Brain region should be ER or AMG')
 
-    def get_metadata_for_spike_analysis(self, date, round_number, monkey='Cortana'):
+    def get_metadata_for_spike_analysis(self, date, round_number, monkey=DEFAULT_MONKEY):
         date = standardize_date(date)
         round_number = int(round_number)
         pickle_filename = self.get_pickle_filename_for_specific_round(date, round_number)
@@ -90,9 +91,8 @@ class RecordingMetadataReader(ExcelDataReader):
         valid_channels = set(self.get_curated_channels(date, round_number))
 
         # for sorted rounds
-        base_dir = Path("/home/connorlab/Documents/IntanData")
         intan_dir = self.get_intan_folder_name_for_specific_round(date, round_number)
-        round_dir_path = base_dir / monkey / str(date) / intan_dir
+        round_dir_path = Path(INTAN_BASE_PATH) / monkey / str(date) / intan_dir
 
         return pickle_filepath, valid_channels, round_dir_path
 

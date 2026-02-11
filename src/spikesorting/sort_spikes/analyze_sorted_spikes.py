@@ -14,6 +14,7 @@ from clat.intan.channels import Channel
 from clat.intan.livenotes import map_task_id_to_epochs_with_livenotes
 from clat.intan.marker_channels import epoch_using_marker_channels
 
+from compile.compile_common import DEFAULT_MONKEY
 from data_access.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager
 from spikesorting.sort_spikes.sort_spikes import build_intan_session_path, get_recording_session_info
 
@@ -116,8 +117,8 @@ def assign_spikes_to_trials(sorted_df, intan_dir, sampling_frequency):
     return pd.DataFrame(rows)
 
 
-def merge_with_metadata(sorted_spikes_df, date_str, round_no):
-    exploded_cache = ExplodedSpikeCacheManager()
+def merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey=DEFAULT_MONKEY):
+    exploded_cache = ExplodedSpikeCacheManager(monkey)
     unsorted = exploded_cache.load_or_compute(date_str, round_no)
 
     meta_cols = ['TaskField', 'MonkeyGroup', 'MonkeyId', 'MonkeyName', 'Date', 'Round No.', 'Location']
@@ -141,14 +142,14 @@ def write_summary(summary_dir, round_folder, lines):
     print(f"Summary written to {summary_path}")
 
 
-def analyze_sorted_spikes(date_str, round_no):
-    intan_dir = build_intan_session_path(date_str, round_no)
+def analyze_sorted_spikes(date_str, round_no, monkey=DEFAULT_MONKEY):
+    intan_dir = build_intan_session_path(date_str, round_no, monkey)
     sampling_frequency, _ = get_recording_session_info(intan_dir)
 
     date_obj = datetime.strptime(date_str, "%Y-%m-%d")
     round_folder = f"{date_obj.strftime('%y%m%d')}_round{round_no}"
 
-    cache_mgr = SortedSpikeCacheManager()
+    cache_mgr = SortedSpikeCacheManager(monkey)
 
     # Load sorter outputs and find consensus
     sortings, analyzers = load_sorting_results(intan_dir)
@@ -167,7 +168,7 @@ def analyze_sorted_spikes(date_str, round_no):
     print(f"Sorted spikes shape: {sorted_spikes_df.shape}")
 
     # Merge with metadata from exploded spike cache
-    merged = merge_with_metadata(sorted_spikes_df, date_str, round_no)
+    merged = merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey)
     print(f"Merged shape: {merged.shape}")
 
     # Save to sorted spike cache
@@ -183,6 +184,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Analyze SI-sorted spikes: consensus validation and cache generation")
     p.add_argument("--date", required=True, help="e.g. 2023-09-26")
     p.add_argument("--round", type=int, required=True, dest="round_no")
+    p.add_argument("--monkey", default=DEFAULT_MONKEY, help="Subject monkey folder name (default: Cortana)")
     args = p.parse_args()
 
-    analyze_sorted_spikes(args.date, args.round_no)
+    analyze_sorted_spikes(args.date, args.round_no, args.monkey)
