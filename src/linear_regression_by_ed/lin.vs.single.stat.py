@@ -225,8 +225,8 @@ for ibehavior in range (0,6):
                     means.append(meanresponse)
                     bkt_idx += mnk_len[sourcemonkey]
                     
-                %maxmean = max(means)
-                %idx_max = means.index(maxmean)
+                maxmean = max(means)
+                idx_max = means.index(maxmean)
                 means[idx_max] = 0.0
                 sng_avg = maxmean
                 pop_avg = sum(means) / (len(means) - 1.0)
