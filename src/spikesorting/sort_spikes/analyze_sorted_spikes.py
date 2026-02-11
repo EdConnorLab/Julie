@@ -14,8 +14,8 @@ from clat.intan.channels import Channel
 from clat.intan.livenotes import map_task_id_to_epochs_with_livenotes
 from clat.intan.marker_channels import epoch_using_marker_channels
 
-from analyses.cache_utils import SortedSpikeCacheManager, ExplodedSpikeCacheManager
-from analyses.sort_spikes.sort_spikes import get_recording_session_info, build_intan_session_path
+from data_access.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager
+from spikesorting.sort_spikes.sort_spikes import build_intan_session_path, get_recording_session_info
 
 
 def load_sorting_results(intan_dir):
