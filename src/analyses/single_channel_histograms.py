@@ -1,70 +1,13 @@
 """
-single_channel_plots.py — Channel-level raster plots and spike-rate histograms.
+single_channel_histograms.py — Channel-level spike-rate histograms.
 """
 
-import os
-from pathlib import Path
-
 import numpy as np
-import pandas as pd
-from clat.intan.channels import Channel
 from matplotlib import pyplot as plt
 
-from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from analyses.raster_plotting import plot_raster_by_group
+from analyses.plotting_util import extract_target_channel_data
 from analyses.spike_utils import calculate_spike_rate
 
-
-def main():
-    date = "2023-10-04"
-    round_no = 2
-    metadata = RecordingMetadataReader()
-    pkl_name = metadata.get_pickle_filename_for_specific_round(date, round_no)
-    channels = metadata.get_valid_channels(date, round_no)
-
-    file_path = (Path(__file__).parent / ".." / ".." / ".." / "Cortana" / "compiled" / pkl_name).resolve()
-    raw_data = pd.read_pickle(file_path)
-
-    for channel in channels:
-        print(f"Working on channel {channel}")
-        plot_raster_for_channel(raw_data, channel, date, round_no, save=True)
-
-
-# ── Data extraction ──────────────────────────────────────────────────────────
-
-def extract_target_channel_data(channel: Channel, data):
-    """Add a SpikeTimes_{channel} column extracted from the SpikeTimes dict."""
-    out = data.copy()
-    out[f"SpikeTimes_{channel.value}"] = data["SpikeTimes"].apply(
-        lambda x: x[next(filter(lambda k: k.value == channel.value, x.keys()), None)]
-    )
-    return out
-
-
-# ── Raster plotting ──────────────────────────────────────────────────────────
-
-def _raster_save_path(date, round_no, channel):
-    date_fmt = date.replace("-", "")[2:]
-    folder = f"{date_fmt}_round{round_no}_new"
-    save_dir = "/mixed_manual_raster_plots/"
-    return os.path.join(save_dir, folder, f"{date}_round{round_no}_{channel}.png")
-
-
-def plot_raster_for_channel(raw_data, channel, date, round_no, save=False):
-    """Plot a ranked raster for a single channel."""
-    channel_data = extract_target_channel_data(channel, raw_data)
-    spike_col = f"SpikeTimes_{channel.value}"
-
-    save_path = _raster_save_path(date, round_no, channel) if save else None
-
-    plot_raster_by_group(
-        channel_data, spike_col,
-        title=f"Raster Plots (by Rank): {date} Round {round_no}: {channel.value}",
-        save_path=save_path,
-    )
-
-
-# ── Spike rate binning ───────────────────────────────────────────────────────
 
 def calculate_binned_spike_rate(spikes, epoch, num_bins):
     if spikes is None or epoch is None:
@@ -87,7 +30,7 @@ def calculate_spikerates_per_bin(channel_data, channel, num_bins):
     return channel_data
 
 
-# ── Histogram plotting ───────────────────────────────────────────────────────
+### Histogram plotting
 
 def plot_channel_histograms(data, channel, num_bins=10):
     channel_data = extract_target_channel_data(channel, data)
@@ -186,4 +129,4 @@ def plot_average_among_groups(channel_data, channel):
 
 
 if __name__ == "__main__":
-    main()
+    pass

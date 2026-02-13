@@ -154,6 +154,7 @@ def compute_population_spike_rates_for_anatomical_region(
     population_spike_rate = combined.groupby('MonkeyName')['SpikeRate'].mean()
     return population_spike_rate
 
+
 if __name__ == "__main__":
     pass
     # neurons_df = pd.read_pickle('/old/old_analysis_cache/Zombies_significant_neurons_pANOVAorGLM_passed.pkl')
