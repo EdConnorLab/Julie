@@ -4,7 +4,9 @@ import pandas as pd
 
 from data_access.data_loader import load_and_combine_data, explode_spike_data
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
 
+PROJECT_ROOT = PROJECT_BASE_PATH
 
 class GenericCacheManager:
     def __init__(self, cache_dir):
@@ -19,10 +21,11 @@ class GenericCacheManager:
         if path.exists():
             path.unlink()
 
+
 class SortedSpikeCacheManager(GenericCacheManager):
-    def __init__(self):
-        cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "sorted_spike_cache"
-        self.summary_dir = Path(__file__).resolve().parents[2] / "Cortana" / "sorted_spike_summary"
+    def __init__(self, monkey: str = SUBJECT_MONKEY):
+        cache_dir = PROJECT_ROOT / monkey / "sorted_spike_cache"
+        self.summary_dir = PROJECT_ROOT / monkey / "sorted_spike_summary"
         super().__init__(cache_dir)
 
     def _summary_path(self, date: str, round_no: int) -> Path:
@@ -49,11 +52,9 @@ class SortedSpikeCacheManager(GenericCacheManager):
 
         raise FileNotFoundError(f"No sorted cache found for {label}")
 
-
-
 class ExplodedSpikeCacheManager(GenericCacheManager):
-    def __init__(self):
-        cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "exploded_spike_cache"
+    def __init__(self, monkey: str = SUBJECT_MONKEY):
+        cache_dir = PROJECT_ROOT / monkey / "exploded_spike_cache"
         super().__init__(cache_dir)
 
     def _filter_curated(self, df: pd.DataFrame, date: str, round_no: int) -> pd.DataFrame:
@@ -104,9 +105,97 @@ class ExplodedSpikeCacheManager(GenericCacheManager):
         # 3) Return filtered view if requested
         return self._filter_curated(df_all, date, round_no) if curated_channels_only else df_all
 
+# TODO: This class needs to be double-checked -- not useful for Cortana's data due to high noise
+class ThresholdSpikeCacheManager(GenericCacheManager):
+    """
+    Cache for threshold-detected spikes from raw amplifier.dat.
+    Uses Quian Quiroga (2004) method: threshold = -multiplier * median(|signal|) / 0.6745
+    """
+    def __init__(self, monkey: str = SUBJECT_MONKEY):
+        cache_dir = PROJECT_ROOT / monkey / "threshold_spike_cache"
+        super().__init__(cache_dir)
+
+    def load_or_compute(self, date, round_no, *,
+                        threshold_multiplier=4.5,
+                        force_recompute=False):
+        label = f"{date}_round_{round_no}_thr{threshold_multiplier}"
+        path = self._get_cache_path(label)
+
+        if path.exists() and not force_recompute:
+            return pd.read_pickle(path)
+
+        print(f"[ThresholdCache] Computing threshold spikes for {date} round {round_no} ...")
+        df = self._compute(date, round_no, threshold_multiplier)
+        if df is not None and not df.empty:
+            df.to_pickle(path)
+        return df
+
+    def _compute(self, date, round_no, threshold_multiplier):
+        import os
+        from clat.intan.rhd import load_intan_rhd_format
+        from clat.intan.amplifiers import read_amplifier_data_with_mmap
+        from data_access.threshold_detection import detect_spikes_for_recording
+
+        reader = RecordingMetadataReader()
+        pickle_filepath, _, round_dir_path = reader.get_metadata_for_spike_analysis(date, round_no)
+
+        # Load trial metadata from compiled.pkl
+        raw_trials = pd.read_pickle(pickle_filepath)
+        if raw_trials is None or raw_trials.empty:
+            return None
+
+        # Load amplifier data
+        info_path = os.path.join(round_dir_path, "info.rhd")
+        amp_path = os.path.join(round_dir_path, "amplifier.dat")
+        preprocessed_path = os.path.join(round_dir_path, "preprocessed_data.dat")
+
+        rhd = load_intan_rhd_format.read_data(info_path)
+        sample_rate = rhd['frequency_parameters']['amplifier_sample_rate']
+        amp_channels = rhd['amplifier_channels']
+
+        # Prefer preprocessed if available (already highpass filtered)
+        if os.path.exists(preprocessed_path):
+            voltages = read_amplifier_data_with_mmap(preprocessed_path, amp_channels)
+            apply_filter = False
+        else:
+            voltages = read_amplifier_data_with_mmap(amp_path, amp_channels)
+            apply_filter = True
+
+        spike_times_by_channel, info = detect_spikes_for_recording(
+            voltages, sample_rate,
+            threshold_multiplier=threshold_multiplier,
+            apply_filter=apply_filter,
+        )
+
+        for ch, ch_info in info.items():
+            print(f"  {ch}: {ch_info['n_spikes']} spikes (thr={ch_info['threshold']:.1f})")
+
+        # Build per-trial DataFrame matching the compiled.pkl format
+        rows = []
+        for _, trial in raw_trials.iterrows():
+            epoch_start, epoch_stop = trial['EpochStartStop']
+            trial_spikes = {}
+            for channel, all_times in spike_times_by_channel.items():
+                trial_spikes[channel] = [
+                    t for t in all_times if epoch_start <= t < epoch_stop
+                ]
+
+            rows.append({
+                'TaskField': trial['TaskField'],
+                'MonkeyId': trial['MonkeyId'],
+                'MonkeyName': trial['MonkeyName'],
+                'MonkeyGroup': trial['MonkeyGroup'],
+                'SpikeTimes': trial_spikes,
+                'EpochStartStop': trial['EpochStartStop'],
+            })
+
+        combined = pd.DataFrame(rows)
+        return explode_spike_data(combined, date, round_no)
+
+
 class BehaviorMatrixCacheManager(GenericCacheManager):
-    def __init__(self):
-        cache_dir = Path(__file__).resolve().parents[2] / "Cortana" / "behavior_matrix_cache"
+    def __init__(self, monkey: str = SUBJECT_MONKEY):
+        cache_dir = PROJECT_ROOT / monkey / "behavior_matrix_cache"
         super().__init__(cache_dir)
 
     def load_or_cache(self, xlsx_path, label, transpose=False, drop_first_col=True, force_recompute=False, ext='pkl'):
