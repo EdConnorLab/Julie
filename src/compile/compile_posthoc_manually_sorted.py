@@ -19,7 +19,6 @@ from compile.compile_common import (
 )
 
 
-# ── File I/O ─────────────────────────────────────────────────────────────────
 
 def _load_sorted_spikes(path: str) -> dict:
     """Load a dict of manually sorted spike indices from a pickle file."""
@@ -29,8 +28,6 @@ def _load_sorted_spikes(path: str) -> dict:
         raise TypeError(f"Expected dict in {path}, got {type(data).__name__}")
     return data
 
-
-# ── Task fields ──────────────────────────────────────────────────────────────
 
 class EpochStartStopTimesField(CachedTaskDatabaseField):
     """Converts sample-index epoch boundaries to seconds."""
@@ -89,7 +86,6 @@ class ManuallySortedSpikeTStampField(EpochStartStopTimesField):
         return "SortedSpikeTimes"
 
 
-# ── Public API ───────────────────────────────────────────────────────────────
 
 def compile_data(*, experiment_name: str, day: date):
     """Compile post-hoc manually sorted neural data for a single experiment session."""

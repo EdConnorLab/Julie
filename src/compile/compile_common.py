@@ -9,13 +9,14 @@ from clat.compile.task.compile_task_id import PngSlideIdCollector
 from clat.util import time_util
 from clat.util.connection import Connection
 
+from project_util import SUBJECT_MONKEY
 from src.compile.julie_database_fields import (
     FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField,
 )
 
-# ── Constants ────────────────────────────────────────────────────────────────
+
 TIMEZONE = pytz.timezone("US/Eastern")
-INTAN_BASE_PATH = "/home/connorlab/Documents/IntanData/Cortana"
+INTAN_BASE_PATH = "/home/connorlab/Documents/IntanData"
 DB_HOST = "172.30.6.59"
 FULL_DAY = (time(0, 0, 0), time(23, 59, 59))
 
@@ -30,15 +31,15 @@ def make_connections(day: date):
     return conn_xper, conn_photo
 
 
-def intan_day_path(day: date) -> str:
-    return os.path.join(INTAN_BASE_PATH, day.strftime("%Y-%m-%d"))
+def intan_day_path(day: date, monkey: str = SUBJECT_MONKEY) -> str:
+    return os.path.join(INTAN_BASE_PATH, monkey, day.strftime("%Y-%m-%d"))
 
 
-def intan_experiment_path(day: date, experiment_name: str) -> str:
-    return os.path.join(intan_day_path(day), experiment_name)
+def intan_experiment_path(day: date, experiment_name: str, monkey: str = SUBJECT_MONKEY) -> str:
+    return os.path.join(intan_day_path(day, monkey), experiment_name)
 
 
-# ── Time utilities ───────────────────────────────────────────────────────────
+# ── Time utilities
 
 def to_unix_range(day: date, start_time: time, end_time: time) -> tuple[float, float]:
     """Convert day + start/end wall-clock times to a (start_unix, end_unix) pair."""
@@ -47,7 +48,7 @@ def to_unix_range(day: date, start_time: time, end_time: time) -> tuple[float, f
     return time_util.to_unix(start), time_util.to_unix(end)
 
 
-# ── Task ID collection ───────────────────────────────────────────────────────
+# ── Task ID collection
 
 def collect_task_ids(conn_xper, day: date,
                      start_time: time = FULL_DAY[0],
@@ -57,7 +58,7 @@ def collect_task_ids(conn_xper, day: date,
     return PngSlideIdCollector(conn_xper).collect_complete_task_ids(time_range)
 
 
-# ── Common field list ────────────────────────────────────────────────────────
+### Common task field list
 
 def base_fields(conn_xper, conn_photo) -> CachedTaskFieldList:
     """Metadata fields shared across all compilation pipelines."""

@@ -22,7 +22,6 @@ from compile.julie_intan_file_per_trial_fields import (
 from compile.julie_one_file_spike_parsing import OneFileParser
 
 
-# ── Read helpers ─────────────────────────────────────────────────────────────
 
 def _read_per_experiment(day: date, experiment_name: str,
                          start_time: time, end_time: time):
@@ -48,7 +47,6 @@ def _read_per_trial(day: date, start_time: time, end_time: time):
     return fields.to_data(task_ids)
 
 
-# ── Public API ───────────────────────────────────────────────────────────────
 
 def compile_data(day: date,
                  start_time: time = None,
