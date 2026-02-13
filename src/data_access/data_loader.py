@@ -1,12 +1,65 @@
 import os
 import warnings
-
+import pickle
 import pandas as pd
 from clat.intan.spike_file import fetch_spike_tstamps_from_file
-from pandas import read_pickle
-
+from clat.intan.rhd import load_intan_rhd_format
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from analyses.intan_data_processor.single_unit_analysis import read_sorted_data
+
+
+def get_raw_spike_tstamp_data(date, round_number):
+    reader = RecordingMetadataReader()
+    _, curated_channels, round_dir_path = reader.get_metadata_for_spike_analysis(date, round_number)
+    spike_path = os.path.join(round_dir_path, "spike.dat")
+    spike_tstamps_for_channels, sample_rate = fetch_spike_tstamps_from_file(spike_path)
+    return spike_tstamps_for_channels, sample_rate
+
+
+def load_manually_sorted_spikes(path):
+    """Load a dict of manually sorted spike indices from a pickle file."""
+    with open(path, "rb") as f:
+        data = pickle.load(f)
+    if not isinstance(data, dict):
+        raise TypeError(f"Expected dict in {path}, got {type(data).__name__}")
+    return data
+
+
+def calculate_spike_timestamps(df, spike_indices_by_unit_by_channel, sample_rate):
+    """
+    Add a 'SpikeTimes' column: dict mapping unit names to spike-time lists
+    filtered to each trial's epoch.
+    """
+    def _for_row(epoch_start_stop):
+        epoch_start, epoch_stop = epoch_start_stop
+        result = {}
+        for channel, units in reversed(spike_indices_by_unit_by_channel.items()):
+            for unit_name, spike_indices in units.items():
+                key = f"{channel}_{unit_name}"
+                result[key] = [
+                    idx / sample_rate
+                    for idx in spike_indices
+                    if epoch_start <= idx / sample_rate < epoch_stop
+                ]
+        return result
+
+    out = df.copy(deep=True)
+    out["SpikeTimes"] = out["EpochStartStop"].apply(_for_row)
+    return out
+
+
+
+def read_sorted_data(round_path,
+                     manually_sorted_spikes_filename="sorted_spikes.pkl",
+                     compiled_trials_filename="compiled.pkl"):
+    """Load compiled trials and attach per-unit spike timestamps."""
+    raw = pd.read_pickle(os.path.join(round_path, compiled_trials_filename)).reset_index(drop=True)
+    sorted_spikes = load_manually_sorted_spikes(os.path.join(round_path, manually_sorted_spikes_filename))
+
+    rhd_path = os.path.join(round_path, "info.rhd")
+    sample_rate = load_intan_rhd_format.read_data(rhd_path)["frequency_parameters"]["amplifier_sample_rate"]
+
+    return calculate_spike_timestamps(raw, sorted_spikes, sample_rate)
+
 
 
 def get_raw_spike_tstamp_data(date, round_number):
@@ -20,7 +73,7 @@ def get_raw_spike_tstamp_data(date, round_number):
 def load_raw_data(date, round_number):
     reader = RecordingMetadataReader()
     pickle_filepath, curated_channels, round_path = reader.get_metadata_for_spike_analysis(date, round_number)
-    raw_trial_data = read_pickle(pickle_filepath)
+    raw_trial_data = pd.read_pickle(pickle_filepath)
 
     sorted_file = round_path / 'sorted_spikes.pkl'
     if sorted_file.exists():
