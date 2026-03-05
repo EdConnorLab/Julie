@@ -6,7 +6,7 @@ from data_access.data_loader import load_and_combine_data, explode_spike_data
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
 
-PROJECT_ROOT = PROJECT_BASE_PATH
+PROJECT_ROOT = Path(PROJECT_BASE_PATH)
 
 class GenericCacheManager:
     def __init__(self, cache_dir):
@@ -23,7 +23,7 @@ class GenericCacheManager:
 
 
 class SortedSpikeCacheManager(GenericCacheManager):
-    def __init__(self, monkey: str = SUBJECT_MONKEY):
+    def __init__(self, monkey: str = SUBJECT_MONKEY, cache_subdir: str = "sorted_spike_cache"):
         cache_dir = PROJECT_ROOT / monkey / "sorted_spike_cache"
         self.summary_dir = PROJECT_ROOT / monkey / "sorted_spike_summary"
         super().__init__(cache_dir)
