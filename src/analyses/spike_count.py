@@ -1,5 +1,5 @@
 import pandas as pd
-
+import numpy as np
 from tqdm import tqdm
 
 from data_access.spike_source import SpikeSource, MixedManualSpikeSource
@@ -18,20 +18,24 @@ and aggregating spike data for downstream analyses (e.g., permutation ANOVA).
 def filter_good_neurons(exploded_df,
                         min_total_spikes=500,
                         min_firing_rate_hz=1.0,
-                        min_trial_ratio=0.7,
-                        min_trial_count=300):
+                        min_trial_count=300,
+                        n_time_blocks = 4,
+                        min_active_blocks = 3,
+                        max_isi_violation_rate=0.02,
+                        refractory_ms=2.0
+                        ):
     """
-    Filters neurons based on total spikes, firing rate, spike coverage across trials, and trial participation count.
+    Filters neurons based on total spikes, firing rate, total trial participation count.
 
     Parameters:
     - exploded_df: DataFrame with columns ['NeuronID', 'SpikeTimes', 'EpochStartStop']
     - min_total_spikes: minimum total spike count
     - min_firing_rate_hz: minimum average firing rate in Hz
-    - min_trial_ratio: minimum ratio of trials where spikes are present
-    - min_trial_count: minimum number of trials the neuron participated in
+    - n_time_blocks: number of equal blocks to divide the session into
+    - min_active_blocks: minimum number of blocks with non-zero firing
+    - max_isi_violation_rate: maximum fraction of ISIs below refractory period
+    - refractory_ms: refractory period in milliseconds
 
-    Returns:
-    - List of NeuronIDs that passed all filters
     """
     if exploded_df is None or getattr(exploded_df, "empty", True):
         return []
@@ -42,20 +46,44 @@ def filter_good_neurons(exploded_df,
     neuron_stats = []
 
     for neuron_id, group in exploded_df.groupby("NeuronID"):
+        group = group.sort_values(
+            by="EpochStartStop",
+            key=lambda col: col.apply(lambda x: x[0])
+        )
         spike_counts = group["SpikeTimes"].apply(len)
         total_spikes = spike_counts.sum()
         trial_durations = group["EpochStartStop"].apply(lambda x: x[1] - x[0])
         total_time = trial_durations.sum()
         mean_firing_rate = total_spikes / total_time if total_time > 0 else 0
-        spike_trials = (spike_counts > 0).sum()
         total_trials = len(group)
+
+        # Temporal stability (filter out neurons appearing/lost mid-session)
+        block_size = max(1, total_trials // n_time_blocks)
+        active_blocks = 0
+        for b in range(n_time_blocks):
+            start = b * block_size
+            end = start + block_size if b < n_time_blocks - 1 else total_trials
+            block_spikes = spike_counts.iloc[start:end].sum()
+            if block_spikes > 0:
+                active_blocks += 1
+
+        # ISI violations
+        all_spikes = np.concatenate(group["SpikeTimes"].values)
+        if len(all_spikes) >= 2:
+            all_spikes_sorted = np.sort(all_spikes)
+            isis = np.diff(all_spikes_sorted)
+            isi_violation = np.mean(isis < refractory_ms / 1000)
+        else:
+            isi_violation = 1.0
+
 
         neuron_stats.append({
             "NeuronID": neuron_id,
             "TotalSpikes": total_spikes,
             "MeanFiringRateHz": mean_firing_rate,
-            "SpikeTrialRatio": spike_trials / total_trials,
-            "TotalTrials": total_trials
+            "TotalTrials": total_trials,
+            "ActiveBlocks": active_blocks,
+            "ISIViolationRate": isi_violation
         })
 
     stats_df = pd.DataFrame(neuron_stats)
@@ -64,9 +92,17 @@ def filter_good_neurons(exploded_df,
     good_neurons = stats_df[
         (stats_df["TotalSpikes"] >= min_total_spikes) &
         (stats_df["MeanFiringRateHz"] >= min_firing_rate_hz) &
-        (stats_df["SpikeTrialRatio"] >= min_trial_ratio) &
-        (stats_df["TotalTrials"] >= min_trial_count)
+        (stats_df["TotalTrials"] >= min_trial_count) &
+        (stats_df["ActiveBlocks"] >= min_active_blocks) &
+        (stats_df["ISIViolationRate"] <= max_isi_violation_rate)
         ]["NeuronID"].tolist()
+
+    print("How many neurons fail to pass each filter:")
+    print(f"Fail total spikes: {(stats_df['TotalSpikes'] < min_total_spikes).sum()}")
+    print(f"Fail firing rate:  {(stats_df['MeanFiringRateHz'] < min_firing_rate_hz).sum()}")
+    print(f"Fail trial count:  {(stats_df['TotalTrials'] < min_trial_count).sum()}")
+    print(f"Fail active blocks:{(stats_df['ActiveBlocks'] < min_active_blocks).sum()}")
+    print(f"Fail ISI: {(stats_df['ISIViolationRate'] > max_isi_violation_rate).sum()}")
 
     return good_neurons
 
@@ -113,15 +149,18 @@ def prepare_binned_spike_data(
     if exploded_df is None or getattr(exploded_df, "empty", True):
         return pd.DataFrame()
 
-    good_neurons = filter_good_neurons(exploded_df)
-    if not good_neurons:
-        return pd.DataFrame()
-
-    filtered_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
-    if filtered_df.empty:
-        return pd.DataFrame()
+    if getattr(source, "pre_filtered", False):
+        filtered_df = exploded_df
+    else:
+        good_neurons = filter_good_neurons(exploded_df)
+        if not good_neurons:
+            return pd.DataFrame()
+        filtered_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
+        if filtered_df.empty:
+            return pd.DataFrame()
 
     return bin_spike_times(filtered_df, bin_size)
+
 
 
 # --- Aggregate ---
