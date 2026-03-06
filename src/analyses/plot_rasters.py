@@ -8,8 +8,9 @@ from pathlib import Path
 import pandas as pd
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from analyses.raster_plotting import plot_raster_by_group
-from analyses.single_channel_analysis import plot_raster_for_channel
+from analyses.plotting_util import extract_target_channel_data, raster_save_path
+from analyses.raster_plotting import plot_raster_by_group, plot_multiunit_raster_sidebyside, \
+    plot_multiunit_raster_overlaid
 from data_access.spike_source import SpikeSource, MixedManualSpikeSource, SISortedSpikeSource, ThresholdSpikeSource
 from project_util import SUBJECT_MONKEY, PROJECT_BASE_PATH
 
