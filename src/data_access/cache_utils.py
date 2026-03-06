@@ -24,7 +24,7 @@ class GenericCacheManager:
 
 class SortedSpikeCacheManager(GenericCacheManager):
     def __init__(self, monkey: str = SUBJECT_MONKEY, cache_subdir: str = "sorted_spike_cache"):
-        cache_dir = PROJECT_ROOT / monkey / "sorted_spike_cache"
+        cache_dir = PROJECT_ROOT / monkey / cache_subdir
         self.summary_dir = PROJECT_ROOT / monkey / "sorted_spike_summary"
         super().__init__(cache_dir)
 

@@ -43,6 +43,7 @@ class SISortedSpikeSource:
     force_recompute: bool = False
     name: str = "si_sorted"
     cache_subdir: str = "sorted_spike_cache"
+    pre_filtered: bool = False
 
     def load(self, date: str, round_no: int) -> Optional[pd.DataFrame]:
         df = SortedSpikeCacheManager(cache_subdir=self.cache_subdir).load_or_compute(
