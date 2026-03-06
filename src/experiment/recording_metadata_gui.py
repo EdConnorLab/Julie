@@ -6,7 +6,7 @@ from tkinter import ttk, messagebox
 import pandas as pd
 
 # CSV file name
-CSV_FILE = "data_records.csv"
+CSV_FILE = "recording_session_metadata.csv"
 
 # Custom order of channels
 channel_order = [
