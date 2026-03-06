@@ -105,19 +105,14 @@ def main():
             subject_monkey_index,
             use_spikerate=True,
             permutation_test=True,
-            n_perm=1000
+            n_perm=10000
         )
         directional_neuron_results.append(neuron_results_df)
 
     directional_all_neuron_results_df = pd.concat(directional_neuron_results, ignore_index=True)
     directional_all_neuron_results_sorted = directional_all_neuron_results_df.sort_values(
-        by=["p_value", "R-squared"], ascending=False
+        by=["p_value", "R-squared"], ascending=[True, False]
     )
-    # filtered_df = directional_all_neuron_results_df[
-    #     (directional_all_neuron_results_df['p_value'] < 0.05) &
-    #     (directional_all_neuron_results_df['R-squared'] > 0.5)
-    #     ]
-    # mean_spike_rate = compute_mean_spike_rate_for_cells(filtered_df)
 
     out_cells = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_neurons_pKW.pkl"
     directional_all_neuron_results_sorted.to_pickle(out_cells)
