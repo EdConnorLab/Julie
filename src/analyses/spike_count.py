@@ -97,12 +97,12 @@ def filter_good_neurons(exploded_df,
         (stats_df["ISIViolationRate"] <= max_isi_violation_rate)
         ]["NeuronID"].tolist()
 
-    print("How many neurons fail to pass each filter:")
-    print(f"Fail total spikes: {(stats_df['TotalSpikes'] < min_total_spikes).sum()}")
-    print(f"Fail firing rate:  {(stats_df['MeanFiringRateHz'] < min_firing_rate_hz).sum()}")
-    print(f"Fail trial count:  {(stats_df['TotalTrials'] < min_trial_count).sum()}")
-    print(f"Fail active blocks:{(stats_df['ActiveBlocks'] < min_active_blocks).sum()}")
-    print(f"Fail ISI: {(stats_df['ISIViolationRate'] > max_isi_violation_rate).sum()}")
+    # print("How many neurons fail to pass each filter:")
+    # print(f"Fail total spikes: {(stats_df['TotalSpikes'] < min_total_spikes).sum()}")
+    # print(f"Fail firing rate:  {(stats_df['MeanFiringRateHz'] < min_firing_rate_hz).sum()}")
+    # print(f"Fail trial count:  {(stats_df['TotalTrials'] < min_trial_count).sum()}")
+    # print(f"Fail active blocks:{(stats_df['ActiveBlocks'] < min_active_blocks).sum()}")
+    # print(f"Fail ISI: {(stats_df['ISIViolationRate'] > max_isi_violation_rate).sum()}")
 
     return good_neurons
 
