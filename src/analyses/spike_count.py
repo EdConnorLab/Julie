@@ -149,7 +149,7 @@ def prepare_binned_spike_data(
     if exploded_df is None or getattr(exploded_df, "empty", True):
         return pd.DataFrame()
 
-    if getattr(source, "pre_filtered", False):
+    if hasattr(source, "pre_filtered") and source.pre_filtered:
         filtered_df = exploded_df
     else:
         good_neurons = filter_good_neurons(exploded_df)
