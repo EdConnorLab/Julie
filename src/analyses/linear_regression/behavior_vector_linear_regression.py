@@ -35,21 +35,6 @@ def run_marginal_vector_linear_regression_from_matrix(
     use_spikerate=False,
     model_type='ols'
 ):
-    """
-    Run OLS or GLM per neuron using marginal vector from a behavior matrix (1 score per monkey).
-
-    Parameters:
-        spike_df: pd.DataFrame with ['NeuronID', 'MonkeyName', 'MonkeyGroup', 'SpikeCount' or 'MeanSpikeRate']
-        behavior_matrix: 2D np.ndarray (e.g., AffiliationTo matrix)
-        behavior_name: str, name of behavior
-        group_name: str, name of monkey group (e.g., "Zombies")
-        monkey_list: list of monkey names in order
-        subject_idx: index of subject monkey (to exclude)
-        use_spikerate: if True, use 'MeanSpikeRate'; else, use 'SpikeCount'
-        model_type: 'ols' or 'glm'
-    Returns:
-        pd.DataFrame with results per neuron
-    """
     results = []
     value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
 
@@ -117,14 +102,24 @@ def run_directional_vector_linear_regression_window_level(
         monkey_list,
         subject_idx,
         use_spikerate = False,
-        model_type ='ols',
         permutation_test = False,
         n_perm = 10000):
+    """
+    Run directional vector linear regression at the window level.
+
+    For each neuron × window × source_monkey, regresses spike rates
+    (across stimulus monkeys) against the source monkey's behavior vector.
+
+    Returns one row per regression with full context:
+        NeuronID, WindowStart_ms, WindowEnd_ms, Behavior, Source_Monkey,
+        Stimulus_Monkeys (list), Behavior_Vector (raw), Neural_Response (raw),
+        R_squared, coef, intercept, p_value, p_perm, Model
+    """
+
     results = []
     value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
-    # mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col].mean()
-    # spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values= value_col)
+
     mean_spikes = filtered_df.groupby(
         ['NeuronID', 'MonkeyName', 'WindowStart_ms', 'WindowEnd_ms'], as_index=False
     )[value_col].mean()
@@ -140,52 +135,51 @@ def run_directional_vector_linear_regression_window_level(
 
     # Add back mapping from NeuronWindowID → NeuronID + Window
     id_map = mean_spikes[['NeuronWindowID', 'NeuronID', 'WindowStart_ms', 'WindowEnd_ms']].drop_duplicates()
-    for unit_id, row in tqdm(spike_matrix.iterrows(), total=len(spike_matrix), desc="Computing window lin reg",  dynamic_ncols=True):
+
+    for unit_id, row in tqdm(spike_matrix.iterrows(), total=len(spike_matrix),
+                             desc="Window-level directional regression", dynamic_ncols=True):
         meta = id_map[id_map['NeuronWindowID'] == unit_id].iloc[0]
         neuron_id = meta['NeuronID']
         win_start = meta['WindowStart_ms']
         win_end = meta['WindowEnd_ms']
+
         for src_idx, src_monkey in enumerate(monkey_list):
             if src_idx == subject_idx:
                 continue
-            # z-score y
-            raw_y = behavior_matrix[src_idx].copy()
-            mask = np.ones_like(raw_y, dtype=bool)
+
+            # Raw behavior vector (excluding source and subject)
+            raw_behavior = behavior_matrix[src_idx].copy()
+            mask = np.ones_like(raw_behavior, dtype=bool)
             mask[[src_idx, subject_idx]] = False
-            y = zscore(raw_y[mask])
+            behavior_vec = raw_behavior[mask]
 
-            x_row = row.drop(index=[monkey_list[src_idx], monkey_list[subject_idx]], errors='ignore')
-            x = x_row.values.astype(float)
-            # check variance
-            if np.var(x) < 1e-3 or np.var(y) < 1e-3:  # threshold adjustable (e.g. 0.0001)
-                print(
-                    f"Skipped {unit_id} {src_monkey}: variance too small (x_var={np.var(x):.6f}, y_var={np.var(y):.6f})")
+            # Stimulus monkeys and their spike rates
+            stimulus_monkeys = [m for i, m in enumerate(monkey_list) if i not in (src_idx, subject_idx)]
+            neural_response = row[stimulus_monkeys].values.astype(float)
+
+            # Variance check
+            if np.var(neural_response) < 1e-3 or np.var(behavior_vec) < 1e-3:
                 continue
-
-            if len(x) != len(y):
-                print(f"Length mismatch for {unit_id} (source: {monkey_list[src_idx]})")
+            if len(neural_response) != len(behavior_vec):
+                print(f"Length mismatch for {unit_id} (source: {src_monkey})")
                 continue
 
             try:
-                X = sm.add_constant(x)
-                if model_type == 'ols':
-                    model = sm.OLS(y, X).fit()
-                    r_squared = model.rsquared
-                elif model_type == 'glm':
-                    model = sm.GLM(y, X, family=sm.families.Poisson()).fit()
-                    r_squared = None
-                else:
-                    raise ValueError("model_type must be 'ols' or 'glm'")
+                # Z-score for regression
+                x = zscore(behavior_vec)
+                y = zscore(neural_response)
+                X_design = sm.add_constant(x)
+
+                model = sm.OLS(y, X_design).fit()
+                r_squared = model.rsquared
 
                 # Permutation test
-                if permutation_test and model_type == 'ols':
-                    null_distribution = []
-                    for _ in range(n_perm):
-                        y_perm = np.random.permutation(y)
-                        model_perm = sm.OLS(y_perm, X).fit()
-                        null_distribution.append(model_perm.rsquared)
-                    null_distribution = np.array(null_distribution)
-                    p_perm = (np.sum(null_distribution >= r_squared) + 1) / (n_perm + 1)
+                if permutation_test:
+                    null_dist = np.array([
+                        sm.OLS(y, sm.add_constant(np.random.permutation(x))).fit().rsquared
+                        for _ in range(n_perm)
+                    ])
+                    p_perm = (np.sum(null_dist >= r_squared) + 1) / (n_perm + 1)
                 else:
                     p_perm = None
 
@@ -194,17 +188,19 @@ def run_directional_vector_linear_regression_window_level(
                     'WindowStart_ms': win_start,
                     'WindowEnd_ms': win_end,
                     'Behavior': behavior_name,
-                    'Source_Monkey': monkey_list[src_idx],
-                    'Model': model_type,
-                    'R-squared': r_squared,
+                    'Source_Monkey': src_monkey,
+                    'Stimulus_Monkeys': stimulus_monkeys,
+                    'Behavior_Vector': behavior_vec,
+                    'Neural_Response': neural_response,
+                    'R_squared': r_squared,
                     'coef': model.params[1],
                     'intercept': model.params[0],
                     'p_value': model.pvalues[1],
-                    'p_perm': p_perm
+                    'p_perm': p_perm,
                 })
 
             except Exception as e:
-                print(f"Error for {unit_id}, Monkey {monkey_list[src_idx]}: {e}")
+                print(f"Error for {unit_id}, Monkey {src_monkey}: {e}")
                 continue
 
     return pd.DataFrame(results)
@@ -217,99 +213,97 @@ def run_directional_vector_linear_regression_cell_level(
         group_name,
         monkey_list,
         subject_idx,
-        use_spikerate = False,
-        model_type ='ols',
-        plot = False,
-        permutation_test = False,
-        n_perm = 10000):
+        use_spikerate=False,
+        model_type='ols',
+        plot=False,
+        permutation_test=False,
+        n_perm=10000):
+
     results = []
     value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
     filtered_df = spike_df[(spike_df['MonkeyGroup'] == group_name) & (spike_df['MonkeyName'] != "NewMonkey")]
     mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col].mean()
-    spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values= value_col)
+    spike_matrix = mean_spikes.pivot(index='NeuronID', columns='MonkeyName', values=value_col)
     spike_matrix = spike_matrix.reindex(columns=monkey_list)
-    print(spike_matrix.shape)
-    for neuron_id, row in tqdm(spike_matrix.iterrows(), total=len(spike_matrix), desc="Computing cell-level linear regression with directional vectors"):
-        print(neuron_id)
+
+    for neuron_id, row in tqdm(spike_matrix.iterrows(), total=len(spike_matrix),
+                               desc="Cell-level directional regression"):
         for src_idx, src_monkey in enumerate(monkey_list):
             if src_idx == subject_idx:
                 continue
 
-            raw_x = behavior_matrix[src_idx].copy()
-            mask = np.ones_like(raw_x, dtype=bool)
+            # Raw behavior vector (excluding source and subject)
+            raw_behavior = behavior_matrix[src_idx].copy()
+            mask = np.ones_like(raw_behavior, dtype=bool)
             mask[[src_idx, subject_idx]] = False
-            x = raw_x[mask]
-            # print(" ")
-            # print(f"----------------- {behavior_name} {monkey_list[src_idx]} ----------------- ")
-            # print('x')
-            # print(x)
+            behavior_vec = raw_behavior[mask]
 
-            target_monkeys = [m for i, m in enumerate(monkey_list) if i not in (src_idx, subject_idx)]
-            y_row = row[target_monkeys]
-            y = y_row.values.astype(float)
-            # print('y')
-            # print(y)
-            # check variance
-            if np.var(y) < 1e-3 or np.var(x) < 1e-3:  # threshold adjustable (e.g. 0.0001)
-                print(
-                    f"Skipped {neuron_id} {src_monkey}: variance too small (x_var={np.var(x):.6f}, y_var={np.var(y):.6f})")
+            # Stimulus monkeys and their spike rates
+            stimulus_monkeys = [m for i, m in enumerate(monkey_list) if i not in (src_idx, subject_idx)]
+            neural_response = row[stimulus_monkeys].values.astype(float)
+
+            # Variance check
+            if np.var(neural_response) < 1e-3 or np.var(behavior_vec) < 1e-3:
                 continue
-
-            if len(y) != len(x):
-                print(f"Length mismatch for {neuron_id} (source: {monkey_list[src_idx]})")
+            if len(neural_response) != len(behavior_vec):
+                print(f"Length mismatch for {neuron_id} (source: {src_monkey})")
                 continue
 
             try:
-                X = sm.add_constant(x)
-                model = sm.OLS(y, X).fit()
-                r_squared = model.rsquared
+                # Z-score for regression
+                x = zscore(behavior_vec)
+                y = zscore(neural_response)
+                X_design = sm.add_constant(x)
+
+                if model_type == 'ols':
+                    model = sm.OLS(y, X_design).fit()
+                    r_squared = model.rsquared
+                elif model_type == 'glm':
+                    model = sm.GLM(y, X_design, family=sm.families.Poisson()).fit()
+                    r_squared = None
+                else:
+                    raise ValueError("model_type must be 'ols' or 'glm'")
 
                 # Permutation test
-                if permutation_test:
-                    null_distribution = []
-                    for _ in range(n_perm):
-                        x_perm = np.random.permutation(x)
-                        X_perm = sm.add_constant(x_perm)
-                        model_perm = sm.OLS(y, X_perm).fit()
-                        null_distribution.append(model_perm.rsquared)
-                    null_distribution = np.array(null_distribution)
-                    p_perm = (np.sum(null_distribution >= r_squared)) / (n_perm)
+                if permutation_test and model_type == 'ols':
+                    null_dist = np.array([
+                        sm.OLS(y, sm.add_constant(np.random.permutation(x))).fit().rsquared
+                        for _ in range(n_perm)
+                    ])
+                    p_perm = (np.sum(null_dist >= r_squared) + 1) / (n_perm + 1)
                 else:
                     p_perm = None
 
                 results.append({
                     'NeuronID': neuron_id,
                     'Behavior': behavior_name,
-                    'Source_Monkey': monkey_list[src_idx],
+                    'Source_Monkey': src_monkey,
+                    'Stimulus_Monkeys': stimulus_monkeys,
+                    'Behavior_Vector': behavior_vec,
+                    'Neural_Response': neural_response,
                     'Model': model_type,
-                    'R-squared': r_squared,
+                    'R_squared': r_squared,
                     'coef': model.params[1],
                     'intercept': model.params[0],
                     'p_value': model.pvalues[1],
                     'p_perm': p_perm,
-                    'Behavior_Vector': x,
-                    'Design_Matrix': X,
-                    'Neural_Response': y
                 })
 
-                if plot and r_squared > 0.6:
-                    y_pred = model.predict(X)
-
+                if plot and r_squared and r_squared > 0.6:
+                    y_pred = model.predict(X_design)
                     plt.figure(figsize=(8, 6))
                     plt.scatter(x, y, label='True', color='blue', alpha=0.6)
-                    plt.scatter(x, y_pred, color='green', label='Prediction', alpha=0.6)
-                    plt.plot(x, y_pred, label='Fit', color='black', alpha=0.6)
-                    plt.xlabel(f'{behavior_name} {monkey_list[src_idx]} (z-scored)')
-                    plt.ylabel('Neural Response')
-                    plt.title(f'{neuron_id} (R-sq {r_squared:.3f})')
+                    plt.plot(np.sort(x), y_pred[np.argsort(x)], label='Fit', color='black', alpha=0.6)
+                    plt.xlabel(f'{behavior_name} {src_monkey} (z-scored)')
+                    plt.ylabel('Neural Response (z-scored)')
+                    plt.title(f'{neuron_id} (R²={r_squared:.3f})')
                     plt.legend()
                     plt.grid(True)
                     plt.tight_layout()
                     plt.show()
 
-
             except Exception as e:
-                print(f"Error for Neuron {neuron_id}, Monkey {monkey_list[src_idx]}: {e}")
+                print(f"Error for Neuron {neuron_id}, Monkey {src_monkey}: {e}")
                 continue
 
     return pd.DataFrame(results)
@@ -498,155 +492,42 @@ def run_directional_vector_pls_analysis_cell_level(
     return pls, X_df, Y_df, pd.DataFrame(sample_info)
 
 
-def expand_cell_level_regression_results_with_spike_rates_per_stimulus(
-        spike_df,
-        regression_df,
-        group_name,
-        monkey_list,
-        subject_idx,
-        use_spikerate=True
-):
+
+def flatten_regression_results(df):
     """
-    Expands regression summary results by attaching mean spike rates per stimulus monkey.
+    Flatten regression results from one-row-per-regression to one-row-per-stimulus-monkey.
 
-    Parameters:
-        spike_df (pd.DataFrame): Raw or processed DataFrame with 'NeuronID', 'MonkeyName', and either 'SpikeCount' or 'MeanSpikeRate'
-        regression_df (pd.DataFrame): Output from run_directional_vector_linear_regression_cell_level
-        group_name (str): Monkey group name (e.g., "Zombies")
-        monkey_list (List[str]): List of all monkeys in group (ordered)
-        subject_idx (int): Index of the subject monkey in monkey_list
-        use_spikerate (bool): Whether to use 'MeanSpikeRate' or 'SpikeCount'
+    Works for both cell-level and window-level DataFrames (auto-detects window columns).
 
-    Returns:
-        pd.DataFrame: Expanded table with one row per stimulus monkey per regression result
+    Input schema (per row):
+        Stimulus_Monkeys: list[str], Behavior_Vector: np.array, Neural_Response: np.array,
+        plus scalar columns (NeuronID, Behavior, Source_Monkey, R_squared, coef, etc.)
+
+    Output schema (per row):
+        NeuronID, Behavior, Source_Monkey, Stimulus_Monkey, Behavior_Value, MeanSpikeRate,
+        R_squared, coef, intercept, p_value, p_perm
+        (+ WindowStart_ms, WindowEnd_ms if window-level)
     """
+    has_windows = 'WindowStart_ms' in df.columns
 
-    value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
+    scalar_cols = ['NeuronID', 'Behavior', 'Source_Monkey', 'Model',
+                   'R_squared', 'coef', 'intercept', 'p_value', 'p_perm']
+    if has_windows:
+        scalar_cols = ['NeuronID', 'WindowStart_ms', 'WindowEnd_ms'] + scalar_cols[1:]
 
-    # Filter for group and drop bad labels
-    filtered_df = spike_df[
-        (spike_df['MonkeyGroup'] == group_name) &
-        (spike_df['MonkeyName'] != "NewMonkey")
-        ]
+    rows = []
+    for _, reg_row in df.iterrows():
+        stim_monkeys = reg_row['Stimulus_Monkeys']
+        behavior_vec = reg_row['Behavior_Vector']
+        neural_resp = reg_row['Neural_Response']
 
-    # Average spike rate per neuron per stimulus monkey
-    mean_spikes = filtered_df.groupby(['NeuronID', 'MonkeyName'], as_index=False)[value_col].mean()
+        base = {col: reg_row[col] for col in scalar_cols}
 
-    # Build expanded table
-    expanded_rows = []
+        for stim_monkey, bval, spike_rate in zip(stim_monkeys, behavior_vec, neural_resp):
+            row = {**base, 'Stimulus_Monkey': stim_monkey,
+                   'Behavior_Value': bval, 'MeanSpikeRate': spike_rate}
+            rows.append(row)
 
-    for _, row in regression_df.iterrows():
-        neuron_id = row['NeuronID']
-        behavior = row['Behavior']
-        source = row['Source_Monkey']
-        excluded = {monkey_list[subject_idx], source}
-
-        for stim_monkey in monkey_list:
-            if stim_monkey in excluded:
-                continue
-
-            # Get spike rate to this stimulus monkey for this neuron
-            match = mean_spikes[
-                (mean_spikes['NeuronID'] == neuron_id) &
-                (mean_spikes['MonkeyName'] == stim_monkey)
-                ]
-
-            if match.empty:
-                continue
-
-            expanded_rows.append({
-                'NeuronID': neuron_id,
-                'Behavior': behavior,
-                'Source_Monkey': source,
-                'StimulusMonkey': stim_monkey,
-                'MeanSpikeRate': match[value_col].values[0],
-                'R-squared': row['R-squared'],
-                'coef': row['coef'],
-                'intercept': row['intercept'],
-                'p_value': row['p_value'],
-                'p_perm': row['p_perm']
-            })
-
-    return pd.DataFrame(expanded_rows)
-
-def expand_window_level_regression_results_with_spike_rates_per_stimulus(
-    spike_df,
-    regression_df,
-    group_name,
-    monkey_list,
-    subject_idx,
-    use_spikerate=True
-):
-    """
-    Expands window-level regression results with per-stimulus monkey mean spike rates.
-
-    Parameters:
-        spike_df (pd.DataFrame): DataFrame with 'NeuronID', 'MonkeyName', 'WindowStart_ms', 'WindowEnd_ms',
-                                 and either 'SpikeCount' or 'MeanSpikeRate'
-        regression_df (pd.DataFrame): Output from run_directional_vector_linear_regression_window_level
-        group_name (str): Group name (e.g. "Zombies")
-        monkey_list (List[str]): List of monkeys in group
-        subject_idx (int): Index of subject monkey
-        use_spikerate (bool): Use 'MeanSpikeRate' or 'SpikeCount'
-
-    Returns:
-        pd.DataFrame: Expanded table with one row per stimulus monkey per regression window
-    """
-
-    value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
-
-    # Filter spike_df
-    filtered_df = spike_df[
-        (spike_df['MonkeyGroup'] == group_name) &
-        (spike_df['MonkeyName'] != "NewMonkey")
-    ]
-
-    # Average spike rate per Neuron x StimulusMonkey x Time Window
-    mean_spikes = filtered_df.groupby(
-        ['NeuronID', 'MonkeyName', 'WindowStart_ms', 'WindowEnd_ms'],
-        as_index=False
-    )[value_col].mean()
-
-    expanded_rows = []
-
-    for _, row in regression_df.iterrows():
-        neuron_id = row['NeuronID']
-        behavior = row['Behavior']
-        source = row['Source_Monkey']
-        win_start = row['WindowStart_ms']
-        win_end = row['WindowEnd_ms']
-        excluded = {monkey_list[subject_idx], source}
-
-        for stim_monkey in monkey_list:
-            if stim_monkey in excluded:
-                continue
-
-            match = mean_spikes[
-                (mean_spikes['NeuronID'] == neuron_id) &
-                (mean_spikes['MonkeyName'] == stim_monkey) &
-                (mean_spikes['WindowStart_ms'] == win_start) &
-                (mean_spikes['WindowEnd_ms'] == win_end)
-            ]
-
-            if match.empty:
-                continue
-
-            expanded_rows.append({
-                'NeuronID': neuron_id,
-                'WindowStart_ms': win_start,
-                'WindowEnd_ms': win_end,
-                'Behavior': behavior,
-                'Source_Monkey': source,
-                'StimulusMonkey': stim_monkey,
-                'MeanSpikeRate': match[value_col].values[0],
-                'R-squared': row['R-squared'],
-                'coef': row['coef'],
-                'intercept': row['intercept'],
-                'p_value': row['p_value'],
-                'p_perm': row['p_perm']
-            })
-
-    return pd.DataFrame(expanded_rows)
 
 
 def run_rsa_analysis(spike_df, behavior_matrix, behavior_name, monkey_list, subject_idx, method='correlation', use_rate = False):

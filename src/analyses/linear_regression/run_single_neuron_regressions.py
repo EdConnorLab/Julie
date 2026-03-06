@@ -11,7 +11,7 @@ from analyses.enums.monkey_names import get_monkeys_by_default_order
 from analyses.linear_regression.behavior_vector_linear_regression import \
     run_directional_vector_linear_regression_cell_level, \
     run_directional_vector_linear_regression_window_level, \
-    expand_window_level_regression_results_with_spike_rates_per_stimulus
+    flatten_regression_results
 from analyses.preprocessing.preprocess_and_select_significant_neurons import PreprocessConfig
 
 from analyses.spike_rate import compute_mean_spike_rate_for_windows_from_source, compute_mean_spike_rate_for_cells_from_source
@@ -119,58 +119,47 @@ def main():
     #     ]
     # mean_spike_rate = compute_mean_spike_rate_for_cells(filtered_df)
 
-    out_cells = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_single_neurons_pKW.pkl"
+    out_cells = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_neurons_pKW.pkl"
     directional_all_neuron_results_sorted.to_pickle(out_cells)
     print(directional_all_neuron_results_sorted)
 
-
-    # ----------------------------
-    # 2) Window-level directional regression on significant windows (optional)
-    # ----------------------------
-    sig_windows_path = cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_significant_windows_pKW_passed.pkl"
-    if sig_windows_path.exists():
-        sig_windows = pd.read_pickle(sig_windows_path)
-        mean_spike_rate_windows = compute_mean_spike_rate_for_windows_from_source(sig_windows, source=source)
-
-        all_window_results = []
-        for behavior_name, mat in behavior_matrices.items():
-            results_df = run_directional_vector_linear_regression_window_level(
-                mean_spike_rate_windows,
-                mat,
-                behavior_name,
-                monkey_group,
-                monkey_list,
-                subject_monkey_index,
-                use_spikerate=True,
-                permutation_test=True,
-                n_perm=1000
-            )
-            all_window_results.append(results_df)
-
-        all_window_results_df = pd.concat(all_window_results, ignore_index=True)
-        print('all window results..........................')
-        print(all_window_results_df)
-        out_windows = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_windows_pKW.pkl"
-        all_window_results_df.to_pickle(out_windows)
-
-        # expand (your existing function)
-        filtered_df = all_window_results_df[
-            (all_window_results_df["p_value"] < 0.05) &
-            (all_window_results_df["R-squared"] > 0.5) &
-            (all_window_results_df.get("p_perm", 0.0) < 0.05)
-            ]
-
-        expanded_results = expand_window_level_regression_results_with_spike_rates_per_stimulus(
-            mean_spike_rate_windows,
-            filtered_df,
-            monkey_group,
-            monkey_list,
-            subject_monkey_index,
-            use_spikerate=True
-        )
-        out_windows_expanded = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_windows_pKW_expanded.pkl"
-        print('saving the results')
-        expanded_results.to_pickle(out_windows_expanded)
+    flat_cell_results = flatten_regression_results(directional_all_neuron_results_df)
+    flat_cell_results_filename = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_neurons_pKW_flat.pkl"
+    print('saving the flat cell results')
+    flat_cell_results.to_pickle(flat_cell_results_filename)
+    # # ----------------------------
+    # # 2) Window-level directional regression on significant windows (optional)
+    # # ----------------------------
+    # sig_windows_path = cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_significant_windows_pKW_passed.pkl"
+    # if sig_windows_path.exists():
+    #     sig_windows = pd.read_pickle(sig_windows_path)
+    #     mean_spike_rate_windows = compute_mean_spike_rate_for_windows_from_source(sig_windows, source=source)
+    #
+    #     all_window_results = []
+    #     for behavior_name, mat in behavior_matrices.items():
+    #         results_df = run_directional_vector_linear_regression_window_level(
+    #             mean_spike_rate_windows,
+    #             mat,
+    #             behavior_name,
+    #             monkey_group,
+    #             monkey_list,
+    #             subject_monkey_index,
+    #             use_spikerate=True,
+    #             permutation_test=True,
+    #             n_perm=1000
+    #         )
+    #         all_window_results.append(results_df)
+    #
+    #     all_window_results_df = pd.concat(all_window_results, ignore_index=True)
+    #     print('all window results..........................')
+    #     print(all_window_results_df)
+    #     out_windows = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_windows_pKW.pkl"
+    #     all_window_results_df.to_pickle(out_windows)
+    #
+    #     flat_window_results = flatten_regression_results(all_window_results_df)
+    #     flat_window_filename = analysis_results_dir / f"{source.name}_{monkey_group}_dir_ols_on_windows_pKW_flat.pkl"
+    #     print('saving the flat window results')
+    #     flat_window_results.to_pickle(flat_window_filename)
 
 if __name__ == "__main__":
     main()
