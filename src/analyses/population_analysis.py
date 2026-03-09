@@ -1,4 +1,6 @@
+import glob
 import os
+from pathlib import Path
 
 import numpy as np
 from scipy.stats import zscore
@@ -8,7 +10,7 @@ import pandas as pd
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from analyses.enums.monkey_names import get_monkeys_by_default_order
-from analyses.spike_count import prepare_exploded_spike_data, filter_good_neurons, bin_spike_times
+from analyses.spike_count import filter_good_neurons, bin_spike_times
 
 
 
@@ -188,42 +190,27 @@ def plot_glmm_estimates_from_model(model, reference_label="(ref)"):
 
     return plot_df  # return the data used in plot for inspection if needed
 
-def get_all_combined_exploded_spike_counts(group_name="Zombies", apply_filter=False, apply_binning=False, bin_size=0.05, location=None, use_sorted=False):
-    reader = RecordingMetadataReader()
-    metadata = reader.get_metadata_for_preliminary_analysis()
+def combine_all_pkl_files_in_folder_to_dataframe(pkl_file_dir: Path):
+    dfs = []
+    pkl_files = sorted(glob.glob(os.path.join(pkl_file_dir, "*.pkl")))
 
-    all_dfs = []
+    for f in pkl_files:
+        print(f"Processing: {os.path.basename(f)}")
 
-    for _, row in metadata.iterrows():
-        date = str(row['Date'].strftime("%Y-%m-%d"))
-        round_no = int(row['Round No.'])
+        df = pd.read_pickle(f)
+        dfs.append(df)
 
-        exploded_df = prepare_exploded_spike_data(date, round_no, curated_channels_only=True, use_sorted=use_sorted)
-        if apply_filter:
-            good_neurons = filter_good_neurons(exploded_df)
-            exploded_df = exploded_df[exploded_df["NeuronID"].isin(good_neurons)]
-        if location == 'AMG' or location == 'ER' or location == 'Unknown':
-            exploded_df = exploded_df[exploded_df["NeuronID"].str.startswith(location)]
-        elif location == None:
-            pass
-        else:
-            raise ValueError("location must be one of 'AMG', 'ER', 'Unknown', or None.")
-        exploded_df = exploded_df[(exploded_df['MonkeyGroup'] == group_name) & (exploded_df['MonkeyName'] != "NewMonkey")]
-        exploded_df['SpikeCount'] = exploded_df['SpikeTimes'].apply(len)
+    combined_df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-        if apply_binning:
-            exploded_df = bin_spike_times(exploded_df, bin_size)
-
-        all_dfs.append(exploded_df)
-
-    combined_df = pd.concat(all_dfs, ignore_index=True)
+    print("Total rows:", len(combined_df))
     return combined_df
 
 
 if __name__ == "__main__":
     # Running directional GLMMs on all neurons
-    exploded_df = get_all_combined_exploded_spike_counts(apply_filter=True, location='ER')
-    exploded_df['SpikeCount'] = exploded_df['SpikeTimes'].apply(len)
+    folder_path = Path('/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered')
+    all_df = combine_all_pkl_files_in_folder_to_dataframe(folder_path)
+    all_df['SpikeCount'] = all_df['SpikeTimes'].apply(len)
 
     subject_monkey_index = 6
     monkey_group_name = "Zombies"
@@ -260,7 +247,7 @@ if __name__ == "__main__":
 
         try:
             summary, model = run_glmm_social_score_across_neurons(
-                exploded_df, social_df, social_col_name=f'{metric_name}_z'
+                all_df, social_df, social_col_name=f'{metric_name}_z'
             )
             print(summary)
         except Exception as e:
