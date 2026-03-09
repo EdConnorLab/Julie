@@ -21,7 +21,7 @@ def run_permutation_kruskal_wallis(
     n_permutations=1000,
     alpha=0.05,
     plot=True,
-    random_state=None
+    random_state=42
 ):
     """df has to be trial-level spike counts -- perform aggregate_trial_level before passing it in"""
     all_results = []
@@ -73,15 +73,15 @@ def run_permutation_kruskal_wallis(
         results_df = pd.DataFrame(all_results)
         significant_df = results_df[results_df['p-value'] < alpha]
 
-        print(f"\nPermKW Significant neurons (p < {alpha}):")
-        print(significant_df.head())
+        print(f"{significant_df.shape[0]} neurons are significant (p < {alpha})")
+
         return results_df, significant_df
     else:
         print("No valid neurons found for permutation Kruskal-Wallis.")
         return pd.DataFrame(), pd.DataFrame()
 
 
-def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', count_col='SpikeCount', n_permutations=1000, alpha=0.05, plot=True):
+def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', count_col='SpikeCount', n_permutations=1000, alpha=0.05, random_state=42, plot=True):
     """df has to be trial-level spike counts -- perform aggregate_trial_level before passing it in"""
     all_results = []
     unique_neurons = df[neuron_col].unique()
@@ -101,6 +101,7 @@ def run_permutation_anova(df, category_col='MonkeyName', neuron_col='NeuronID', 
             permutation_anova_input_df,
             test_func=permutation_anova_test,
             num_permutations=n_permutations,
+            random_state=random_state,
             alpha = alpha
         )
 
