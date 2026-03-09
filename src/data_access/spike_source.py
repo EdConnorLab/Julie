@@ -46,11 +46,16 @@ class SISortedSpikeSource:
     pre_filtered: bool = False
 
     def load(self, date: str, round_no: int) -> Optional[pd.DataFrame]:
-        df = SortedSpikeCacheManager(cache_subdir=self.cache_subdir).load_or_compute(
-            date,
-            round_no,
-            force_recompute=self.force_recompute,
-        )
+        try:
+            df = SortedSpikeCacheManager(cache_subdir=self.cache_subdir).load_or_compute(
+                date,
+                round_no,
+                force_recompute=self.force_recompute,
+            )
+        except FileNotFoundError:
+            if self.pre_filtered:
+                return None
+            raise
         if df is None or getattr(df, "empty", True):
             return None
         return df
