@@ -33,7 +33,6 @@ def run_marginal_vector_linear_regression_from_matrix(
     monkey_list,
     subject_idx,
     use_spikerate=False,
-    model_type='ols'
 ):
     results = []
     value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
@@ -72,12 +71,8 @@ def run_marginal_vector_linear_regression_from_matrix(
 
         try:
             X = sm.add_constant(x)
-            if model_type == 'ols':
-                model = sm.OLS(y, X).fit()
-                r_squared = model.rsquared
-            else:
-                model = sm.GLM(y, X, family=sm.families.Poisson()).fit()
-                r_squared = None
+            model = sm.OLS(y, X).fit()
+            r_squared = model.rsquared
 
             results.append({
                 'NeuronID': neuron_id,
@@ -103,7 +98,8 @@ def run_directional_vector_linear_regression_window_level(
         subject_idx,
         use_spikerate = False,
         permutation_test = False,
-        n_perm = 10000):
+        n_perm = 10000,
+        random_state=42):
     """
     Run directional vector linear regression at the window level.
 
@@ -175,13 +171,15 @@ def run_directional_vector_linear_regression_window_level(
 
                 # Permutation test
                 if permutation_test:
+                    rng = np.random.default_rng(random_state)
                     null_dist = np.array([
-                        sm.OLS(y, sm.add_constant(np.random.permutation(x))).fit().rsquared
+                        sm.OLS(y, sm.add_constant(rng.permutation(x))).fit().rsquared
                         for _ in range(n_perm)
                     ])
                     p_perm = (np.sum(null_dist >= r_squared) + 1) / (n_perm + 1)
                 else:
                     p_perm = None
+
 
                 results.append({
                     'NeuronID': neuron_id,
@@ -214,10 +212,10 @@ def run_directional_vector_linear_regression_cell_level(
         monkey_list,
         subject_idx,
         use_spikerate=False,
-        model_type='ols',
         plot=False,
         permutation_test=False,
-        n_perm=10000):
+        n_perm=10000,
+        random_state=42):
 
     results = []
     value_col = 'MeanSpikeRate' if use_spikerate else 'SpikeCount'
@@ -255,19 +253,16 @@ def run_directional_vector_linear_regression_cell_level(
                 y = zscore(neural_response)
                 X_design = sm.add_constant(x)
 
-                if model_type == 'ols':
-                    model = sm.OLS(y, X_design).fit()
-                    r_squared = model.rsquared
-                elif model_type == 'glm':
-                    model = sm.GLM(y, X_design, family=sm.families.Poisson()).fit()
-                    r_squared = None
-                else:
-                    raise ValueError("model_type must be 'ols' or 'glm'")
+
+                model = sm.OLS(y, X_design).fit()
+                r_squared = model.rsquared
+
 
                 # Permutation test
-                if permutation_test and model_type == 'ols':
+                if permutation_test:
+                    rng = np.random.default_rng(random_state)
                     null_dist = np.array([
-                        sm.OLS(y, sm.add_constant(np.random.permutation(x))).fit().rsquared
+                        sm.OLS(y, sm.add_constant(rng.permutation(x))).fit().rsquared
                         for _ in range(n_perm)
                     ])
                     p_perm = (np.sum(null_dist >= r_squared) + 1) / (n_perm + 1)
@@ -281,7 +276,6 @@ def run_directional_vector_linear_regression_cell_level(
                     'Stimulus_Monkeys': stimulus_monkeys,
                     'Behavior_Vector': behavior_vec,
                     'Neural_Response': neural_response,
-                    'Model': model_type,
                     'R_squared': r_squared,
                     'coef': model.params[1],
                     'intercept': model.params[0],
@@ -510,7 +504,7 @@ def flatten_regression_results(df):
     """
     has_windows = 'WindowStart_ms' in df.columns
 
-    scalar_cols = ['NeuronID', 'Behavior', 'Source_Monkey', 'Model',
+    scalar_cols = ['NeuronID', 'Behavior', 'Source_Monkey',
                    'R_squared', 'coef', 'intercept', 'p_value', 'p_perm']
     if has_windows:
         scalar_cols = ['NeuronID', 'WindowStart_ms', 'WindowEnd_ms'] + scalar_cols[1:]
