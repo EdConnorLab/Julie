@@ -7,7 +7,7 @@ from analyses.spike_count import extract_spike_counts_from_windows
 from data_access.spike_source import SpikeSource
 
 
-def _add_trial_spike_rate_columns(exploded_df: pd.DataFrame) -> pd.DataFrame:
+def add_trial_spike_rate_columns(exploded_df: pd.DataFrame) -> pd.DataFrame:
     df = exploded_df.copy()
     df["SpikeCount"] = df["SpikeTimes"].apply(len)
     df["EpochDuration"] = df["EpochStartStop"].apply(lambda x: float(x[1] - x[0]))
@@ -112,7 +112,7 @@ def compute_mean_spike_rate_for_cells_from_source(
         if trials.empty:
             continue
 
-        trials = _add_trial_spike_rate_columns(trials)
+        trials = add_trial_spike_rate_columns(trials)
         rows.append(trials[["NeuronID", "MonkeyName", "MonkeyGroup", "SpikeRate"]])
 
     if not rows:
@@ -144,7 +144,7 @@ def compute_population_spike_rates_for_anatomical_region(
         if exploded_df is None or exploded_df.empty:
             continue
 
-        trials = _add_trial_spike_rate_columns(exploded_df)
+        trials = add_trial_spike_rate_columns(exploded_df)
         all_trials.append(trials)
 
     if not all_trials:
