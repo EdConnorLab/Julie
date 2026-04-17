@@ -51,6 +51,13 @@ def build_matrix_by_condition(df, cfg, condition_map, min_reps=1, group_map=None
     for s in sessions:
         counts = (trial_meta[trial_meta['session'] == s]
                   .groupby('condition').size())
+        # --- diagnostic (comment out if noisy) ---
+        # missing = [c for c in conditions if c not in counts.index]
+        # short = {c: int(counts[c]) for c in counts.index if counts[c] < min_reps}
+        # if missing or short:
+        #     # print(f"  [diagnostics] session {s}: missing={missing} | "
+        #     #       f"below_min_reps({min_reps})={short}")
+        # -----------------------------------------
         if len(counts) < n_conditions:
             continue
         if counts.min() < min_reps:

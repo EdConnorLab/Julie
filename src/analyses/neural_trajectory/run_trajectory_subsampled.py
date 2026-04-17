@@ -2,7 +2,7 @@
 """
 Subsampling variant of run_trajectory_by_condition.py for the 'group'
 analysis: equalizes group sizes by randomly picking the same number of
-stimulus monkeys from each group, then runs the full pipeline N times
+stimulus monkeys from each group, then runs the full_dominance_first pipeline N times
 with different random subsets.
 
 Use this to check whether Best Frans (or any group) looks distinct
@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from config import TrajectoryConfig
 from data_loading import load_and_filter
 from binning_by_condition import build_matrix_by_condition
-from preprocessing import preprocess
+from neural_trajectory.preprocessing import preprocess
 from pca_runner import run_pca
 
 
@@ -104,7 +104,7 @@ def plot_overlay(all_scores, conditions, var, cfg, n_bins, title='', n_pcs=6, sa
 
 def main():
     cfg = TrajectoryConfig(
-        region='ER',
+        region='AMG',
         session=None,
         trial_averaged=True,
         peak_align=False,
@@ -121,7 +121,7 @@ def main():
     N_ITER = 30             # number of random subsamples
     MEAN_CENTER = True
     MIN_REPS_PER_COND = 5
-    SEED = 0
+    SEED = 15
     EXCLUDE_NAMES = ()      # e.g., ('19J',) to drop the suspected outlier
     SOFT_NORMALIZE = True
     # ----------------------------------

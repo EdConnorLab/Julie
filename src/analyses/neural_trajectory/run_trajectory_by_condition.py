@@ -13,11 +13,13 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from analyses.neural_trajectory.plotting import plot_pc_vs_time_all_shaded, plot_pc_vs_time_per_group
+from analyses.neural_trajectory.plotting import plot_pc_vs_time_all_shaded, plot_pc_vs_time_per_group, \
+    plot_per_group_2d_mpl, plot_all_shaded_2d_mpl, plot_all_shaded_3d_plotly, plot_psth_group_mean
+from social_rank_analysis import load_group_matrices, davids_score
 from config import TrajectoryConfig
 from data_loading import load_and_filter
 from binning_by_condition import build_matrix_by_condition
-from preprocessing import preprocess
+from neural_trajectory.preprocessing import preprocess
 from pca_runner import run_pca
 from plotting import (compute_trajectories,
                       plot_group_mean_3d_mpl, plot_group_mean_2d_mpl,
@@ -27,6 +29,30 @@ from plotting import (compute_trajectories,
 MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv"
 
 
+def _compute_ds_combined(groups=('Zombies', 'Best Frans')):
+    """Compute DS_combined per monkey by importing social_rank_analysis.
+    Returns {MonkeyName: float}. DS is computed within each group."""
+    ds_all = {}
+    for g in groups:
+        mats = load_group_matrices(g)
+        combined = mats['agonism'] + mats['submission'].T
+        ds = davids_score(combined)
+        for name, score in ds.items():
+            ds_all[str(name)] = float(score)
+    return ds_all
+
+
+def _tertile_within_group(scores, group_labels, bin_names=('DS_low', 'DS_mid', 'DS_high')):
+    """Rank-based tertile split within each group. Stable for small n."""
+    out = pd.Series(index=scores.index, dtype=object)
+    for g in group_labels.unique():
+        mask = group_labels == g
+        s = scores[mask]
+        ranks = s.rank(method='first')
+        n = len(ranks)
+        bins = np.ceil(ranks / n * 3).astype(int).clip(1, 3)  # 1, 2, or 3
+        out.loc[mask] = bins.map({1: bin_names[0], 2: bin_names[1], 3: bin_names[2]})
+    return out
 def build_condition_map(analysis, info_df):
     """
     Returns (condition_map, exclude_groups).
@@ -51,15 +77,57 @@ def build_condition_map(analysis, info_df):
         return m, []
 
     if analysis == 'rank':
-        sub = info_df[info_df['Group Name'] != 'Stranger Things'].copy()
+        sub = info_df[~info_df['Group Name'].isin(['Stranger Things', 'Instigators'])].copy()
         sub = sub.dropna(subset=['Rank'])
+        sub = sub[sub['Rank'].astype(int).between(1, 5)]  # <-- add this line
         m = dict(zip(sub['Name'].astype(str),
                      'rank' + sub['Rank'].astype(int).astype(str)))
-        return m, ['Stranger Things']
+        return m, ['Stranger Things', 'Instigators']
 
     if analysis == 'identity':
         m = dict(zip(names, info_df['Name']))
         return m, []
+    if analysis == 'adult_females':
+        # Adult females in Zombies + Best Frans, binned by within-group DS tertile
+        sub = info_df[info_df['Group Name'].isin(['Zombies', 'Best Frans'])].copy()
+        sub = sub[sub['Sex'] == 'F']
+        sub = sub[sub['Age'] >= 4]
+        sub['Name'] = sub['Name'].astype(str)
+
+        ds_map = _compute_ds_combined(groups=('Zombies', 'Best Frans'))
+        sub['DS'] = sub['Name'].map(ds_map)
+        sub = sub.dropna(subset=['DS'])
+
+        sub['DS_bin'] = _tertile_within_group(sub['DS'], sub['Group Name'])
+        print(f"adult_females: {len(sub)} monkeys across "
+              f"{sub['Group Name'].nunique()} groups")
+        print(sub[['Name', 'Group Name', 'DS', 'DS_bin']]
+              .sort_values(['Group Name', 'DS'], ascending=[True, False])
+              .to_string(index=False))
+
+        m = dict(zip(sub['Name'], sub['DS_bin']))
+        return m, ['Stranger Things', 'Instigators']
+
+    if analysis == 'demographic':
+        # alpha / adult_female / juvenile across Zombies + Best Frans
+        sub = info_df[info_df['Group Name'].isin(['Zombies', 'Best Frans'])].copy()
+        sub['Name'] = sub['Name'].astype(str)
+
+        def _label(row):
+            if pd.notna(row['Age']) and row['Age'] < 4:
+                return 'juvenile'
+            if pd.notna(row['Rank']) and int(row['Rank']) == 1:
+                return 'alpha'
+            if row['Sex'] == 'F':
+                return 'adult_female'
+            return None  # adult males who aren't alpha — excluded
+
+        sub['demo'] = sub.apply(_label, axis=1)
+        sub = sub.dropna(subset=['demo'])
+        print(f"demographic: {sub['demo'].value_counts().to_dict()}")
+
+        m = dict(zip(sub['Name'], sub['demo']))
+        return m, ['Stranger Things', 'Instigators']
 
     raise ValueError(f"Unknown analysis: {analysis}")
 
@@ -115,14 +183,14 @@ def plot_condition_3d(pca_result, info, title=''):
 
 def main():
     cfg = TrajectoryConfig(
-        region='ER', session=None, trial_averaged=True, peak_align=False,
+        region='AMG', session=None, trial_averaged=True, peak_align=False,
         n_components=6, bin_width=0.050, min_epoch_duration=2.0,
-        analysis='group' # 'identity' | 'group' | 'familiarity' | 'sex' | 'rank'
+        analysis= 'group' # 'adult_females' | 'identity' | 'group' | 'rank' |     cannot use 'familiarity' | 'sex'  because there are only 2 groups
     )
     cfg.validate()
 
     # --------- User settings ----------
-    MEAN_CENTER = False
+    MEAN_CENTER = True
     SOFT_NORMALIZE = True
     MIN_REPS_PER_COND = 5
     PLOT_SAVE_DIR = f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/population_trajectory/{cfg.analysis}'
@@ -131,6 +199,7 @@ def main():
 
     df = load_and_filter(cfg)
     info_df = pd.read_csv(MONKEY_INFO_PATH)
+
 
     if cfg.analysis == 'identity':
         monkeys_per_session = df.groupby('session')['MonkeyName'].apply(set)
@@ -155,6 +224,8 @@ def main():
     pca_matrix, row_meta_df, info = build_matrix_by_condition(
         df, cfg, condition_map, group_map=group_map, min_reps=MIN_REPS_PER_COND)
 
+    raw_matrix = pca_matrix.copy()
+
     pca_matrix = preprocess(pca_matrix, info, cfg, soft_normalize=SOFT_NORMALIZE, mean_center=MEAN_CENTER)
     pca_result = run_pca(pca_matrix, info, cfg)
 
@@ -162,26 +233,37 @@ def main():
         pca_result, row_meta_df, info, cfg)
 
     var = pca_result['var']
-    suffix = f"[{cfg.region}] {cfg.analysis} MC: {MEAN_CENTER} SN: {SOFT_NORMALIZE}"
+    suffix = f"[{cfg.region}] {cfg.analysis} MC {MEAN_CENTER} SN {SOFT_NORMALIZE}"
 
     # plot_group_mean_3d_mpl(group_trajs, var, cfg, suffix, save=SAVE, save_dir = PLOT_SAVE_DIR)
-    plot_group_mean_2d_mpl(group_trajs, var, cfg, suffix=suffix, save=SAVE, save_dir = PLOT_SAVE_DIR)
-    plot_pc_vs_time_group_mean(group_trajs, var, cfg, row_meta_df, info,
-                               pcs=range(1, cfg.n_components + 1),
-                               suffix=suffix, save=SAVE)
+    # plot_group_mean_2d_mpl(group_trajs, var, cfg, suffix=suffix, save=SAVE, save_dir = PLOT_SAVE_DIR)
+    # plot_pc_vs_time_group_mean(group_trajs, var, cfg, row_meta_df, info,
+    #                            pcs=range(1, cfg.n_components + 1),
+    #                            suffix=suffix, save=SAVE)
     # plot_pc_vs_time_per_group(group_trajs, c2g, var, cfg, row_meta_df, info, pcs=range(1, cfg.n_components + 1),
     #                            suffix=suffix+"_per_group", save=SAVE)
     # plot_pc_vs_time_all_shaded(group_trajs, c2g, var, cfg, row_meta_df, info, pcs=range(1, cfg.n_components + 1),
     #                                 suffix=suffix+"_per_group", save=SAVE)
 
+
+    # PSTH Plot for... trial-averaged by group; Note that SEM here is across all neurons pooled across sessions,
+    # not across trials. Standard single-neuron PSTHs use SEM across trials
+
+    # if cfg.analysis == 'group':
+    #     plot_psth_group_mean(raw_matrix, pca_matrix, row_meta_df, info, cfg,
+    #                          smooth_sigma_s=0.050, suffix=suffix,
+    #                          save=SAVE, save_dir=PLOT_SAVE_DIR)
+
     # Only meaningful when there's sub-grouping (identity mode)
     if cfg.analysis == 'identity':
-        plot_per_group_3d_mpl(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+        # plot_all_shaded_3d_plotly(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+        # plot_per_group_3d_mpl(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+
         # plot_all_shaded_3d_mpl(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
         # plot_pc_vs_time_per_group(cond_trajs, c2g, var, cfg, row_meta_df, info,
-        #                                pcs=range(1, cfg.n_components + 1), suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
-        # plot_per_group_2d_mpl(cond_trajs, c2g, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
-        # plot_all_shaded_2d_mpl(cond_trajs, c2g, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+        #                                  pcs=range(1, cfg.n_components + 1), suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+        plot_per_group_2d_mpl(cond_trajs, c2g, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+        plot_all_shaded_2d_mpl(cond_trajs, c2g, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
 
     plt.show()
 
