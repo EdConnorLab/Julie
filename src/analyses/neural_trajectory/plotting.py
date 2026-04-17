@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from scipy.ndimage import gaussian_filter1d
 
-PLOT_SAVE_DIR = '/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/population_trajectory'
+PLOT_SAVE_DIR = '/analysis_results/state_space_trajectory'
 
 
 def _save_mpl(fig, name, save, save_dir):
@@ -120,9 +120,15 @@ def _shaded_group_colors(c2g, cfg):
             colors[c] = cmap(0.3 + 0.6 * (i / max(n - 1, 1)))
     return colors
 
+_AUTO_GROUP_COLORS = {}
 
 def _group_color(cfg, g):
-    return cfg.group_colors.get(g, 'gray')
+    if g in cfg.group_colors:
+        return cfg.group_colors[g]
+    if g not in _AUTO_GROUP_COLORS:
+        palette = plt.get_cmap('tab10').colors
+        _AUTO_GROUP_COLORS[g] = palette[len(_AUTO_GROUP_COLORS) % len(palette)]
+    return _AUTO_GROUP_COLORS[g]
 
 
 def _rgba_str(c):
@@ -397,4 +403,96 @@ def plot_pc_vs_time_all_shaded(cond_trajs, c2g, var, cfg, row_meta_df, info,
     fig.suptitle(f'PC vs time — all conditions {suffix}')
     fig.tight_layout()
     _save_mpl(fig, f'pc_vs_time_all_shaded_{_safe(suffix)}', save, save_dir)
+    return fig
+
+
+def plot_psth_group_mean(raw_matrix, preproc_matrix, row_meta_df, info, cfg,
+                         smooth_sigma_s=0.050, suffix='', save=False,
+                         save_dir=PLOT_SAVE_DIR):
+    """
+    PSTH: population-averaged firing rate vs time, one trace per condition/group.
+
+    Parameters
+    ----------
+    raw_matrix : ndarray (n_conditions * n_bins, n_neurons)
+        Pre-preprocessing mean spike counts per bin (output of build_matrix_by_condition).
+    preproc_matrix : ndarray, same shape
+        Post-preprocessing matrix (soft-norm / mean-center applied).
+    row_meta_df : DataFrame with 'condition' and 'time_bin' columns.
+    info : dict with 'conditions', 'n_bins', 'bin_width'.
+    cfg : TrajectoryConfig (uses cfg.group_cmaps if present for colors).
+    smooth_sigma_s : float or None
+        Gaussian smoothing SD in seconds along time axis. None/0 disables.
+
+    Plots two panels side by side:
+        (left)  raw firing rate (Hz), mean ± SEM across neurons
+        (right) preprocessed units, mean ± SEM across neurons
+    """
+    conditions = list(info['conditions'])
+    n_bins = info['n_bins']
+    bin_width = info['bin_width']
+    n_cond = len(conditions)
+
+    def _reshape(mat):
+        # (n_cond * n_bins, n_neurons) -> (n_cond, n_bins, n_neurons),
+        # respecting the row order in row_meta_df.
+        n_neurons = mat.shape[1]
+        out = np.full((n_cond, n_bins, n_neurons), np.nan)
+        cond_to_idx = {c: i for i, c in enumerate(conditions)}
+        for row_idx, (c, b) in enumerate(zip(row_meta_df['condition'],
+                                             row_meta_df['time_bin'])):
+            out[cond_to_idx[c], int(b), :] = mat[row_idx]
+        return out
+
+    raw_3d = _reshape(raw_matrix) / bin_width  # spike counts/bin -> Hz
+    pre_3d = _reshape(preproc_matrix)
+
+    # Optional smoothing along time axis (axis=1)
+    if smooth_sigma_s and smooth_sigma_s > 0:
+        sigma_bins = smooth_sigma_s / bin_width
+        raw_3d = gaussian_filter1d(raw_3d, sigma=sigma_bins, axis=1)
+        pre_3d = gaussian_filter1d(pre_3d, sigma=sigma_bins, axis=1)
+
+    # Population mean and SEM across neurons
+    def _mean_sem(arr3d):
+        mean = arr3d.mean(axis=2)  # (n_cond, n_bins)
+        sem = arr3d.std(axis=2, ddof=1) / np.sqrt(arr3d.shape[2])  # (n_cond, n_bins)
+        return mean, sem
+
+    raw_m, raw_s = _mean_sem(raw_3d)
+    pre_m, pre_s = _mean_sem(pre_3d)
+
+    t = np.arange(n_bins) * bin_width
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), sharex=True)
+
+    # Pick a color per condition: prefer group_cmaps if available
+    cmaps = getattr(cfg, 'group_cmaps', {}) or {}
+
+    def _color(cond, i):
+        name = cmaps.get(cond)
+        if name is None:
+            return plt.get_cmap('tab10')(i % 10)
+        return plt.get_cmap(name)(0.6)
+
+    for ax, (mean, sem, ylabel, title) in zip(
+            axes,
+            [(raw_m, raw_s, 'Firing rate (Hz)', 'Raw PSTH'),
+             (pre_m, pre_s, 'Preprocessed (a.u.)', 'Preprocessed PSTH')]):
+        for i, c in enumerate(conditions):
+            col = _color(c, i)
+            ax.plot(t, mean[i], color=col, lw=2, label=str(c))
+            ax.fill_between(t, mean[i] - sem[i], mean[i] + sem[i],
+                            color=col, alpha=0.2, linewidth=0)
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.axhline(0, color='k', lw=0.5, alpha=0.4)
+    axes[0].legend(fontsize=8, loc='best', frameon=False)
+
+    smooth_txt = f' (σ={int(smooth_sigma_s * 1000)} ms)' if smooth_sigma_s else ''
+    fig.suptitle(f'PSTH — population mean ± SEM across {raw_3d.shape[2]} neurons'
+                 f'{smooth_txt}  {suffix}')
+    fig.tight_layout()
+    _save_mpl(fig, f'psth_group_mean_{_safe(suffix)}', save, save_dir)
     return fig
