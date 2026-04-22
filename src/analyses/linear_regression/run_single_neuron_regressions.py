@@ -13,7 +13,13 @@ from analyses.linear_regression.behavior_vector_linear_regression import \
     run_directional_vector_linear_regression_window_level, \
     flatten_regression_results
 from analyses.preprocessing.preprocess_and_select_significant_neurons import PreprocessConfig
-
+from analyses.linear_regression.behavior_vector_linear_regression_extensions import (
+    winsorize_behavior_matrix,
+    run_directional_vector_linear_regression_cell_level_with_loo,
+    run_directional_vector_linear_regression_window_level_with_loo,
+    summarize_loo_results,
+)
+from run_meta_analysis import run_meta_analysis_from_dataframe
 from analyses.spike_rate import compute_mean_spike_rate_for_windows_from_source, compute_mean_spike_rate_for_cells_from_source
 from data_access.spike_source import SpikeSource, SISortedSpikeSource
 
@@ -85,9 +91,169 @@ def main():
     # Behavior matrices (cached)
     behavior_matrices = load_behavior_matrices_cached()
 
-    # # ----------------------------
-    # # 1) Cell-level directional regression on significant neurons (pKW output)
-    # # ----------------------------
+    # ── NEW: build winsorized matrices once ───────────────────────────────────
+    # Each behavior type is winsorized independently (pooling within its own
+    # matrix) so different behavior scales don't interfere with each other.
+    winsorized_behavior_matrices = {
+        name: winsorize_behavior_matrix(mat, percentile=95)
+        for name, mat in behavior_matrices.items()
+    }
+    # # ─────────────────────────────────────────────────────────────────────────
+    #
+    # # =========================================================================
+    # # SECTION A — LOO regression  (cells)
+    # # =========================================================================
+    # sig_neurons_path = (
+    #         cfg.analysis_cache_dir /
+    #         f"{source.name}_{cfg.group_name}_significant_neurons_pKW_passed.pkl"
+    # )
+    # if sig_neurons_path.exists():
+    #     sig_neurons = pd.read_pickle(sig_neurons_path)
+    #     mean_spike_rate_neurons = compute_mean_spike_rate_for_cells_from_source(
+    #         sig_neurons, source=source
+    #     )
+    #
+    #     loo_neuron_results = []
+    #     for behavior_name, mat in behavior_matrices.items():
+    #         res = run_directional_vector_linear_regression_cell_level_with_loo(
+    #             mean_spike_rate_neurons,
+    #             mat,
+    #             behavior_name,
+    #             monkey_group,
+    #             monkey_list,
+    #             subject_monkey_index,
+    #             use_spikerate=True,
+    #             permutation_test=False,  # set True if you want p_perm (slow)
+    #             n_perm=10000,
+    #         )
+    #         loo_neuron_results.append(res)
+    #
+    #     loo_neuron_df = pd.concat(loo_neuron_results, ignore_index=True)
+    #
+    #     # Save raw per-monkey LOO results
+    #     out_loo_raw = analysis_results_dir / f"{source.name}_{monkey_group}_loo_neurons_raw.pkl"
+    #     loo_neuron_df.to_pickle(out_loo_raw)
+    #     print(f"LOO raw (neurons) → {out_loo_raw}")
+    #
+    #     # Aggregate to one row per neuron × behavior → upload this to dashboard
+    #     loo_summary = summarize_loo_results(loo_neuron_df)
+    #     out_loo_summary = analysis_results_dir / f"{source.name}_{monkey_group}_loo_neurons_summary.csv"
+    #     loo_summary.to_csv(out_loo_summary, index=False)
+    #     print(f"LOO summary (neurons) → {out_loo_summary}")
+    #     print(loo_summary.head(10))
+    #
+    # # =========================================================================
+    # # SECTION A — LOO regression  (windows)
+    # # =========================================================================
+    # sig_windows_path = (
+    #         cfg.analysis_cache_dir /
+    #         f"{source.name}_{cfg.group_name}_significant_windows_pKW_passed.pkl"
+    # )
+    # if sig_windows_path.exists():
+    #     sig_windows = pd.read_pickle(sig_windows_path)
+    #     mean_spike_rate_windows = compute_mean_spike_rate_for_windows_from_source(
+    #         sig_windows, source=source
+    #     )
+    #
+    #     loo_window_results = []
+    #     for behavior_name, mat in behavior_matrices.items():
+    #         res = run_directional_vector_linear_regression_window_level_with_loo(
+    #             mean_spike_rate_windows,
+    #             mat,
+    #             behavior_name,
+    #             monkey_group,
+    #             monkey_list,
+    #             subject_monkey_index,
+    #             use_spikerate=True,
+    #             permutation_test=False,
+    #             n_perm=10000,
+    #             random_state=42,
+    #         )
+    #         loo_window_results.append(res)
+    #
+    #     loo_window_df = pd.concat(loo_window_results, ignore_index=True)
+    #
+    #     out_loo_raw_w = analysis_results_dir / f"{source.name}_{monkey_group}_loo_windows_raw.pkl"
+    #     loo_window_df.to_pickle(out_loo_raw_w)
+    #     print(f"LOO raw (windows) → {out_loo_raw_w}")
+    #
+    #     loo_summary_w = summarize_loo_results(loo_window_df)
+    #     out_loo_summary_w = analysis_results_dir / f"{source.name}_{monkey_group}_loo_windows_summary.csv"
+    #     loo_summary_w.to_csv(out_loo_summary_w, index=False)
+    #     print(f"LOO summary (windows) → {out_loo_summary_w}")
+    #
+    # # =========================================================================
+    # # SECTION B — Winsorized regression  (cells)
+    # # =========================================================================
+    # if sig_neurons_path.exists():
+    #     winsorized_neuron_results = []
+    #     for behavior_name, mat in winsorized_behavior_matrices.items():
+    #         res = run_directional_vector_linear_regression_cell_level(
+    #             mean_spike_rate_neurons,
+    #             mat,
+    #             behavior_name,
+    #             monkey_group,
+    #             monkey_list,
+    #             subject_monkey_index,
+    #             use_spikerate=True,
+    #             permutation_test=False,
+    #             n_perm=10000,
+    #         )
+    #         winsorized_neuron_results.append(res)
+    #
+    #     winsorized_neuron_df = pd.concat(winsorized_neuron_results, ignore_index=True)
+    #
+    #     # Save raw (per-monkey) winsorized results
+    #     out_wins_raw = (analysis_results_dir /
+    #                     f"{source.name}_{monkey_group}_winsorized_neurons_raw.pkl")
+    #     winsorized_neuron_df.to_pickle(out_wins_raw)
+    #     print(f"Winsorized raw (neurons) → {out_wins_raw}")
+    #
+    #     # ── Run meta-analysis on winsorized results immediately ───────────────
+    #     # This gives you a single pooled effect per neuron × behavior
+    #     # with heterogeneity stats, comparable to the standard meta-analysis.
+    #     meta_winsorized = run_meta_analysis_from_dataframe(winsorized_neuron_df)
+    #     out_meta_wins = (analysis_results_dir /
+    #                      f"{source.name}_{monkey_group}_meta_winsorized_neurons.csv")
+    #     meta_winsorized.to_csv(out_meta_wins, index=False)
+    #     print(f"Meta-analysis (winsorized neurons) → {out_meta_wins}")
+    #
+    # # =========================================================================
+    # # SECTION B — Winsorized regression  (windows)
+    # # =========================================================================
+    # if sig_windows_path.exists():
+    #     winsorized_window_results = []
+    #     for behavior_name, mat in winsorized_behavior_matrices.items():
+    #         res = run_directional_vector_linear_regression_window_level(
+    #             mean_spike_rate_windows,
+    #             mat,
+    #             behavior_name,
+    #             monkey_group,
+    #             monkey_list,
+    #             subject_monkey_index,
+    #             use_spikerate=True,
+    #             permutation_test=False,
+    #             n_perm=10000,
+    #             random_state=42,
+    #         )
+    #         winsorized_window_results.append(res)
+    #
+    #     winsorized_window_df = pd.concat(winsorized_window_results, ignore_index=True)
+    #
+    #     out_wins_raw_w = (analysis_results_dir /
+    #                       f"{source.name}_{monkey_group}_winsorized_windows_raw.pkl")
+    #     winsorized_window_df.to_pickle(out_wins_raw_w)
+    #     print(f"Winsorized raw (windows) → {out_wins_raw_w}")
+    #
+    #     meta_winsorized_w = run_meta_analysis_from_dataframe(winsorized_window_df)
+    #     out_meta_wins_w = (analysis_results_dir /
+    #                        f"{source.name}_{monkey_group}_meta_winsorized_windows.csv")
+    #     meta_winsorized_w.to_csv(out_meta_wins_w, index=False)
+    #     print(f"Meta-analysis (winsorized windows) → {out_meta_wins_w}")
+    # Original Code
+    # ----------------------------
+    # 1) Cell-level directional regression on significant neurons (pKW output)
+    # ----------------------------
     #
     # sig_neurons_path = cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_significant_neurons_pKW_passed.pkl"
     # sig_neurons = pd.read_pickle(sig_neurons_path)

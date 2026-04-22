@@ -521,6 +521,7 @@ def flatten_regression_results(df):
             row = {**base, 'Stimulus_Monkey': stim_monkey,
                    'Behavior_Value': bval, 'MeanSpikeRate': spike_rate}
             rows.append(row)
+    return pd.DataFrame(rows)
 
 
 
