@@ -189,7 +189,7 @@ def main():
     MEAN_CENTER = True
     SOFT_NORMALIZE = True
     MIN_REPS_PER_COND = 5
-    PLOT_SAVE_DIR = f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/population_trajectory/{cfg.analysis}'
+    PLOT_SAVE_DIR = f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/state_space_trajectory/{cfg.analysis}'
     SAVE = True
     # ----------------------------------
 
