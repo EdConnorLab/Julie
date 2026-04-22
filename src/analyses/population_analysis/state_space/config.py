@@ -5,7 +5,7 @@ from typing import Optional
 @dataclass
 class TrajectoryConfig:
     # Data
-    data_path: str = '/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered'
+    data_path: str = '/sorted_spike_cache_filtered'
     region: str = 'ALL'              # 'AMG', 'ER', or 'ALL'
     session: Optional[str] = None    # None = multi-session; else e.g. 'ER_2023-11-28_4'
 

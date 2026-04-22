@@ -36,7 +36,8 @@ def plot_scree(pca_result, n_show=50):
     x = np.arange(1, n_show + 1)
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
-    axes[0].bar(x, ratios[:n_show] * 100)
+    # axes[0].bar(x, ratios[:n_show] * 100)
+    axes[0].plot(x, ratios[:n_show] * 100, 'o-')
     axes[0].set_xlabel('PC'); axes[0].set_ylabel('% variance'); axes[0].set_title('Scree')
 
     cum = np.cumsum(ratios[:n_show]) * 100
@@ -46,4 +47,5 @@ def plot_scree(pca_result, n_show=50):
     axes[1].set_xlabel('# components'); axes[1].set_ylabel('Cumulative %')
     axes[1].set_title('Cumulative'); axes[1].legend()
     fig.tight_layout()
+    fig.savefig('scree.png')
     return fig

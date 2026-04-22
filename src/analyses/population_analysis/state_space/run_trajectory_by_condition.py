@@ -13,20 +13,16 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from analyses.neural_trajectory.plotting import plot_pc_vs_time_all_shaded, plot_pc_vs_time_per_group, \
-    plot_per_group_2d_mpl, plot_all_shaded_2d_mpl, plot_all_shaded_3d_plotly, plot_psth_group_mean
+from population_analysis.state_space.plotting import plot_per_group_2d_mpl, plot_all_shaded_2d_mpl, plot_all_shaded_3d_plotly
 from social_rank_analysis import load_group_matrices, davids_score
 from config import TrajectoryConfig
 from data_loading import load_and_filter
 from binning_by_condition import build_matrix_by_condition
-from neural_trajectory.preprocessing import preprocess
-from pca_runner import run_pca
-from plotting import (compute_trajectories,
-                      plot_group_mean_3d_mpl, plot_group_mean_2d_mpl,
-                      plot_pc_vs_time_group_mean,
-                      plot_per_group_3d_mpl, plot_all_shaded_3d_mpl)
+from population_analysis.state_space.preprocessing import preprocess
+from pca_runner import run_pca, plot_scree
+from plotting import (compute_trajectories)
 
-MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv"
+MONKEY_INFO_PATH = "/social_data/monkeyinfo.csv"
 
 
 def _compute_ds_combined(groups=('Zombies', 'Best Frans')):
@@ -183,9 +179,9 @@ def plot_condition_3d(pca_result, info, title=''):
 
 def main():
     cfg = TrajectoryConfig(
-        region='AMG', session=None, trial_averaged=True, peak_align=False,
+        region='ER', session=None, trial_averaged=True, peak_align=False,
         n_components=6, bin_width=0.050, min_epoch_duration=2.0,
-        analysis= 'group' # 'adult_females' | 'identity' | 'group' | 'rank' |     cannot use 'familiarity' | 'sex'  because there are only 2 groups
+        analysis= 'identity' # 'adult_females' | 'identity' | 'group' | 'rank' |     cannot use 'familiarity' | 'sex'  because there are only 2 groups
     )
     cfg.validate()
 
@@ -228,7 +224,7 @@ def main():
 
     pca_matrix = preprocess(pca_matrix, info, cfg, soft_normalize=SOFT_NORMALIZE, mean_center=MEAN_CENTER)
     pca_result = run_pca(pca_matrix, info, cfg)
-
+    plot_scree(pca_result)
     cond_trajs, group_trajs, c2g = compute_trajectories(
         pca_result, row_meta_df, info, cfg)
 
@@ -256,7 +252,7 @@ def main():
 
     # Only meaningful when there's sub-grouping (identity mode)
     if cfg.analysis == 'identity':
-        # plot_all_shaded_3d_plotly(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+        plot_all_shaded_3d_plotly(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
         # plot_per_group_3d_mpl(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
 
         # plot_all_shaded_3d_mpl(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)

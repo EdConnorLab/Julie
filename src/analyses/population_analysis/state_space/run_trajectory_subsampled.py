@@ -18,11 +18,11 @@ import matplotlib.pyplot as plt
 from config import TrajectoryConfig
 from data_loading import load_and_filter
 from binning_by_condition import build_matrix_by_condition
-from neural_trajectory.preprocessing import preprocess
+from population_analysis.state_space.preprocessing import preprocess
 from pca_runner import run_pca
 
 
-MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv"
+MONKEY_INFO_PATH = "/social_data/monkeyinfo.csv"
 
 
 def subsample_condition_map(info_df, k, rng, analysis, exclude_names=()):
