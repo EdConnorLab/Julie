@@ -572,9 +572,9 @@ def plot_all_results(all_results, output_dir):
 
 def main():
     # ─── HARDCODED CONFIG (for PyCharm) ──────────────────────────────────────
-    pkl_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered"
+    pkl_dir = r"/sorted_spike_cache_filtered"
     metadata_csv = r"/home/connorlab/Downloads/monkeyinfo.csv"
-    output_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/social_decoding_age_sex_balanced_final"
+    output_dir = r"/social_decoding_age_sex_balanced_final"
     skip_perm = False       # set False to run permutation tests
     n_perm = 1000
     n_draws = 10
@@ -602,7 +602,7 @@ def main():
     group_lookup = dict(zip(df['MonkeyName'], df['MonkeyGroup']))
 
     # ── Compute firing rates ──
-    print("\nComputing trial-level firing rates (full epoch)...")
+    print("\nComputing trial-level firing rates (full_dominance_first epoch)...")
     df = compute_firing_rates(df)
 
     # ── All identities ──

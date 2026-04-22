@@ -28,6 +28,9 @@ from collections import defaultdict
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import spearmanr
 import matplotlib
+
+from population_analysis.decoding.decode_pairwise_with_sliding_window import compute_windowed_firing_rates
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import warnings
@@ -94,7 +97,7 @@ def load_metadata(csv_path):
     """Load monkey metadata CSV."""
     meta = pd.read_csv(csv_path)
     meta = meta.rename(columns={'Name': 'MonkeyName', 'Group Name': 'MonkeyGroup'})
-    meta['Age'] = CURRENT_YEAR - meta['Birth Year']
+    meta['Age'] = meta['Age']
     meta['Rank'] = pd.to_numeric(meta['Rank'], errors='coerce')
     if 'Note' in meta.columns:
         is_subject = meta['Note'].fillna('').str.contains('subject', case=False)
@@ -169,12 +172,15 @@ def build_neural_rdm(df, stimulus_monkeys, n_draws=N_PSEUDO_DRAWS, seed=RANDOM_S
 
 # ─── BEHAVIORAL RDMs ─────────────────────────────────────────────────────────
 
-def build_behavioral_rdms(behavior_matrices, stimulus_monkeys):
+def build_behavioral_rdms(behavior_matrices, stimulus_monkeys, log_transform=True):
     """
     From each behavioral matrix, construct three types of RDMs:
     1. Symmetrized strength -> dissimilarity (max - value)
     2. Asymmetry: |A->B - B->A|
     3. Profile distance: Euclidean distance between row vectors
+
+    If log_transform=True, applies log(x + 1) to compress range before
+    building RDMs. Helps with sparse matrices (e.g. agonism) and outliers.
     """
     rdms = {}
 
@@ -188,6 +194,10 @@ def build_behavioral_rdms(behavior_matrices, stimulus_monkeys):
             continue
 
         sub_mat = mat.loc[available, available].values.astype(float)
+
+        # Log-transform to compress range (handles sparsity + outliers)
+        if log_transform:
+            sub_mat = np.log1p(sub_mat)  # log(x + 1), safe for zeros
 
         # 1. Symmetrized interaction strength -> dissimilarity
         sym = (sub_mat + sub_mat.T) / 2.0
@@ -287,6 +297,163 @@ def build_age_rdm(metadata_csv, stimulus_monkeys):
             'description': '|age_i - age_j|',
             'type': 'age',
         }
+    }
+
+
+def build_sex_rdm(metadata_csv, stimulus_monkeys):
+    """Build sex distance RDM: 0 = same sex, 1 = different sex."""
+    meta = load_metadata(metadata_csv)
+    meta_lookup = {row['MonkeyName']: row.to_dict() for _, row in meta.iterrows()}
+
+    available = []
+    sexes = []
+    for m in stimulus_monkeys:
+        s = meta_lookup.get(m, {}).get('Sex')
+        if s is not None:
+            available.append(m)
+            sexes.append(str(s).strip().upper())
+
+    if len(available) < 3:
+        print(f"  Sex RDM: only {len(available)} monkeys with sex info, skipping")
+        return {}
+
+    n = len(available)
+    sex_dist = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            sex_dist[i, j] = 0.0 if sexes[i] == sexes[j] else 1.0
+
+    return {
+        'Sex distance': {
+            'rdm': sex_dist,
+            'monkeys': available,
+            'description': '0 = same sex, 1 = different sex',
+            'type': 'sex',
+        }
+    }
+
+
+# ─── PARTIAL MANTEL ──────────────────────────────────────────────────────────
+
+def _residualize(x, z):
+    """Regress z out of x, return residuals."""
+    if np.std(z) < 1e-12:
+        return x  # z is constant, nothing to partial out
+    slope = np.dot(x - x.mean(), z - z.mean()) / np.dot(z - z.mean(), z - z.mean())
+    return x - slope * z
+
+
+def partial_mantel_test(neural_rdm, neural_monkeys, model_rdm_info, control_rdm_info,
+                        n_perms=N_PERMUTATIONS, seed=RANDOM_SEED):
+    """
+    Partial Mantel test: Spearman correlation between neural and model RDM
+    vectors after regressing out the control RDM (e.g. sex distance).
+
+    Permutations shuffle monkey labels on the neural RDM (same as standard
+    Mantel), then residualize before computing permuted rho.
+    """
+    rng = np.random.default_rng(seed)
+
+    # Align all three RDMs to shared monkeys
+    model_monkeys = model_rdm_info['monkeys']
+    control_monkeys = control_rdm_info['monkeys']
+    shared = [m for m in neural_monkeys if m in model_monkeys and m in control_monkeys]
+
+    if len(shared) < 4:
+        print(f"    Partial Mantel: only {len(shared)} shared monkeys, skipping")
+        return np.nan, np.nan, None, shared
+
+    neural_idx = [neural_monkeys.index(m) for m in shared]
+    model_idx = [model_monkeys.index(m) for m in shared]
+    control_idx = [control_monkeys.index(m) for m in shared]
+
+    neural_sub = neural_rdm[np.ix_(neural_idx, neural_idx)]
+    model_sub = model_rdm_info['rdm'][np.ix_(model_idx, model_idx)]
+    control_sub = control_rdm_info['rdm'][np.ix_(control_idx, control_idx)]
+
+    neural_vec = extract_upper_triangle(neural_sub)
+    model_vec = extract_upper_triangle(model_sub)
+    control_vec = extract_upper_triangle(control_sub)
+
+    # Residualize both neural and model vectors w.r.t. control
+    neural_resid = _residualize(neural_vec, control_vec)
+    model_resid = _residualize(model_vec, control_vec)
+
+    observed_rho, _ = spearmanr(neural_resid, model_resid)
+
+    # Permutation test
+    n_shared = len(shared)
+    perm_rhos = []
+    for _ in range(n_perms):
+        perm_order = rng.permutation(n_shared)
+        neural_perm = neural_sub[np.ix_(perm_order, perm_order)]
+        neural_perm_vec = extract_upper_triangle(neural_perm)
+        neural_perm_resid = _residualize(neural_perm_vec, control_vec)
+        rho, _ = spearmanr(neural_perm_resid, model_resid)
+        perm_rhos.append(rho)
+
+    perm_rhos = np.array(perm_rhos)
+    p_value = (np.sum(np.abs(perm_rhos) >= np.abs(observed_rho)) + 1) / (n_perms + 1)
+
+    return observed_rho, p_value, perm_rhos, shared
+
+
+def run_rsa_partial(rdm_draws, neural_monkeys, model_rdm_info, control_rdm_info,
+                    n_perms=N_PERMUTATIONS, run_perms=True, seed=RANDOM_SEED):
+    """Run partial RSA (controlling for a confound RDM) across neural RDM draws."""
+    # Align to shared monkeys across all three
+    model_monkeys = model_rdm_info['monkeys']
+    control_monkeys = control_rdm_info['monkeys']
+    shared = [m for m in neural_monkeys if m in model_monkeys and m in control_monkeys]
+
+    if len(shared) < 4:
+        return None
+
+    model_idx = [model_monkeys.index(m) for m in shared]
+    control_idx = [control_monkeys.index(m) for m in shared]
+    neural_idx = [neural_monkeys.index(m) for m in shared]
+
+    model_sub = model_rdm_info['rdm'][np.ix_(model_idx, model_idx)]
+    control_sub = control_rdm_info['rdm'][np.ix_(control_idx, control_idx)]
+
+    model_vec = extract_upper_triangle(model_sub)
+    control_vec = extract_upper_triangle(control_sub)
+    model_resid = _residualize(model_vec, control_vec)
+
+    draw_rhos = []
+    for rdm in rdm_draws:
+        neural_sub = rdm[np.ix_(neural_idx, neural_idx)]
+        neural_vec = extract_upper_triangle(neural_sub)
+        neural_resid = _residualize(neural_vec, control_vec)
+        rho, _ = spearmanr(neural_resid, model_resid)
+        draw_rhos.append(rho)
+
+    if not draw_rhos:
+        return None
+
+    mean_rho = np.mean(draw_rhos)
+    std_rho = np.std(draw_rhos)
+
+    # Permutation test on mean RDM
+    mean_rdm = np.mean(rdm_draws, axis=0)
+    p_value = None
+    perm_rhos = None
+
+    if run_perms:
+        _, p_value, perm_rhos, shared = partial_mantel_test(
+            mean_rdm, neural_monkeys, model_rdm_info, control_rdm_info,
+            n_perms=n_perms, seed=seed
+        )
+
+    n_shared = len(shared) if shared is not None else 0
+
+    return {
+        'mean_rho': mean_rho,
+        'std_rho': std_rho,
+        'draw_rhos': draw_rhos,
+        'p_value': p_value,
+        'perm_rhos': perm_rhos,
+        'n_monkeys': n_shared,
     }
 
 
@@ -549,24 +716,27 @@ def plot_rsa_results(all_results, model_rdms, output_dir):
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
-    # ─── HARDCODED CONFIG (for PyCharm) ──────────────────────────────────────
-    pkl_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered"                    # <-- EDIT
-    metadata_csv = r"/home/connorlab/Downloads/monkeyinfo.csv"           # <-- EDIT
-    output_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/decoding_rsa_output"             # <-- EDIT
-    skip_perm = True
-    n_perm = 10000
+    pkl_dir = r"/sorted_spike_cache_filtered"
+    metadata_csv = r"/home/connorlab/Downloads/monkeyinfo.csv"
+    output_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/decoding_rsa_output"
+    skip_perm = False
+    n_perm = 5000
     n_draws = 50
     min_trials = 10
 
-    root_dir = "/home/connorlab/Documents/GitHub/Julie/social_data/"
+    root_dir = "/social_data/"
     behavior_xlsx = {
-        'Affiliation_zombies': root_dir + "zombies_social_data/zombies_feature_df_affiliation.xlsx",      # <-- EDIT
-        'Submission_zombies': root_dir + "zombies_social_data/zombies_feature_df_submission.xlsx",         # <-- EDIT
-        'Agonism_zombies': root_dir + "zombies_social_data/zombies_feature_df_agonism.xlsx",              # <-- EDIT
-        'Affiliation_bestfrans': root_dir + "bestfrans_social_data/bestfrans_feature_df_affiliation.xlsx",  # <-- EDIT
-        'Submission_bestfrans': root_dir + "bestfrans_social_data/bestfrans_feature_df_submission.xlsx",     # <-- EDIT
-        'Agonism_bestfrans': root_dir + "bestfrans_social_data/bestfrans_feature_df_agonism.xlsx",          # <-- EDIT
+        'Affiliation_zombies': root_dir + "zombies_social_data/zombies_feature_df_affiliation.xlsx",
+        'Submission_zombies': root_dir + "zombies_social_data/zombies_feature_df_submission.xlsx",
+        'Agonism_zombies': root_dir + "zombies_social_data/zombies_feature_df_agonism.xlsx",
+        'Affiliation_bestfrans': root_dir + "bestfrans_social_data/bestfrans_feature_df_affiliation.xlsx",
+        'Submission_bestfrans': root_dir + "bestfrans_social_data/bestfrans_feature_df_submission.xlsx",
+        'Agonism_bestfrans': root_dir + "bestfrans_social_data/bestfrans_feature_df_agonism.xlsx",
+        'Affiliation_instigators': root_dir + "instigators_social_data/instigators_feature_df_affiliation.xlsx",
+        'Submission_instigators': root_dir + "instigators_social_data/instigators_feature_df_submission.xlsx",
+        'Agonism_instigators': root_dir + "instigators_social_data/instigators_feature_df_agonism.xlsx",
     }
+    ADULT_AGE_THRESHOLD = 5  # monkeys aged >= 5 are adults
     # ─────────────────────────────────────────────────────────────────────────
 
     # ── Load neural data ──
@@ -578,8 +748,18 @@ def main():
     df = df[df['MonkeyName'] != SUBJECT_MONKEY]
     print(f"After exclusions: {len(df)} trials")
 
-    print("\nComputing trial-level firing rates (full epoch)...")
-    df = compute_firing_rates(df)
+    # print("\nComputing trial-level firing rates (full_dominance_first epoch)...")
+    # df = compute_firing_rates(df)
+    df = compute_windowed_firing_rates(df, 0, 500)
+    df['firing_rate'] = df['SpikeRate']
+
+    # ── Load metadata for demographic filtering ──
+    meta = load_metadata(metadata_csv)
+    adult_females = meta[
+        (meta['Sex'].str.strip().str.upper() == 'F') &
+        (meta['Age'] >= ADULT_AGE_THRESHOLD)
+    ]['MonkeyName'].tolist()
+    print(f"\nAdult females (age >= {ADULT_AGE_THRESHOLD}): {adult_females}")
 
     # ── Load behavioral matrices ──
     print(f"\n{'=' * 60}")
@@ -597,7 +777,17 @@ def main():
             mat = mat.drop(SUBJECT_MONKEY, axis=0)
         if SUBJECT_MONKEY in mat.columns:
             mat = mat.drop(SUBJECT_MONKEY, axis=1)
-        print(f"  {label}: {mat.shape}, monkeys: {list(mat.index)}")
+
+        # Filter to adult females for zombies and instigators
+        # Keep all monkeys for bestfrans (handled via partial Mantel instead)
+        is_bestfrans = 'bestfrans' in label.lower()
+        if not is_bestfrans:
+            keep = [m for m in mat.index if m in adult_females]
+            mat = mat.loc[keep, keep]
+            print(f"  {label}: {mat.shape}, monkeys (adult F): {list(mat.index)}")
+        else:
+            print(f"  {label}: {mat.shape}, monkeys (all): {list(mat.index)}")
+
         behavior_matrices[label] = mat
 
     # ── Determine stimulus monkeys ──
@@ -629,7 +819,7 @@ def main():
     print(f"\n{'=' * 60}")
     print("BUILDING BEHAVIORAL RDMs")
     print(f"{'=' * 60}")
-    model_rdms = build_behavioral_rdms(behavior_matrices, stimulus_monkeys)
+    model_rdms = build_behavioral_rdms(behavior_matrices, stimulus_monkeys, log_transform=True)
 
     # Add rank and age RDMs
     rank_rdm = build_rank_rdm(metadata_csv, stimulus_monkeys)
@@ -637,6 +827,20 @@ def main():
 
     age_rdm = build_age_rdm(metadata_csv, stimulus_monkeys)
     model_rdms.update(age_rdm)
+
+    # Build sex RDM (used as control for partial Mantel on bestfrans)
+    sex_rdm_dict = build_sex_rdm(metadata_csv, stimulus_monkeys)
+    sex_rdm_info = sex_rdm_dict.get('Sex distance', None)
+    if sex_rdm_info is not None:
+        print(f"  Sex RDM built: {len(sex_rdm_info['monkeys'])} monkeys")
+    else:
+        print("  WARNING: Could not build sex RDM — partial Mantel will be skipped for bestfrans")
+
+    # Build age RDM (used as control for partial Mantel on zombies/instigators)
+    age_rdm_dict = build_age_rdm(metadata_csv, stimulus_monkeys)
+    age_rdm_info = age_rdm_dict.get('Age distance', None)
+    if age_rdm_info is not None:
+        print(f"  Age RDM built (for partial control): {len(age_rdm_info['monkeys'])} monkeys")
 
     print(f"\nTotal model RDMs: {len(model_rdms)}")
     for name, info in model_rdms.items():
@@ -650,11 +854,31 @@ def main():
     all_results = {}
 
     for name, info in model_rdms.items():
-        print(f"\n  {name}...")
-        result = run_rsa(
-            rdm_draws, stimulus_monkeys, info,
-            n_perms=n_perm, run_perms=(not skip_perm), seed=RANDOM_SEED
-        )
+        is_bestfrans = 'bestfrans' in name.lower()
+        is_zombies = 'zombies' in name.lower()
+        is_instigators = 'instigators' in name.lower()
+
+        if is_bestfrans and sex_rdm_info is not None:
+            # Partial Mantel: control for sex in bestfrans (uses all monkeys)
+            print(f"\n  {name} (partial Mantel, controlling for sex)...")
+            result = run_rsa_partial(
+                rdm_draws, stimulus_monkeys, info, sex_rdm_info,
+                n_perms=n_perm, run_perms=(not skip_perm), seed=RANDOM_SEED
+            )
+        elif (is_zombies or is_instigators) and age_rdm_info is not None:
+            # Partial Mantel: control for age in zombies/instigators (adult females only)
+            print(f"\n  {name} (partial Mantel, controlling for age)...")
+            result = run_rsa_partial(
+                rdm_draws, stimulus_monkeys, info, age_rdm_info,
+                n_perms=n_perm, run_perms=(not skip_perm), seed=RANDOM_SEED
+            )
+        else:
+            # Fallback: standard Mantel (rank, age, or if control RDM unavailable)
+            print(f"\n  {name}...")
+            result = run_rsa(
+                rdm_draws, stimulus_monkeys, info,
+                n_perms=n_perm, run_perms=(not skip_perm), seed=RANDOM_SEED
+            )
         all_results[name] = result
 
         if result is not None:
@@ -681,7 +905,12 @@ def main():
             print(f"  [{rdm_type.upper()}]")
             for name, r in type_results.items():
                 p_str = f", p={r['p_value']:.4f}" if r['p_value'] is not None else ""
-                print(f"    {name:45s}: rho={r['mean_rho']:.4f} +/-{r['std_rho']:.4f}{p_str}")
+                partial = ""
+                if 'bestfrans' in name.lower() and sex_rdm_info is not None:
+                    partial = " [partial, sex-controlled]"
+                elif ('zombies' in name.lower() or 'instigators' in name.lower()) and age_rdm_info is not None:
+                    partial = " [partial, age-controlled]"
+                print(f"    {name:45s}: rho={r['mean_rho']:.4f} +/-{r['std_rho']:.4f}{p_str}{partial}")
             print()
 
     # ── Save ──

@@ -321,8 +321,8 @@ def plot_results(group_name, n_neurons, mean_acc, std_acc, chance,
 def main():
     # ─── HARDCODED CONFIG (for PyCharm) ──────────────────────────────────────
     # Comment out this block and uncomment argparse below for command line.
-    pkl_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered"
-    output_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/group_decoding_output_with_min_trials"
+    pkl_dir = r"/sorted_spike_cache_filtered"
+    output_dir = r"/group_decoding_output_with_min_trials"
     skip_perm = False       # set False to run permutation test
     n_perm = 1000
     n_draws = 10
@@ -366,7 +366,7 @@ def main():
     group_name, members = list_groups_and_select(df)
 
     # ── Compute firing rates ──
-    print("\nComputing trial-level firing rates (full epoch)...")
+    print("\nComputing trial-level firing rates (full_dominance_first epoch)...")
     df = compute_firing_rates(df)
 
     # ── Filter neurons by min_trials ──

@@ -13,13 +13,15 @@ import pickle
 import itertools
 import numpy as np
 import pandas as pd
-from collections import defaultdict
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedKFold
 from sklearn.decomposition import PCA
 from sklearn.metrics import accuracy_score
 import matplotlib
+
+from analyses.spike_rate import add_trial_spike_rate_columns
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import warnings
@@ -27,9 +29,9 @@ warnings.filterwarnings('ignore')
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 N_CV_FOLDS = 5
-N_PERMUTATIONS = 500       # per pair — lower since we have many pairs
+N_PERMUTATIONS = 500
 N_PCA_COMPONENTS = 50
-N_PSEUDO_DRAWS = 5          # fewer draws since we repeat across many pairs
+N_PSUEDO_DRAWS = 5 # TODO: try increasing this?
 RANDOM_SEED = 42
 
 
@@ -48,23 +50,6 @@ def load_all_trials(pkl_dir):
     return combined
 
 
-def compute_firing_rates(df):
-    rates = []
-    for _, row in df.iterrows():
-        spikes = np.array(row['SpikeTimes'])
-        epoch = row['EpochStartStop']
-        if isinstance(epoch, str):
-            epoch = eval(epoch)
-        t_start, t_stop = epoch[0], epoch[1]
-        duration = t_stop - t_start
-        n_spikes = np.sum((spikes >= t_start) & (spikes <= t_stop))
-        rate = n_spikes / duration if duration > 0 else 0.0
-        rates.append(rate)
-    df = df.copy()
-    df['firing_rate'] = rates
-    return df
-
-
 def filter_neurons_by_min_trials(df, target_identities, min_trials):
     """Keep only neurons with >= min_trials for EVERY target identity."""
     neuron_ids = sorted(df['NeuronID'].unique())
@@ -79,7 +64,7 @@ def filter_neurons_by_min_trials(df, target_identities, min_trials):
     return df_filtered, kept
 
 
-def build_pairwise_pseudo_population(df, id_a, id_b, neuron_ids, n_draws, seed):
+def build_pairwise_pseudo_population(df, id_a, id_b, neuron_ids, n_draws, seed, min_trials_per_id):
     """Build pseudo-population for a single pair of identities."""
     rng = np.random.default_rng(seed)
 
@@ -88,15 +73,26 @@ def build_pairwise_pseudo_population(df, id_a, id_b, neuron_ids, n_draws, seed):
     rates_b = {}
     min_trials_a = np.inf
     min_trials_b = np.inf
+    kept_neurons = []
 
     for nid in neuron_ids:
         ndf = df[df['NeuronID'] == nid]
-        ra = ndf[ndf['MonkeyName'] == id_a]['firing_rate'].values
-        rb = ndf[ndf['MonkeyName'] == id_b]['firing_rate'].values
+        ra = ndf[ndf['MonkeyName'] == id_a]['SpikeRate'].values
+        rb = ndf[ndf['MonkeyName'] == id_b]['SpikeRate'].values
+
+
+        # Per-pair filtering: skip this neuron if it lacks trials for either identity
+        if len(ra) < min_trials_per_id or len(rb) < min_trials_per_id:
+            continue
+
         rates_a[nid] = ra
         rates_b[nid] = rb
+        kept_neurons.append(nid)
         min_trials_a = min(min_trials_a, len(ra))
         min_trials_b = min(min_trials_b, len(rb))
+
+    if not kept_neurons:
+        return None, None, 0, 0
 
     min_trials_a = int(min_trials_a)
     min_trials_b = int(min_trials_b)
@@ -108,10 +104,10 @@ def build_pairwise_pseudo_population(df, id_a, id_b, neuron_ids, n_draws, seed):
     y_draws = []
 
     for _ in range(n_draws):
-        block_a = np.zeros((min_trials_a, len(neuron_ids)))
-        block_b = np.zeros((min_trials_b, len(neuron_ids)))
+        block_a = np.zeros((min_trials_a, len(kept_neurons)))
+        block_b = np.zeros((min_trials_b, len(kept_neurons)))
 
-        for j, nid in enumerate(neuron_ids):
+        for j, nid in enumerate(kept_neurons):
             idx_a = rng.choice(len(rates_a[nid]), size=min_trials_a, replace=False)
             idx_b = rng.choice(len(rates_b[nid]), size=min_trials_b, replace=False)
             block_a[:, j] = rates_a[nid][idx_a]
@@ -160,23 +156,38 @@ def run_binary_decoding(X, y, n_pca=N_PCA_COMPONENTS, seed=RANDOM_SEED):
 
     return np.array(fold_accs)
 
+# running permutation only on the first draw
+# def run_pairwise_permutation(X, y, observed_acc, n_perms, n_pca, seed):
+#     """Permutation test for a single pair."""
+#     rng = np.random.default_rng(seed)
+#     perm_accs = []
+#     for i in range(n_perms):
+#         y_shuf = rng.permutation(y)
+#         fold_accs = run_binary_decoding(X, y_shuf, n_pca=n_pca, seed=seed + i)
+#         perm_accs.append(np.mean(fold_accs))
+#     perm_accs = np.array(perm_accs)
+#     p_value = (np.sum(perm_accs >= observed_acc) + 1) / (n_perms + 1)
+#     return p_value, perm_accs
 
-def run_pairwise_permutation(X, y, observed_acc, n_perms, n_pca, seed):
-    """Permutation test for a single pair."""
+def run_pairwise_permutation(X_draws, y_draws, observed_acc, n_perms, n_pca, seed):
+    """Permutation test across all draws."""
     rng = np.random.default_rng(seed)
     perm_accs = []
     for i in range(n_perms):
-        y_shuf = rng.permutation(y)
-        fold_accs = run_binary_decoding(X, y_shuf, n_pca=n_pca, seed=seed + i)
-        perm_accs.append(np.mean(fold_accs))
+        draw_accs = []
+        for d, (X, y) in enumerate(zip(X_draws, y_draws)):
+            y_shuf = rng.permutation(y)
+            fold_accs = run_binary_decoding(X, y_shuf, n_pca=n_pca, seed=seed + i * 100 + d)
+            draw_accs.append(np.mean(fold_accs))
+        perm_accs.append(np.mean(draw_accs))
     perm_accs = np.array(perm_accs)
     p_value = (np.sum(perm_accs >= observed_acc) + 1) / (n_perms + 1)
     return p_value, perm_accs
 
-
 def decode_group_pairwise(df, group_name, members, neuron_ids, n_draws, n_pca,
-                          run_perms=False, n_perms=N_PERMUTATIONS):
+                          run_perms=False, n_perms=N_PERMUTATIONS, min_trials_per_id=3):
     """Run pairwise decoding for all pairs within a group."""
+    # Generate all pairs from each group
     pairs = list(itertools.combinations(sorted(members), 2))
     print(f"\n{'=' * 60}")
     print(f"PAIRWISE DECODING: {group_name} ({len(members)} members, {len(pairs)} pairs)")
@@ -184,14 +195,13 @@ def decode_group_pairwise(df, group_name, members, neuron_ids, n_draws, n_pca,
 
     pair_results = {}
 
-    for pi, (id_a, id_b) in enumerate(pairs):
-        X_draws, y_draws, n_a, n_b = build_pairwise_pseudo_population(
-            df, id_a, id_b, neuron_ids, n_draws=n_draws,
-            seed=RANDOM_SEED + pi * 1000
-        )
+    for pair_index, (id_a, id_b) in enumerate(pairs):
+        X_draws, y_draws, n_a, n_b = build_pairwise_pseudo_population(df, id_a, id_b, neuron_ids, n_draws=n_draws,
+                                                                      seed=RANDOM_SEED + pair_index * 1000,
+                                                                      min_trials_per_id=min_trials_per_id)
 
         if X_draws is None:
-            print(f"  [{pi+1}/{len(pairs)}] {id_a} vs {id_b}: SKIPPED (too few trials)")
+            print(f"  [{pair_index+1}/{len(pairs)}] {id_a} vs {id_b}: SKIPPED (too few trials)")
             pair_results[(id_a, id_b)] = {
                 'accuracy': np.nan, 'std': np.nan, 'n_trials': (n_a, n_b),
                 'p_value': np.nan, 'significant': False
@@ -202,7 +212,7 @@ def decode_group_pairwise(df, group_name, members, neuron_ids, n_draws, n_pca,
         draw_accs = []
         for d in range(len(X_draws)):
             fold_accs = run_binary_decoding(X_draws[d], y_draws[d], n_pca=n_pca,
-                                            seed=RANDOM_SEED + pi * 1000 + d)
+                                            seed=RANDOM_SEED + pair_index * 1000 + d)
             draw_accs.append(np.mean(fold_accs))
 
         mean_acc = np.mean(draw_accs)
@@ -211,9 +221,13 @@ def decode_group_pairwise(df, group_name, members, neuron_ids, n_draws, n_pca,
         # Permutation test (on first draw)
         p_value = np.nan
         if run_perms:
+            # p_value, _ = run_pairwise_permutation(
+            #     X_draws[0], y_draws[0], mean_acc, n_perms=n_perms,
+            #     n_pca=n_pca, seed=RANDOM_SEED + pair_index * 2000
+            # )
             p_value, _ = run_pairwise_permutation(
-                X_draws[0], y_draws[0], mean_acc, n_perms=n_perms,
-                n_pca=n_pca, seed=RANDOM_SEED + pi * 2000
+                X_draws, y_draws, mean_acc, n_perms=n_perms,
+                n_pca=n_pca, seed=RANDOM_SEED + pair_index * 2000
             )
 
         pair_results[(id_a, id_b)] = {
@@ -226,7 +240,7 @@ def decode_group_pairwise(df, group_name, members, neuron_ids, n_draws, n_pca,
 
         p_str = f", p={p_value:.4f}" if not np.isnan(p_value) else ""
         sig_str = " *" if pair_results[(id_a, id_b)]['significant'] else ""
-        print(f"  [{pi+1}/{len(pairs)}] {id_a} vs {id_b}: "
+        print(f"  [{pair_index+1}/{len(pairs)}] {id_a} vs {id_b}: "
               f"{mean_acc:.3f} +/-{std_acc:.3f} "
               f"(n={n_a}+{n_b}){p_str}{sig_str}")
 
@@ -357,36 +371,12 @@ def plot_pairwise_comparison(all_group_results, output_dir):
 
 
 def main():
-    # ─── HARDCODED CONFIG (for PyCharm) ──────────────────────────────────────
-    pkl_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered"
-    output_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/pairwise_decoding_output"
-    skip_perm = True       # set False to run permutation tests per pair
+    pkl_dir = r"/sorted_spike_cache_filtered"
+    output_dir = r"/home/connorlab/Documents/GitHub/Julie/Cortana/population_decoding_analysis/pairwise_decoding_output"
+    skip_perm = False       # set False to run permutation tests per pair
     n_perm = 1000
-    n_draws = 5
     n_pca = 50             # set to 0 to skip PCA
-    min_trials = 10         # set > 0 to filter neurons (e.g. 10, 15, 20)
-    # ─────────────────────────────────────────────────────────────────────────
-
-    # # ─── ARGPARSE (for command line) ─────────────────────────────────────────
-    # import argparse
-    # parser = argparse.ArgumentParser(description='Pairwise identity decoding')
-    # parser.add_argument('--pkl_dir', required=True)
-    # parser.add_argument('--output_dir', default='./decoding_pairwise_output')
-    # parser.add_argument('--skip_perm', action='store_true')
-    # parser.add_argument('--n_perm', type=int, default=500)
-    # parser.add_argument('--n_draws', type=int, default=5)
-    # parser.add_argument('--n_pca', type=int, default=50)
-    # parser.add_argument('--min_trials', type=int, default=0)
-    # args = parser.parse_args()
-    # pkl_dir = args.pkl_dir
-    # output_dir = args.output_dir
-    # skip_perm = args.skip_perm
-    # n_perm = args.n_perm
-    # n_draws = args.n_draws
-    # n_pca = args.n_pca
-    # min_trials = args.min_trials
-    # ─────────────────────────────────────────────────────────────────────────
-
+    min_trials = 7
     n_pca = n_pca if n_pca > 0 else None
 
     # ── Load ──
@@ -398,8 +388,8 @@ def main():
     print(f"After excluding NewMonkey: {len(df)} trials")
 
     # ── Compute firing rates ──
-    print("\nComputing trial-level firing rates (full epoch)...")
-    df = compute_firing_rates(df)
+    print("\nComputing trial-level firing rates (full_dominance_first epoch)...")
+    df = add_trial_spike_rate_columns(df)
 
     # ── Get groups ──
     group_members = df.groupby('MonkeyGroup')['MonkeyName'].unique()
@@ -411,12 +401,12 @@ def main():
     all_identities = sorted(df['MonkeyName'].unique())
     neuron_ids = sorted(df['NeuronID'].unique())
 
-    if min_trials > 0:
-        # Filter neurons that have enough trials for ALL identities
-        df, neuron_ids = filter_neurons_by_min_trials(df, all_identities, min_trials)
-        print(f"  After min_trials filter: {len(neuron_ids)} neurons")
-    else:
-        neuron_ids = sorted(df['NeuronID'].unique())
+    # if min_trials > 0:
+    #     # Filter neurons that have enough trials for ALL identities
+    #     df, neuron_ids = filter_neurons_by_min_trials(df, all_identities, min_trials)
+    #     print(f"  After min_trials filter: {len(neuron_ids)} neurons")
+    # else:
+    #     neuron_ids = sorted(df['NeuronID'].unique())
 
     print(f"\nUsing {len(neuron_ids)} neurons")
 
@@ -427,8 +417,8 @@ def main():
         members = sorted(group_members[gname])
         pair_results = decode_group_pairwise(
             df, gname, members, neuron_ids,
-            n_draws=n_draws, n_pca=n_pca,
-            run_perms=(not skip_perm), n_perms=n_perm
+            n_draws=N_PSUEDO_DRAWS, n_pca=n_pca,
+            run_perms=(not skip_perm), n_perms=n_perm, min_trials_per_id=min_trials,
         )
 
         # Group summary
@@ -456,8 +446,8 @@ def main():
     print("OVERALL SUMMARY")
     print(f"{'=' * 60}")
     print(f"Neurons: {len(neuron_ids)}")
-    if min_trials > 0:
-        print(f"  (filtered: min_trials >= {min_trials} per identity)")
+    # if min_trials > 0:
+    #     print(f"  (filtered: min_trials >= {min_trials} per identity)")
     print(f"Chance: 0.5000 (binary)")
     print()
 
