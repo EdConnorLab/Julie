@@ -87,7 +87,7 @@ def plot_psth_heatmap(df: pd.DataFrame, *,
     df = df.copy()
     df["_aligned"] = aligned_spikes
 
-    # Group once — avoids repeated boolean indexing on the full df
+    # Group once — avoids repeated boolean indexing on the full_dominance_first df
     grouped = df.groupby(["MonkeyGroup", "MonkeyName", "NeuronID"])
 
     # psth_dict[(group, monkey)] = array of shape (n_neurons, n_bins)

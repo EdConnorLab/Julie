@@ -88,7 +88,7 @@ def plot_psth_heatmap(df: pd.DataFrame, *,
     df = df.copy()
     df["_aligned"] = aligned_spikes
 
-    # Group once — avoids repeated boolean indexing on the full df
+    # Group once — avoids repeated boolean indexing on the full_dominance_first df
     grouped = df.groupby(["MonkeyGroup", "MonkeyName", "NeuronID"])
 
     # psth_dict[(group, monkey)] = array of shape (n_neurons, n_bins)
@@ -232,9 +232,9 @@ def plot_psth_heatmap(df: pd.DataFrame, *,
             ax.set_ylabel("Neuron", fontsize=10)
 
             # Y-tick labels — every neuron is labeled at ~20 per fig
-            ytick_labels = [_short_label(nid) for nid in chunk_ids]
-            ax.set_yticks([i + 0.5 for i in range(n_chunk)])
-            ax.set_yticklabels(ytick_labels, fontsize=7)
+            # ytick_labels = [_short_label(nid) for nid in chunk_ids]
+            # ax.set_yticks([i + 0.5 for i in range(n_chunk)])
+            # ax.set_yticklabels(ytick_labels, fontsize=7)
 
             norm_label = f" — {normalize}" if normalize != "none" else ""
             ax.set_title(
@@ -242,7 +242,9 @@ def plot_psth_heatmap(df: pd.DataFrame, *,
                 f"sorted by {sort_by}{norm_label} — {bin_ms}ms bins",
                 fontsize=11,
             )
-            plt.tight_layout()
+            print(f"title:{title_str} — {chunk_label}\n"
+                f"sorted by {sort_by}{norm_label} — {bin_ms}ms bins")
+            # plt.tight_layout()
 
             if save:
                 SAVE_DIR.mkdir(parents=True, exist_ok=True)
@@ -359,10 +361,10 @@ if __name__ == "__main__":
     # ── Switch these as needed ───────────────────────────────────────────
     plot_psth_heatmap(
         df,
-        scope="grand",          # "stimulus" | "group" | "grand"
+        scope="group",          # "stimulus" | "group" | "grand"
         sort_by="peak_latency", # "peak_latency" | "firing_rate" | "region"
         normalize="zscore",     # "zscore" | "minmax" | "none"
-        split_by_region=True,  # True = chunk by AMG/ER; False = all together
+        split_by_region=False,  # True = chunk by AMG/ER; False = all together
         neurons_per_fig=500,
         bin_ms=25,
         save=False,
