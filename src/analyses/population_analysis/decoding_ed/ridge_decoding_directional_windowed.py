@@ -35,11 +35,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import LeaveOneOut
 from sklearn.metrics import r2_score
 
+sys.path.insert(0, '/home/connorlab/Documents/GitHub/Julie/src')
+sys.path.insert(0, '/home/connorlab/Documents/GitHub/Julie/src/analyses')
+sys.path.insert(0, '/home/connorlab/Documents/GitHub/Julie/src/analyses/population_analysis')
+
 from state_space.config import TrajectoryConfig
 from state_space.data_loading import load_and_filter
-
-sys.path.insert(0,
-    '/home/connorlab/Documents/GitHub/Julie/src/analyses/neural_trajectory')
 from social_rank_analysis import load_group_matrices
 
 MONKEY_INFO_PATH = (
