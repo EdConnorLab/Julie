@@ -161,6 +161,21 @@ def build_windowed_population_matrix(raw_df, neuron_table, monkey_list):
 
     sessions_needed = neuron_table['session'].unique()
 
+    # --- DIAGNOSTIC: print sample IDs so we can spot format mismatches ---
+    print("\n[DEBUG] Sample NeuronIDs from pkl neuron_table:")
+    for nid in list(neuron_lookup.keys())[:5]:
+        print(f"  pkl  NeuronID: {repr(nid)}")
+    print("[DEBUG] Sample NeuronIDs from raw_df:")
+    for nid in raw_df['NeuronID'].unique()[:5]:
+        print(f"  data NeuronID: {repr(nid)}")
+    print("[DEBUG] Sample sessions from pkl:")
+    for s in list(sessions_needed)[:5]:
+        print(f"  pkl  session: {repr(s)}")
+    print("[DEBUG] Sample sessions from raw_df:")
+    for s in raw_df['session'].unique()[:5]:
+        print(f"  data session: {repr(s)}")
+    # --- END DIAGNOSTIC ---
+
     for session in sessions_needed:
         sess_df = raw_df[raw_df['session'] == session]
         if len(sess_df) == 0:
