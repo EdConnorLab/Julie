@@ -147,11 +147,13 @@ def build_windowed_population_matrix(raw_df, neuron_table, monkey_list):
     rate_sum = np.zeros((n_monkeys, n_neurons))
     rate_count = np.zeros((n_monkeys, n_neurons))
 
-    # Build lookup: (session, raw_neuron_id) → (col_idx, win_start_s, win_end_s)
+    # Build lookup: NeuronID → (col_idx, win_start_s, win_end_s)
+    # Use the full NeuronID from the pkl as key so it matches raw_df['NeuronID']
+    # directly (raw_df NeuronIDs include the session prefix, so keying on
+    # the partial raw_neuron_id would never match).
     neuron_lookup = {}
     for col_idx, (_, nrow) in enumerate(neuron_table.iterrows()):
-        key = (nrow['session'], nrow['raw_neuron_id'])
-        neuron_lookup[key] = (
+        neuron_lookup[nrow['NeuronID']] = (
             col_idx,
             nrow['WindowStart_ms'] / 1000.0,
             nrow['WindowEnd_ms'] / 1000.0,
@@ -164,24 +166,17 @@ def build_windowed_population_matrix(raw_df, neuron_table, monkey_list):
         if len(sess_df) == 0:
             continue
 
-        # Which neurons from this session are in our table?
-        sess_neurons = {k: v for k, v in neuron_lookup.items()
-                        if k[0] == session}
-        if not sess_neurons:
-            continue
-
         # Iterate each row (one row = one neuron × one trial)
         for _, row in sess_df.iterrows():
-            raw_nid = row['NeuronID']
+            nid = row['NeuronID']
             monkey = row['MonkeyName']
             if monkey not in monkey_to_idx:
                 continue
 
-            key = (session, raw_nid)
-            if key not in sess_neurons:
+            if nid not in neuron_lookup:
                 continue
 
-            col_idx, win_start_s, win_end_s = sess_neurons[key]
+            col_idx, win_start_s, win_end_s = neuron_lookup[nid]
             m_idx = monkey_to_idx[monkey]
 
             epoch_start = row['EpochStartStop'][0]
