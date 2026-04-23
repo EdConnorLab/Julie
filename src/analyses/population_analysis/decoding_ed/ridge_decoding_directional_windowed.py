@@ -534,6 +534,11 @@ def main():
     P_THRESH = 0.05                   # for "significant" subset
     N_TOP = 5                         # for "top N" subset (PASS 3)
     SUBJECT_NAME = None               # None = auto-detect
+    # Neurons for PASS 4 — full NeuronID strings as they appear in the pkl.
+    # Example: 'AMG_2023-10-03_3_Channel.C_020_Unit 1'
+    # Leave empty ([]) to skip PASS 4.
+    SELECTED_NEURONS = [
+    ]
     SAVE_BASE = (
         "/home/connorlab/Documents/GitHub/Julie/Cortana/"
         "analysis_results/ridge_directional_windowed"
@@ -619,6 +624,31 @@ def main():
             n_perm=N_PERM,
             save_dir=os.path.join(SAVE_BASE, GROUP, f'top{N_TOP}_sig_neurons'),
         )
+
+    print("\n\n" + "#" * 60)
+    print("# PASS 4: MANUALLY SPECIFIED NEURONS")
+    print("#" * 60)
+    if not SELECTED_NEURONS:
+        print("  SELECTED_NEURONS is empty — skipping PASS 4.")
+    else:
+        selected_table = all_neurons[
+            all_neurons['NeuronID'].isin(SELECTED_NEURONS)
+        ].reset_index(drop=True)
+        missing_ids = set(SELECTED_NEURONS) - set(selected_table['NeuronID'])
+        if missing_ids:
+            print(f"  Warning: {len(missing_ids)} neuron(s) not found in pkl "
+                  f"and will be skipped:")
+            for nid in sorted(missing_ids):
+                print(f"    {nid}")
+        if len(selected_table) == 0:
+            print("  No matching neurons found — skipping PASS 4.")
+        else:
+            run_decoding(
+                raw_df, selected_table, mats, common, subject_name,
+                tag=f"{GROUP}_manual_{len(selected_table)}neurons",
+                n_perm=N_PERM,
+                save_dir=os.path.join(SAVE_BASE, GROUP, 'manual_neurons'),
+            )
 
     plt.show()
 
