@@ -532,6 +532,7 @@ def main():
     N_PERM = 1000
     MAX_WINDOW_END_MS = 2000
     P_THRESH = 0.05                   # for "significant" subset
+    N_TOP = 5                         # for "top N" subset (PASS 3)
     SUBJECT_NAME = None               # None = auto-detect
     SAVE_BASE = (
         "/home/connorlab/Documents/GitHub/Julie/Cortana/"
@@ -604,6 +605,20 @@ def main():
         n_perm=N_PERM,
         save_dir=os.path.join(SAVE_BASE, GROUP, 'sig_neurons'),
     )
+
+    print("\n\n" + "#" * 60)
+    print(f"# PASS 3: TOP {N_TOP} SIGNIFICANT NEURONS (lowest p-value)")
+    print("#" * 60)
+    top_neurons = sig_neurons.head(N_TOP).reset_index(drop=True)
+    if len(top_neurons) == 0:
+        print("  No significant neurons available — skipping PASS 3.")
+    else:
+        run_decoding(
+            raw_df, top_neurons, mats, common, subject_name,
+            tag=f"{GROUP}_top{N_TOP}_sig",
+            n_perm=N_PERM,
+            save_dir=os.path.join(SAVE_BASE, GROUP, f'top{N_TOP}_sig_neurons'),
+        )
 
     plt.show()
 
