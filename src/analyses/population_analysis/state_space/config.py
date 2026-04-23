@@ -1,11 +1,13 @@
 # config.py
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 @dataclass
 class TrajectoryConfig:
     # Data
-    data_path: str = '/sorted_spike_cache_filtered'
+    base_dir: Path = Path(__file__).resolve().parents[4]  # go up to repo root (Julie)
+    data_path: Path = base_dir / "Cortana" / "sorted_spike_cache_filtered"
     region: str = 'ALL'              # 'AMG', 'ER', or 'ALL'
     session: Optional[str] = None    # None = multi-session; else e.g. 'ER_2023-11-28_4'
 

@@ -48,7 +48,7 @@ from sklearn.decomposition import PCA
 # ---------------------------------------------------------------------------
 # Paths — edit if your layout changes
 # ---------------------------------------------------------------------------
-BASE_DIR = "/social_data"
+BASE_DIR = "/home/connorlab/Documents/GitHub/Julie/social_data"
 MONKEYINFO_PATH = os.path.join(BASE_DIR, "monkeyinfo.csv")
 
 # Map of display name -> (folder name, file stem). Case-sensitive.
