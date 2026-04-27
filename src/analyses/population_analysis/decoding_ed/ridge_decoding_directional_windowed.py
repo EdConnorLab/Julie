@@ -35,11 +35,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import LeaveOneOut
 from sklearn.metrics import r2_score
 
+sys.path.insert(0, '/home/connorlab/Documents/GitHub/Julie/src')
+sys.path.insert(0, '/home/connorlab/Documents/GitHub/Julie/src/analyses')
+sys.path.insert(0, '/home/connorlab/Documents/GitHub/Julie/src/analyses/population_analysis')
+
 from state_space.config import TrajectoryConfig
 from state_space.data_loading import load_and_filter
-
-sys.path.insert(0,
-    '/home/connorlab/Documents/GitHub/Julie/src/analyses/neural_trajectory')
 from social_rank_analysis import load_group_matrices
 
 MONKEY_INFO_PATH = (
@@ -146,11 +147,13 @@ def build_windowed_population_matrix(raw_df, neuron_table, monkey_list):
     rate_sum = np.zeros((n_monkeys, n_neurons))
     rate_count = np.zeros((n_monkeys, n_neurons))
 
-    # Build lookup: (session, raw_neuron_id) → (col_idx, win_start_s, win_end_s)
+    # Build lookup: NeuronID → (col_idx, win_start_s, win_end_s)
+    # Use the full NeuronID from the pkl as key so it matches raw_df['NeuronID']
+    # directly (raw_df NeuronIDs include the session prefix, so keying on
+    # the partial raw_neuron_id would never match).
     neuron_lookup = {}
     for col_idx, (_, nrow) in enumerate(neuron_table.iterrows()):
-        key = (nrow['session'], nrow['raw_neuron_id'])
-        neuron_lookup[key] = (
+        neuron_lookup[nrow['NeuronID']] = (
             col_idx,
             nrow['WindowStart_ms'] / 1000.0,
             nrow['WindowEnd_ms'] / 1000.0,
@@ -163,24 +166,17 @@ def build_windowed_population_matrix(raw_df, neuron_table, monkey_list):
         if len(sess_df) == 0:
             continue
 
-        # Which neurons from this session are in our table?
-        sess_neurons = {k: v for k, v in neuron_lookup.items()
-                        if k[0] == session}
-        if not sess_neurons:
-            continue
-
         # Iterate each row (one row = one neuron × one trial)
         for _, row in sess_df.iterrows():
-            raw_nid = row['NeuronID']
+            nid = row['NeuronID']
             monkey = row['MonkeyName']
             if monkey not in monkey_to_idx:
                 continue
 
-            key = (session, raw_nid)
-            if key not in sess_neurons:
+            if nid not in neuron_lookup:
                 continue
 
-            col_idx, win_start_s, win_end_s = sess_neurons[key]
+            col_idx, win_start_s, win_end_s = neuron_lookup[nid]
             m_idx = monkey_to_idx[monkey]
 
             epoch_start = row['EpochStartStop'][0]
@@ -536,7 +532,13 @@ def main():
     N_PERM = 1000
     MAX_WINDOW_END_MS = 2000
     P_THRESH = 0.05                   # for "significant" subset
+    N_TOP = 5                         # for "top N" subset (PASS 3)
     SUBJECT_NAME = None               # None = auto-detect
+    # Neurons for PASS 4 — full NeuronID strings as they appear in the pkl.
+    # Example: 'AMG_2023-10-03_3_Channel.C_020_Unit 1'
+    # Leave empty ([]) to skip PASS 4.
+    SELECTED_NEURONS = [
+    ]
     SAVE_BASE = (
         "/home/connorlab/Documents/GitHub/Julie/Cortana/"
         "analysis_results/ridge_directional_windowed"
@@ -608,6 +610,45 @@ def main():
         n_perm=N_PERM,
         save_dir=os.path.join(SAVE_BASE, GROUP, 'sig_neurons'),
     )
+
+    print("\n\n" + "#" * 60)
+    print(f"# PASS 3: TOP {N_TOP} SIGNIFICANT NEURONS (lowest p-value)")
+    print("#" * 60)
+    top_neurons = sig_neurons.head(N_TOP).reset_index(drop=True)
+    if len(top_neurons) == 0:
+        print("  No significant neurons available — skipping PASS 3.")
+    else:
+        run_decoding(
+            raw_df, top_neurons, mats, common, subject_name,
+            tag=f"{GROUP}_top{N_TOP}_sig",
+            n_perm=N_PERM,
+            save_dir=os.path.join(SAVE_BASE, GROUP, f'top{N_TOP}_sig_neurons'),
+        )
+
+    print("\n\n" + "#" * 60)
+    print("# PASS 4: MANUALLY SPECIFIED NEURONS")
+    print("#" * 60)
+    if not SELECTED_NEURONS:
+        print("  SELECTED_NEURONS is empty — skipping PASS 4.")
+    else:
+        selected_table = all_neurons[
+            all_neurons['NeuronID'].isin(SELECTED_NEURONS)
+        ].reset_index(drop=True)
+        missing_ids = set(SELECTED_NEURONS) - set(selected_table['NeuronID'])
+        if missing_ids:
+            print(f"  Warning: {len(missing_ids)} neuron(s) not found in pkl "
+                  f"and will be skipped:")
+            for nid in sorted(missing_ids):
+                print(f"    {nid}")
+        if len(selected_table) == 0:
+            print("  No matching neurons found — skipping PASS 4.")
+        else:
+            run_decoding(
+                raw_df, selected_table, mats, common, subject_name,
+                tag=f"{GROUP}_manual_{len(selected_table)}neurons",
+                n_perm=N_PERM,
+                save_dir=os.path.join(SAVE_BASE, GROUP, 'manual_neurons'),
+            )
 
     plt.show()
 
