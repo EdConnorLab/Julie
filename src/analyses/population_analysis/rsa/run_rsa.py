@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 from rsa_config import RSAConfig
 from rsa_core import run_rsa_session, run_rsa_pseudopop
-from rsa_plotting import (plot_neural_rdm, plot_model_rdms, plot_rsa_bar,
+from rsa_plotting import (plot_model_rdms, plot_rsa_bar,
                           plot_mds, plot_neural_rdm_multi_sort)
 
 # Adjust if needed:
@@ -73,7 +73,6 @@ def main():
         _print_comparisons(result)
 
         save_dir = f"{cfg.save_dir}/{cfg.region}_pseudopop"
-        plot_neural_rdm(result, cfg, save_dir=save_dir)
         plot_neural_rdm_multi_sort(result, cfg, save_dir=save_dir)
         plot_model_rdms(result, cfg, save_dir=save_dir)
         plot_rsa_bar([result], cfg, save_dir=save_dir)
@@ -95,7 +94,6 @@ def main():
             results.append(result)
 
             save_dir = f"{cfg.save_dir}/{cfg.region}/{sess}"
-            plot_neural_rdm(result, cfg, save_dir=save_dir)
             plot_neural_rdm_multi_sort(result, cfg, save_dir=save_dir)
             plot_model_rdms(result, cfg, save_dir=save_dir)
             for factor in cfg.model_factors:

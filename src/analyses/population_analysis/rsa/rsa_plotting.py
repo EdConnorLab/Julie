@@ -46,66 +46,6 @@ def _apply_sort(rdm, identities, model_labels, sort_idx):
     return rdm_sorted, ids_sorted, groups_sorted
 
 
-def plot_neural_rdm(result, cfg, suffix='', save=True, save_dir=None):
-    """Plot neural RDM heatmap with identity labels colored by group."""
-    rdm = result['neural_rdm']
-    identities = result['identities']
-    model_labels = result['model_labels']
-
-    fig, ax = plt.subplots(figsize=(10, 9))
-
-    sort_idx = _group_sort_index(result)
-    rdm_sorted, ids_sorted, groups_sorted = _apply_sort(
-        rdm, identities, model_labels, sort_idx)
-
-    im = ax.imshow(rdm_sorted, cmap='RdYlBu_r', aspect='equal')
-    cbar = fig.colorbar(im, ax=ax, shrink=0.8)
-    metric_label = '1 - r' if cfg.neural_metric == 'correlation' else 'Euclidean dist'
-    cbar.set_label(metric_label)
-
-    ax.set_xticks(range(len(ids_sorted)))
-    ax.set_yticks(range(len(ids_sorted)))
-    ax.set_xticklabels(ids_sorted, rotation=90, fontsize=7)
-    ax.set_yticklabels(ids_sorted, fontsize=7)
-
-    # Color tick labels by group
-    for i, (tick_x, tick_y) in enumerate(zip(ax.get_xticklabels(), ax.get_yticklabels())):
-        g = groups_sorted[i]
-        if g in cfg.group_colors:
-            tick_x.set_color(cfg.group_colors[g])
-            tick_y.set_color(cfg.group_colors[g])
-
-    # Draw group boundaries
-    if 'group' in model_labels:
-        boundaries = []
-        prev = groups_sorted[0]
-        for i, g in enumerate(groups_sorted):
-            if g != prev:
-                boundaries.append(i - 0.5)
-                prev = g
-        for b in boundaries:
-            ax.axhline(b, color='k', lw=1, alpha=0.7)
-            ax.axvline(b, color='k', lw=1, alpha=0.7)
-
-    # Legend
-    handles = [mpatches.Patch(color=c, label=g) for g, c in cfg.group_colors.items()
-               if g in set(groups_sorted)]
-    ax.legend(handles=handles, loc='upper left', bbox_to_anchor=(1.15, 1.0), fontsize=8)
-
-    win_str = f"{int(cfg.window[0]*1000)}-{int(cfg.window[1]*1000)}ms"
-    title = f"Neural RDM ({metric_label}) | {result['session']} | {win_str}"
-    if suffix:
-        title += f" | {suffix}"
-    ax.set_title(title, fontsize=11)
-    fig.tight_layout()
-
-    if save and save_dir:
-        os.makedirs(save_dir, exist_ok=True)
-        fname = f"neural_rdm_{result['session']}_{win_str}.png"
-        fig.savefig(os.path.join(save_dir, fname), dpi=150, bbox_inches='tight')
-    return fig
-
-
 def plot_model_rdms(result, cfg, save=True, save_dir=None):
     """Plot all model RDMs side by side, sorted to match neural RDM."""
     model_rdms = result['model_rdms']

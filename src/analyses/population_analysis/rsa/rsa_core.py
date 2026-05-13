@@ -165,12 +165,24 @@ def build_neural_rdm(rate_matrix, metric='correlation'):
 # 3. Model RDMs
 # ──────────────────────────────────────────────────────────
 
+def _is_missing(v):
+    return v is None or (isinstance(v, float) and np.isnan(v))
+
+
 def _categorical_rdm(labels):
-    """Binary same(0)/different(1) RDM from categorical labels."""
+    """Binary same(0)/different(1) RDM from categorical labels.
+    Pairs where either label is missing (None/NaN) are set to NaN so that
+    compare_rdms excludes them, matching the ordinal/continuous behavior.
+    """
     n = len(labels)
-    rdm = np.zeros((n, n), dtype=float)
+    rdm = np.full((n, n), np.nan, dtype=float)
     for i in range(n):
+        if _is_missing(labels[i]):
+            continue
+        rdm[i, i] = 0.0
         for j in range(i + 1, n):
+            if _is_missing(labels[j]):
+                continue
             rdm[i, j] = rdm[j, i] = 0.0 if labels[i] == labels[j] else 1.0
     return rdm
 
@@ -458,13 +470,10 @@ def run_rsa_pseudopop(df, info_df, cfg):
         sess_df = df[df['session'] == sess]
         rate_mat, valid_ids, neuron_ids = compute_firing_rates(
             sess_df, common_ids, cfg.window, min_reps=1)
-        # valid_ids should == common_ids since they were present
-        # Reorder to match common_ids if needed
-        if valid_ids != common_ids:
-            # Some identities may have been dropped for min_reps in this session
-            # For pseudo-pop we use min_reps=1 above, so this shouldn't happen
-            print(f"  Warning: session {sess} dropped some common identities")
-            continue
+        # common_ids is built by set-intersection of MonkeyName across sessions,
+        # so every common_id has ≥1 trial in every session: valid_ids must match.
+        assert valid_ids == common_ids, (
+            f"session {sess}: expected {common_ids}, got {valid_ids}")
         session_matrices.append(rate_mat)
         all_neuron_ids.extend(f"{sess}__{nid}" for nid in neuron_ids)
 
