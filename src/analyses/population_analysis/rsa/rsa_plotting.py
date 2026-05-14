@@ -10,6 +10,18 @@ from sklearn.manifold import MDS
 import os
 
 
+_METRIC_LABELS = {
+    'correlation': '1 - r',
+    'euclidean': 'Euclidean dist',
+    'cosine': 'Cosine dist',
+    'mahalanobis': 'Mahalanobis dist',
+}
+
+
+def _metric_label(metric):
+    return _METRIC_LABELS.get(metric, metric)
+
+
 def _group_sort_index(result):
     """Return a sort index: group → sex (F before M) → age (adult before juvenile).
     Used by all RDM plotting functions so row/col order is consistent."""
@@ -60,7 +72,7 @@ def plot_neural_rdm(result, cfg, suffix='', save=True, save_dir=None):
 
     im = ax.imshow(rdm_sorted, cmap='RdYlBu_r', aspect='equal')
     cbar = fig.colorbar(im, ax=ax, shrink=0.8)
-    metric_label = '1 - r' if cfg.neural_metric == 'correlation' else 'Euclidean dist'
+    metric_label = _metric_label(cfg.neural_metric)
     cbar.set_label(metric_label)
 
     ax.set_xticks(range(len(ids_sorted)))
@@ -106,37 +118,107 @@ def plot_neural_rdm(result, cfg, suffix='', save=True, save_dir=None):
     return fig
 
 
+def _get_sort_for_factor(result, factor, cfg):
+    """Pick sort index based on cfg.rdm_sort_mode.
+    'by_factor' → sort by this factor; 'by_group' → sort by group/sex/age."""
+    if getattr(cfg, 'rdm_sort_mode', 'by_factor') == 'by_group':
+        sort_idx = _group_sort_index(result)
+        model_labels = result['model_labels']
+        identities = result['identities']
+        sorted_ids = [identities[i] for i in sort_idx]
+        labels = model_labels.get(factor, [None] * len(identities))
+        sorted_labels = [labels[i] for i in sort_idx]
+        # For by_group mode, use group labels for coloring/boundaries
+        groups_sorted = ([model_labels['group'][i] for i in sort_idx]
+                         if 'group' in model_labels
+                         else [None] * len(identities))
+        return sort_idx, sorted_labels, sorted_ids, groups_sorted
+    else:
+        sort_idx, sorted_labels, sorted_ids = _sort_by_factor(result, factor)
+        return sort_idx, sorted_labels, sorted_ids, None
+
+
 def plot_model_rdms(result, cfg, save=True, save_dir=None):
-    """Plot all model RDMs side by side, sorted to match neural RDM."""
+    """Plot each model RDM. Sort controlled by cfg.rdm_sort_mode."""
     model_rdms = result['model_rdms']
-    identities = result['identities']
     model_labels = result['model_labels']
     n_models = len(model_rdms)
 
-    sort_idx = _group_sort_index(result)
-    _, ids_sorted, groups_sorted = _apply_sort(
-        result['neural_rdm'], identities, model_labels, sort_idx)
+    categorical_color_maps = {
+        'group': cfg.group_colors,
+        'sex': {'F': '#e377c2', 'M': '#17becf'},
+        'age_bin': {'adult': '#ff7f0e', 'juvenile': '#2ca02c'},
+        'familiarity': {'familiar': '#d62728', 'unfamiliar': '#1f77b4'},
+    }
+    by_group = getattr(cfg, 'rdm_sort_mode', 'by_factor') == 'by_group'
 
-    fig, axes = plt.subplots(1, n_models, figsize=(5 * n_models, 4.5))
+    fig, axes = plt.subplots(1, n_models, figsize=(7 * n_models, 7))
     if n_models == 1:
         axes = [axes]
 
     for ax, (factor, rdm) in zip(axes, model_rdms.items()):
+        sort_idx, sorted_labels, sorted_ids, groups_sorted = \
+            _get_sort_for_factor(result, factor, cfg)
         rdm_sorted = rdm[np.ix_(sort_idx, sort_idx)]
+
         im = ax.imshow(rdm_sorted, cmap='RdYlBu_r', aspect='equal')
         fig.colorbar(im, ax=ax, shrink=0.7)
         ax.set_title(factor, fontsize=11)
-        ax.set_xticks(range(len(ids_sorted)))
-        ax.set_yticks(range(len(ids_sorted)))
-        ax.set_xticklabels(ids_sorted, rotation=90, fontsize=5)
-        ax.set_yticklabels(ids_sorted, fontsize=5)
+        ax.set_xticks(range(len(sorted_ids)))
+        ax.set_yticks(range(len(sorted_ids)))
+        ax.set_xticklabels(sorted_ids, rotation=90, fontsize=5)
+        ax.set_yticklabels(sorted_ids, fontsize=5)
 
-        # Color tick labels by group
-        for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(), ax.get_yticklabels())):
-            g = groups_sorted[i]
-            if g in cfg.group_colors:
-                tx.set_color(cfg.group_colors[g])
-                ty.set_color(cfg.group_colors[g])
+        if by_group and groups_sorted is not None:
+            # Color by group, draw group boundaries
+            for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(), ax.get_yticklabels())):
+                g = groups_sorted[i]
+                if g in cfg.group_colors:
+                    tx.set_color(cfg.group_colors[g])
+                    ty.set_color(cfg.group_colors[g])
+            boundaries = []
+            prev = groups_sorted[0]
+            for i, g in enumerate(groups_sorted):
+                if g != prev:
+                    boundaries.append(i - 0.5)
+                    prev = g
+            for b in boundaries:
+                ax.axhline(b, color='k', lw=1.2, alpha=0.7)
+                ax.axvline(b, color='k', lw=1.2, alpha=0.7)
+        elif _is_continuous_factor(sorted_labels):
+            valid_vals = [l for l in sorted_labels
+                         if l is not None and not (isinstance(l, float) and np.isnan(l))]
+            lo, hi = min(valid_vals), max(valid_vals)
+            gradient_cmap = plt.cm.viridis
+            for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(), ax.get_yticklabels())):
+                val = sorted_labels[i]
+                if val is not None and not (isinstance(val, float) and np.isnan(val)):
+                    normed = (val - lo) / (hi - lo) if hi > lo else 0.5
+                    c = gradient_cmap(normed)
+                else:
+                    c = 'gray'
+                tx.set_color(c)
+                ty.set_color(c)
+        else:
+            cmap_cat = categorical_color_maps.get(factor, {})
+            if not cmap_cat:
+                unique = sorted(set(str(l) for l in sorted_labels if l is not None))
+                colors = plt.cm.tab10.colors
+                cmap_cat = {l: colors[i % 10] for i, l in enumerate(unique)}
+            for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(), ax.get_yticklabels())):
+                lab = sorted_labels[i]
+                c = cmap_cat.get(lab, cmap_cat.get(str(lab), 'k'))
+                tx.set_color(c)
+                ty.set_color(c)
+            boundaries = []
+            prev = sorted_labels[0]
+            for i, lab in enumerate(sorted_labels):
+                if lab != prev:
+                    boundaries.append(i - 0.5)
+                    prev = lab
+            for b in boundaries:
+                ax.axhline(b, color='k', lw=1.2, alpha=0.7)
+                ax.axvline(b, color='k', lw=1.2, alpha=0.7)
 
     fig.suptitle(f"Model RDMs | {result['session']}", fontsize=12)
     fig.tight_layout()
@@ -318,7 +400,7 @@ def plot_neural_rdm_multi_sort(result, cfg, factors=None,
     if n_panels == 1:
         axes = [axes]
 
-    metric_label = '1 - r' if cfg.neural_metric == 'correlation' else 'Euclidean dist'
+    metric_label = _metric_label(cfg.neural_metric)
     win_str = f"{int(cfg.window[0]*1000)}-{int(cfg.window[1]*1000)}ms"
 
     # Shared color scale across subplots
@@ -331,8 +413,10 @@ def plot_neural_rdm_multi_sort(result, cfg, factors=None,
             ax.axis('off')
             continue
 
-        sort_idx, sorted_labels, sorted_ids = _sort_by_factor(result, factor)
+        sort_idx, sorted_labels, sorted_ids, groups_sorted = \
+            _get_sort_for_factor(result, factor, cfg)
         rdm_sorted = rdm[np.ix_(sort_idx, sort_idx)]
+        by_group = groups_sorted is not None
         continuous = _is_continuous_factor(sorted_labels)
 
         im = ax.imshow(rdm_sorted, cmap='RdYlBu_r', aspect='equal', vmin=vmin, vmax=vmax)
@@ -342,7 +426,30 @@ def plot_neural_rdm_multi_sort(result, cfg, factors=None,
         ax.set_xticklabels(sorted_ids, rotation=90, fontsize=6)
         ax.set_yticklabels(sorted_ids, fontsize=6)
 
-        if continuous:
+        if by_group:
+            # by_group mode: color by group, draw group boundaries
+            for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(), ax.get_yticklabels())):
+                g = groups_sorted[i]
+                if g in cfg.group_colors:
+                    tx.set_color(cfg.group_colors[g])
+                    ty.set_color(cfg.group_colors[g])
+            boundaries = []
+            prev = groups_sorted[0]
+            for i, g in enumerate(groups_sorted):
+                if g != prev:
+                    boundaries.append(i - 0.5)
+                    prev = g
+            for b in boundaries:
+                ax.axhline(b, color='k', lw=1.2, alpha=0.7)
+                ax.axvline(b, color='k', lw=1.2, alpha=0.7)
+            # Legend
+            unique_groups = list(dict.fromkeys(groups_sorted))
+            handles = [mpatches.Patch(color=cfg.group_colors.get(g, 'gray'), label=str(g))
+                       for g in unique_groups if g is not None]
+            ax.legend(handles=handles, loc='upper left', bbox_to_anchor=(0.0, -0.12),
+                      fontsize=6, ncol=min(len(handles), 4), frameon=False)
+
+        elif continuous:
             # --- Continuous / ordinal factor: gradient-colored tick labels ---
             valid_vals = [l for l in sorted_labels
                          if l is not None and not (isinstance(l, float) and np.isnan(l))]
@@ -359,13 +466,16 @@ def plot_neural_rdm_multi_sort(result, cfg, factors=None,
                 tx.set_color(c)
                 ty.set_color(c)
 
-            # Small gradient colorbar as legend
+            # Small gradient colorbar below the plot (using inset_axes so subplot isn't resized)
+            from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+            cbar_ax_inset = inset_axes(ax, width="60%", height="4%",
+                                       loc='lower center', borderpad=-4.5)
             sm = plt.cm.ScalarMappable(cmap=gradient_cmap,
                                        norm=plt.Normalize(vmin=lo, vmax=hi))
             sm.set_array([])
-            cbar_factor = fig.colorbar(sm, ax=ax, shrink=0.3, pad=0.01,
-                                       location='bottom', aspect=30)
-            cbar_factor.set_label(factor, fontsize=8)
+            cbar_factor = fig.colorbar(sm, cax=cbar_ax_inset, orientation='horizontal')
+            cbar_factor.set_label(factor, fontsize=7)
+            cbar_factor.ax.tick_params(labelsize=6)
 
         else:
             # --- Categorical factor: discrete colored labels + boundaries ---
@@ -399,8 +509,8 @@ def plot_neural_rdm_multi_sort(result, cfg, factors=None,
                            color=cmap_cat.get(l, cmap_cat.get(str(l), 'gray')),
                            label=str(l))
                        for l in unique_in_plot if l is not None]
-            ax.legend(handles=handles, loc='upper left', bbox_to_anchor=(0.0, -0.02),
-                      fontsize=8, ncol=min(len(handles), 4), frameon=False)
+            ax.legend(handles=handles, loc='upper left', bbox_to_anchor=(0.0, -0.12),
+                      fontsize=6, ncol=min(len(handles), 4), frameon=False)
 
         ax.set_title(f"sorted by {factor}", fontsize=11)
 
@@ -408,7 +518,7 @@ def plot_neural_rdm_multi_sort(result, cfg, factors=None,
                  fontsize=13, y=1.02)
 
     fig.tight_layout()
-    fig.subplots_adjust(right=0.92)
+    fig.subplots_adjust(right=0.92, bottom=0.15)
 
     # Shared colorbar for the RDM dissimilarity scale
     cbar_ax = fig.add_axes([0.94, 0.25, 0.015, 0.5])

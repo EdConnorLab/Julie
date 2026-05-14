@@ -5,50 +5,63 @@ from typing import Optional, List, Tuple
 
 @dataclass
 class RSAConfig:
-    # Data
-    data_path: str = '/sorted_spike_cache_filtered'
-    monkey_info_path: str = '/social_data/monkeyinfo.csv'
+    """
+    Base RSA configuration.
+
+    Used directly by run_rsa.py (model-factor RSA).
+    Subclassed by SocialRSAConfig for run_rsa_social.py.
+    """
+
+    # ── Data ──
+    data_path: str = '/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered'
+    monkey_info_path: str = '/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv'
     region: str = 'ALL'              # 'AMG', 'ER', or 'ALL'
     session: Optional[str] = None    # None = all sessions
 
-    # Firing-rate window (seconds relative to epoch start)
+    # ── Firing-rate window (seconds relative to epoch start) ──
     window: Tuple[float, float] = (0.200, 0.600)
 
-    # Trial filtering
+    # ── Trial filtering ──
     min_epoch_duration: float = 2.0   # drop trials shorter than this
     min_reps_per_monkey: int = 3      # need at least this many reps per identity
     exclude_groups: List[str] = field(default_factory=list)  # e.g. ['Stranger Things']
 
-    # RSA
-    neural_metric: str = 'correlation'   # 'correlation' (1-r) or 'euclidean'
-    model_factors: List[str] = field(default_factory=lambda: [
-        'group', 'sex', 'age_bin', 'rank'
-    ])
-    # Additional options: 'age_continuous', 'familiarity'
+    # ── Neural RDM ──
+    neural_metric: str = 'correlation'   # 'correlation' (1-r) or 'euclidean' or 'cosine' or 'mahalanobis'
 
-    # PCA dimensionality reduction before RSA
-    pca_before_rsa: bool = False
-    pca_n_components: Optional[int] = None    # fixed # of PCs; None → use variance threshold
-    pca_var_threshold: float = 0.90           # keep PCs explaining this fraction of variance
-                                              # (only used when pca_n_components is None)
+    # ── Normalization (applied per neuron before building RDM) ──
+    normalization: str = None            # None    = raw firing rates
+                                         # 'soft'    = divide by (range + const); conservative
+                                         # 'zscore'  = subtract mean, divide by std; fully equalizes
+    soft_normalize_const: float = 5.0    # only used when normalization='soft'
 
-    # Stats
+    # ── Group-mean subtraction (remove group/familiarity signal from neural responses) ──
+    subtract_group_mean: bool = False
+
+    # ── Stats ──
     n_permutations: int = 0           # 0 = skip permutation test
     rng_seed: int = 42
 
-    # Pseudo-population (pool neurons across sessions within a region)
+    # ── Pseudo-population (pool neurons across sessions within a region) ──
     pseudo_population: bool = False   # False = per-session RSA
 
-    # Plotting
+    # ── Plotting ──
     save_plots: bool = True
     save_dir: str = 'rsa_results'
-
     group_colors: dict = field(default_factory=lambda: {
         'Zombies':         '#9467bd',
         'Best Frans':      '#d62728',
         'Instigators':     '#2ca02c',
         'Stranger Things': '#1f77b4',
     })
+
+    # ── Model RSA only (run_rsa.py) ──
+    model_factors: List[str] = field(default_factory=lambda: [
+        'group', 'sex', 'age_bin', 'rank'
+    ])
+    # Additional options: 'age_continuous', 'familiarity'
+    rdm_sort_mode: str = 'by_factor'   # 'by_factor' = each subplot sorted by its own factor
+                                        # 'by_group'  = all subplots sorted by group → sex → age
 
     def validate(self):
         if self.window[0] >= self.window[1]:
@@ -57,3 +70,19 @@ class RSAConfig:
             raise ValueError(
                 f"window end ({self.window[1]}) exceeds min_epoch_duration "
                 f"({self.min_epoch_duration}). Increase min_epoch_duration or shrink window.")
+
+
+@dataclass
+class SocialRSAConfig(RSAConfig):
+    """
+    Extended config for social behavior RSA (run_rsa_social.py).
+
+    Adds social-specific parameters on top of the shared base.
+    """
+
+    # ── Social profile RDMs ──
+    rank_transform_behavior: bool = False   # True = rank-transform behavioral profiles before distance
+
+    # ── Social RSA stats ──
+    between_group_permutations: int = 0     # 0 = skip between-group Δρ test
+    n_bootstrap: int = 0                    # 0 = skip bootstrap CI on ρ

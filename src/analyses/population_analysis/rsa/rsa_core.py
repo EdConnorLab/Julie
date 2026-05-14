@@ -12,51 +12,55 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.distance import squareform, pdist
 from scipy.stats import spearmanr
-from sklearn.decomposition import PCA
 from itertools import combinations
 
 
 # ──────────────────────────────────────────────────────────
-# 0. Optional PCA dimensionality reduction
+# 0. Normalization
 # ──────────────────────────────────────────────────────────
 
-def reduce_with_pca(rate_matrix, cfg):
+def normalize_rates(rate_matrix, method='none', soft_const=5.0):
     """
-    Reduce neuron dimensions via PCA before building the neural RDM.
+    Normalize each neuron (column) of the rate matrix.
 
     Parameters
     ----------
     rate_matrix : ndarray, shape (n_identities, n_neurons)
-    cfg : RSAConfig
+    method : str
+        'none'   → no normalization (return as-is)
+        'soft'   → divide by (range + const); conservative equalization
+        'zscore' → subtract mean, divide by std; full equalization
+    soft_const : float
+        Additive constant for soft normalization (spikes/s).
 
     Returns
     -------
-    reduced : ndarray, shape (n_identities, n_components)
-    pca_info : dict with keys 'n_components', 'var_explained', 'var_cumulative'
+    normalized : ndarray, same shape
     """
-    n_max = min(rate_matrix.shape)  # can't have more PCs than min(n_samples, n_features)
+    if method == 'none':
+        return rate_matrix
 
-    if cfg.pca_n_components is not None:
-        n_comp = min(cfg.pca_n_components, n_max)
-    else:
-        # Fit full PCA, then pick components by variance threshold
-        pca_full = PCA(n_components=n_max)
-        pca_full.fit(rate_matrix)
-        cumvar = np.cumsum(pca_full.explained_variance_ratio_)
-        n_comp = int(np.searchsorted(cumvar, cfg.pca_var_threshold) + 1)
-        n_comp = min(n_comp, n_max)
+    if method == 'soft':
+        rng = rate_matrix.max(axis=0) - rate_matrix.min(axis=0) # finding range for each neuron
+        denom = rng + soft_const
+        normalized = rate_matrix / denom
+        n_flat = np.sum(rng < 1e-6)
+        if n_flat > 0:
+            print(f"  Soft-norm: {n_flat}/{rate_matrix.shape[1]} neurons had near-zero range")
+        return normalized
 
-    pca = PCA(n_components=n_comp)
-    reduced = pca.fit_transform(rate_matrix)
+    if method == 'zscore':
+        mu = rate_matrix.mean(axis=0)
+        sd = rate_matrix.std(axis=0)
+        # Neurons with zero std (no modulation) → leave as zero
+        n_flat = np.sum(sd < 1e-10)
+        if n_flat > 0:
+            print(f"  Z-score: {n_flat}/{rate_matrix.shape[1]} neurons had near-zero std (set to 0)")
+        sd[sd < 1e-10] = 1.0  # avoid div-by-zero; numerator will be ~0 anyway
+        normalized = (rate_matrix - mu) / sd
+        return normalized
 
-    pca_info = dict(
-        n_components=n_comp,
-        var_explained=pca.explained_variance_ratio_,
-        var_cumulative=np.cumsum(pca.explained_variance_ratio_),
-    )
-    print(f"  PCA: {rate_matrix.shape[1]} neurons → {n_comp} PCs "
-          f"({pca_info['var_cumulative'][-1]:.1%} variance)")
-    return reduced, pca_info
+    raise ValueError(f"Unknown normalization method: {method}")
 
 
 # ──────────────────────────────────────────────────────────
@@ -155,6 +159,18 @@ def build_neural_rdm(rate_matrix, metric='correlation'):
         dists = pdist(rate_matrix, metric='correlation')
     elif metric == 'euclidean':
         dists = pdist(rate_matrix, metric='euclidean')
+    elif metric == 'cosine':
+        dists = pdist(rate_matrix, metric='cosine')
+
+    elif metric == 'mahalanobis':
+        # Covariance across neurons
+        cov = np.cov(rate_matrix, rowvar=False)
+        # Small regularization for numerical stability
+        cov += np.eye(cov.shape[0]) * 1e-6
+        # Inverse covariance matrix
+        VI = np.linalg.inv(cov)
+
+        dists = pdist(rate_matrix, metric='mahalanobis', VI=VI)
     else:
         raise ValueError(f"Unknown metric: {metric}")
     rdm = squareform(dists)
@@ -384,13 +400,12 @@ def run_rsa_session(df, session, info_df, cfg):
         print(f"  Session {session}: only {len(valid_ids)} identities, skipping")
         return None
 
-    # Optional PCA dimensionality reduction
-    pca_info = None
-    rdm_input = rate_matrix
-    if cfg.pca_before_rsa:
-        rdm_input, pca_info = reduce_with_pca(rate_matrix, cfg)
+    # Optional normalization
+    if cfg.normalization != None:
+        rate_matrix = normalize_rates(rate_matrix, method=cfg.normalization,
+                                      soft_const=cfg.soft_normalize_const)
 
-    neural_rdm = build_neural_rdm(rdm_input, metric=cfg.neural_metric)
+    neural_rdm = build_neural_rdm(rate_matrix, metric=cfg.neural_metric)
     model_rdms, model_labels = build_model_rdms(valid_ids, info_df, cfg.model_factors)
 
     comparisons = {}
@@ -411,7 +426,6 @@ def run_rsa_session(df, session, info_df, cfg):
         model_rdms=model_rdms,
         model_labels=model_labels,
         comparisons=comparisons,
-        pca_info=pca_info,
     )
 
 
@@ -471,13 +485,12 @@ def run_rsa_pseudopop(df, info_df, cfg):
     combined_matrix = np.hstack(session_matrices)  # (n_identities, n_neurons_total)
     print(f"Pseudo-population matrix: {combined_matrix.shape}")
 
-    # Optional PCA dimensionality reduction
-    pca_info = None
-    rdm_input = combined_matrix
-    if cfg.pca_before_rsa:
-        rdm_input, pca_info = reduce_with_pca(combined_matrix, cfg)
+    # Optional normalization
+    if cfg.normalization != None:
+        combined_matrix = normalize_rates(combined_matrix, method=cfg.normalization,
+                                          soft_const=cfg.soft_normalize_const)
 
-    neural_rdm = build_neural_rdm(rdm_input, metric=cfg.neural_metric)
+    neural_rdm = build_neural_rdm(combined_matrix, metric=cfg.neural_metric)
     model_rdms, model_labels = build_model_rdms(common_ids, info_df, cfg.model_factors)
 
     comparisons = {}
@@ -498,5 +511,4 @@ def run_rsa_pseudopop(df, info_df, cfg):
         model_rdms=model_rdms,
         model_labels=model_labels,
         comparisons=comparisons,
-        pca_info=pca_info,
     )

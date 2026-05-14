@@ -2,42 +2,34 @@
 """
 Main script for running RSA analysis on neural data.
 
-Usage:
-  python run_rsa.py
-
-Configure via the RSAConfig at the top of main().
 """
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from analyses.population_analysis.state_space.data_loading import load_and_filter
 from rsa_config import RSAConfig
 from rsa_core import run_rsa_session, run_rsa_pseudopop
 from rsa_plotting import (plot_neural_rdm, plot_model_rdms, plot_rsa_bar,
                           plot_mds, plot_neural_rdm_multi_sort)
 
-# Adjust if needed:
-# sys.path.insert(0, '/home/connorlab/Documents/GitHub/Julie/src')
-from population_analysis.state_space.data_loading import load_and_filter
-
-MONKEY_INFO_PATH = "/social_data/monkeyinfo.csv"
+MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv"
 
 
 def main():
     cfg = RSAConfig(
         region='AMG',                          # 'AMG', 'ER', or 'ALL'
         session=None,                          # None = all sessions
-        window=(0.300, 0.600),                 # analysis window (seconds)
-        min_epoch_duration=2.0,
-        min_reps_per_monkey=3,
-        neural_metric='correlation',           # 'correlation' or 'euclidean'
-        model_factors=['group'],
+        window=(0.200, 0.600),                 # analysis window (seconds)
+        min_epoch_duration=1.0,
+        min_reps_per_monkey=7,
+        neural_metric='correlation',           # 'correlation' or 'euclidean' or 'cosine' or 'mahalanobis'
+        model_factors=['group', 'familiarity', 'sex','age_continuous'],
         exclude_groups=['Stranger Things'],                     # e.g. ['Stranger Things'] to drop
-        pca_before_rsa=True,                  # True = PCA denoise before building RDM
-        pca_n_components=None,                 # fixed # PCs, or None → use var threshold
-        pca_var_threshold=0.50,                # keep PCs explaining this fraction
+        normalization='soft',                   # None, 'soft', or 'zscore'
         n_permutations=0,                      # set to e.g. 1000 for perm test
         pseudo_population=True,               # True = pool neurons across sessions
+        rdm_sort_mode='by_factor',
         save_plots=True,
         save_dir=f'rsa_results',
     )
@@ -56,13 +48,10 @@ def main():
     print(f"RSA Analysis")
     print(f"  Region: {cfg.region}")
     print(f"  Window: {cfg.window[0]*1000:.0f}–{cfg.window[1]*1000:.0f} ms")
+    print(f"  Normalization: {cfg.normalization}")
+    print(f"  Neural Metric: {cfg.neural_metric}")
     print(f"  Factors: {cfg.model_factors}")
     print(f"  Exclude groups: {cfg.exclude_groups or 'none'}")
-    if cfg.pca_before_rsa:
-        pca_desc = f"{cfg.pca_n_components} PCs" if cfg.pca_n_components else f"{cfg.pca_var_threshold:.0%} var"
-        print(f"  PCA before RSA: {pca_desc}")
-    else:
-        print(f"  PCA before RSA: off")
     print(f"  Permutations: {cfg.n_permutations}")
     print(f"  Mode: {'pseudo-population' if cfg.pseudo_population else 'per-session'}")
     print(f"{'='*60}\n")
@@ -73,13 +62,13 @@ def main():
         _print_comparisons(result)
 
         save_dir = f"{cfg.save_dir}/{cfg.region}_pseudopop"
-        plot_neural_rdm(result, cfg, save_dir=save_dir)
+        # plot_neural_rdm(result, cfg, save_dir=save_dir)
         plot_neural_rdm_multi_sort(result, cfg, save_dir=save_dir)
         plot_model_rdms(result, cfg, save_dir=save_dir)
-        plot_rsa_bar([result], cfg, save_dir=save_dir)
-        for factor in cfg.model_factors:
-            if factor in ('group', 'sex', 'age_bin', 'familiarity'):
-                plot_mds(result, cfg, color_by=factor, save_dir=save_dir)
+        # plot_rsa_bar([result], cfg, save_dir=save_dir)
+        # for factor in cfg.model_factors:
+        #     if factor in ('group', 'sex', 'age_bin', 'familiarity'):
+        #         plot_mds(result, cfg, color_by=factor, save_dir=save_dir)
 
     else:
         # ─── Per-session mode ───
@@ -114,9 +103,7 @@ def main():
 
 
 def _print_comparisons(result):
-    pca = result.get('pca_info')
-    pca_str = f", PCA → {pca['n_components']} PCs ({pca['var_cumulative'][-1]:.1%})" if pca else ""
-    print(f"  {result['n_identities']} identities, {result['n_neurons']} neurons{pca_str}")
+    print(f"  {result['n_identities']} identities, {result['n_neurons']} neurons")
     for factor, comp in result['comparisons'].items():
         p_str = f"p={comp['p_val']:.4f}" if comp['p_val'] is not None else "no perm test"
         print(f"  {factor:20s}  ρ = {comp['rho']:+.4f}  ({p_str})")
