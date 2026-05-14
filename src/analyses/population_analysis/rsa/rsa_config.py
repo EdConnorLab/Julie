@@ -38,6 +38,16 @@ class RSAConfig:
     # ── Group-mean subtraction (remove group/familiarity signal from neural responses) ──
     subtract_group_mean: bool = False
 
+    # ── Visual responsiveness filter ──
+    # Keeps only neurons with significant stimulus-driven responses.
+    # Compares firing in vr_response_window to vr_baseline_window (0–100 ms,
+    # before visual responses reach MTL) using Wilcoxon signed-rank test.
+    visual_responsiveness_filter: bool = False
+    vr_baseline_window: Tuple[float, float] = (0.0, 0.100)    # 0–100 ms
+    vr_response_window: Tuple[float, float] = (0.150, 0.600)  # 150–600 ms
+    vr_alpha: float = 0.05
+    vr_require_increase: bool = True   # only excitatory responses
+
     # ── Partial RSA (run_rsa.py): regress out these model RDMs before testing each factor ──
     # e.g. ['familiarity', 'group'] → for each target factor, partial out
     # familiarity and group, then correlate residuals.

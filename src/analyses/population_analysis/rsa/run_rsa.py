@@ -8,6 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
+from visual_responsiveness_filter import filter_visually_responsive
 from rsa_config import RSAConfig
 from rsa_core import run_rsa_session, run_rsa_pseudopop
 from rsa_plotting import (plot_neural_rdm, plot_model_rdms, plot_rsa_bar,
@@ -44,6 +45,9 @@ def main():
         df = df[~df['MonkeyGroup'].isin(cfg.exclude_groups)].reset_index(drop=True)
         print(f"Excluded groups {cfg.exclude_groups}: "
               f"{df['MonkeyName'].nunique()} monkeys remaining")
+
+    # Visual responsiveness filter (toggle via cfg.visual_responsiveness_filter)
+    df = filter_visually_responsive(df, cfg)
 
     print(f"\n{'='*60}")
     print(f"RSA Analysis")

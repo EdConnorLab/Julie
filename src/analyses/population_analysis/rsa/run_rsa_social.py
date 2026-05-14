@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
+from visual_responsiveness_filter import filter_visually_responsive
 from rsa_config import SocialRSAConfig
 from rsa_core import run_rsa_session, run_rsa_pseudopop, build_neural_rdm
 from rsa_social import (
@@ -545,7 +546,7 @@ def main():
     cfg = SocialRSAConfig(
         region='AMG',
         session=None,
-        window=(0.300, 0.600),
+        window=(0.400, 0.700),
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
         neural_metric='correlation',
@@ -561,6 +562,7 @@ def main():
         pseudo_population=True,
         save_plots=True,
         save_dir='rsa_social_results',
+        visual_responsiveness_filter=True,
     )
 
     # CLI overrides
@@ -575,6 +577,9 @@ def main():
         df = df[~df['MonkeyGroup'].isin(cfg.exclude_groups)].reset_index(drop=True)
         print(f"Excluded groups {cfg.exclude_groups}: "
               f"{df['MonkeyName'].nunique()} monkeys remaining")
+
+    # Visual responsiveness filter (toggle via cfg.visual_responsiveness_filter)
+    df = filter_visually_responsive(df, cfg)
 
     print("\n--- Loading interaction matrices ---")
     interactions = load_all_interaction_matrices(BEHAVIOR_FILES)
