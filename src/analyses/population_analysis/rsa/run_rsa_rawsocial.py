@@ -7,20 +7,13 @@ Builds two RDM families that DO NOT symmetrize the social matrix:
   - concat[row, col] per-monkey vector (correlation distance)
 
 Both preserve directed structure. The signed-asymmetry RDM is
-particularly rank-correlated (dominant→subordinate flow), so this
-runner reports results both WITH and WITHOUT rank partialing by
-default — toggle with --partial-only or --no-partial-only.
+particularly rank-correlated (dominant→subordinate flow), so by
+default we report BOTH raw and rank-partialed versions side by side.
 
-Run:
-    python run_rsa_rawsocial.py                       # both versions
-    python run_rsa_rawsocial.py --region AMG
-    python run_rsa_rawsocial.py --partial-only        # only rank-partialed
-    python run_rsa_rawsocial.py --no-partial-only     # only raw (no partial)
+Edit the CONFIG block at the top of main() and run from PyCharm.
 """
 
 import os
-import json
-import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -61,44 +54,147 @@ BEHAVIOR_FILES = {
 }
 
 
-def _serialize_group_comp(group_comp):
-    out = {}
-    for mat_name, groups in group_comp.items():
-        out[mat_name] = {}
-        for grp, entry in groups.items():
-            clean = {}
-            for k, v in entry.items():
-                if k == 'null_distribution':
-                    continue
-                if isinstance(v, (np.floating, float)):
-                    clean[k] = None if np.isnan(v) else float(v)
-                elif isinstance(v, (np.integer, int)):
-                    clean[k] = int(v)
-                else:
-                    clean[k] = v
-            out[mat_name][grp] = clean
-    return out
+# ──────────────────────────────────────────────────────────
+# Plotting helpers
+# ──────────────────────────────────────────────────────────
 
+def _stars(p):
+    if p is None or (isinstance(p, float) and np.isnan(p)):
+        return ''
+    if p < 0.001: return '***'
+    if p < 0.01:  return '**'
+    if p < 0.05:  return '*'
+    return ''
+
+
+def plot_rho_per_group_per_matrix(group_comp, group_colors,
+                                   title, save_path=None):
+    """
+    Grouped bar chart: bars colored by group, one bar group per matrix.
+    Stars on top show p-values from compare_neural_to_social_by_group.
+    """
+    mat_names = list(group_comp.keys())
+    all_groups = sorted({g for by_g in group_comp.values() for g in by_g.keys()})
+    n_g = len(all_groups)
+
+    fig, ax = plt.subplots(figsize=(max(10, len(mat_names) * 1.8), 5.5))
+    bar_w = 0.8 / max(n_g, 1)
+    x = np.arange(len(mat_names))
+
+    for gi, group in enumerate(all_groups):
+        rhos, stars, ns = [], [], []
+        for mat in mat_names:
+            e = group_comp[mat].get(group, {})
+            rho = e.get('rho', np.nan)
+            rhos.append(rho)
+            stars.append(_stars(e.get('p_val')))
+            ns.append(e.get('n_pairs', 0))
+        rhos = np.asarray(rhos)
+        offset = (gi - (n_g - 1) / 2) * bar_w
+        color = group_colors.get(group, 'gray')
+        ax.bar(x + offset, rhos, bar_w, color=color, edgecolor='k',
+               alpha=0.85, label=group)
+        for i, s in enumerate(stars):
+            if not np.isnan(rhos[i]) and s:
+                y_off = 0.01 if rhos[i] >= 0 else -0.04
+                ax.text(x[i] + offset, rhos[i] + y_off, s,
+                        ha='center', fontsize=9, fontweight='bold')
+            if not np.isnan(rhos[i]):
+                ax.text(x[i] + offset, -0.02, f'n={ns[i]}',
+                        ha='center', fontsize=6, color='gray', va='top')
+
+    ax.axhline(0, color='k', lw=1.0, ls='--', alpha=0.5, zorder=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels(mat_names, rotation=45, ha='right', fontsize=9)
+    ax.set_ylabel('Spearman ρ', fontsize=11)
+    ax.set_title(title, fontsize=12)
+    ax.legend(fontsize=10, loc='best')
+    ax.yaxis.grid(True, alpha=0.3, linestyle=':')
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+    return fig
+
+
+def plot_versions_side_by_side(comps_by_version, group_colors,
+                                title, save_path=None):
+    """
+    Side-by-side panels: one per version (raw vs rank-partialed), each
+    showing the per-group bar chart. Shared y-axis to make differences
+    in ρ across versions visually obvious.
+    """
+    versions = list(comps_by_version.keys())
+    n_ver = len(versions)
+    if n_ver == 0:
+        return None
+
+    fig, axes = plt.subplots(1, n_ver, figsize=(8 * n_ver, 5.5), sharey=True)
+    if n_ver == 1:
+        axes = [axes]
+
+    for ax, ver in zip(axes, versions):
+        group_comp = comps_by_version[ver]
+        mat_names = list(group_comp.keys())
+        all_groups = sorted({g for by_g in group_comp.values() for g in by_g.keys()})
+        n_g = len(all_groups)
+        bar_w = 0.8 / max(n_g, 1)
+        x = np.arange(len(mat_names))
+
+        for gi, group in enumerate(all_groups):
+            rhos, stars = [], []
+            for mat in mat_names:
+                e = group_comp[mat].get(group, {})
+                rhos.append(e.get('rho', np.nan))
+                stars.append(_stars(e.get('p_val')))
+            rhos = np.asarray(rhos)
+            offset = (gi - (n_g - 1) / 2) * bar_w
+            color = group_colors.get(group, 'gray')
+            ax.bar(x + offset, rhos, bar_w, color=color, edgecolor='k',
+                   alpha=0.85, label=group)
+            for i, s in enumerate(stars):
+                if not np.isnan(rhos[i]) and s:
+                    y_off = 0.01 if rhos[i] >= 0 else -0.04
+                    ax.text(x[i] + offset, rhos[i] + y_off, s,
+                            ha='center', fontsize=9, fontweight='bold')
+
+        ax.axhline(0, color='k', lw=1.0, ls='--', alpha=0.5)
+        ax.set_xticks(x)
+        ax.set_xticklabels(mat_names, rotation=45, ha='right', fontsize=8)
+        ax.set_title(ver, fontsize=11)
+        ax.yaxis.grid(True, alpha=0.3, linestyle=':')
+        ax.set_axisbelow(True)
+
+    axes[0].set_ylabel('Spearman ρ', fontsize=11)
+    axes[-1].legend(fontsize=9, loc='best')
+    fig.suptitle(title, fontsize=12, y=1.02)
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+    return fig
+
+
+# ══════════════════════════════════════════════════════════
+# Main
+# ══════════════════════════════════════════════════════════
 
 def main():
-    parser = argparse.ArgumentParser(description='Raw-social RSA (no symmetrization)')
-    parser.add_argument('--region', type=str, default='ALL')
-    parser.add_argument('--partial-only',    action='store_true',
-                        help='Run only the rank-partialed version.')
-    parser.add_argument('--no-partial-only', action='store_true',
-                        help='Run only the raw (no partial) version.')
-    parser.add_argument('--rank-transform-behavior', action='store_true',
-                        help='Rank-transform behavioral profiles before distance.')
-    parser.add_argument('--n-permutations', type=int, default=1000)
-    parser.add_argument('--n-bootstrap',    type=int, default=0)
-    parser.add_argument('--seed', type=int, default=42)
-    args, _ = parser.parse_known_args()
-
-    if args.partial_only and args.no_partial_only:
-        raise SystemExit("Choose at most one of --partial-only / --no-partial-only.")
+    # ── CONFIG (edit here) ──────────────────────────────
+    REGION = 'ALL'
+    RUN_RAW_NO_PARTIAL = True
+    RUN_RANK_PARTIALED = True
+    RANK_TRANSFORM_BEHAVIOR = False
+    N_PERMUTATIONS = 1000
+    N_BOOTSTRAP = 0
+    SEED = 42
+    # ────────────────────────────────────────────────────
 
     cfg = SocialRSAConfig(
-        region=args.region,
+        region=REGION,
         session=None,
         window=(0.300, 0.600),
         min_epoch_duration=1.0,
@@ -107,15 +203,15 @@ def main():
         model_factors=[],
         exclude_groups=['Stranger Things'],
         normalization=None,
-        partial_out_rank=False,            # toggled per-run below
-        rank_transform_behavior=args.rank_transform_behavior,
-        n_permutations=args.n_permutations,
+        partial_out_rank=False,            # set per run below
+        rank_transform_behavior=RANK_TRANSFORM_BEHAVIOR,
+        n_permutations=N_PERMUTATIONS,
         between_group_permutations=0,
-        n_bootstrap=args.n_bootstrap,
+        n_bootstrap=N_BOOTSTRAP,
         pseudo_population=True,
         save_plots=True,
         save_dir='rsa_rawsocial_results',
-        rng_seed=args.seed,
+        rng_seed=SEED,
     )
     cfg.validate()
 
@@ -137,7 +233,6 @@ def main():
     print(f"\n{'█'*70}")
     print(f"█  RAW SOCIAL RSA  —  region={cfg.region}")
     print(f"█  signed asymmetry  +  concat[row,col] (correlation distance)")
-    print(f"█  rank_transform_behavior: {cfg.rank_transform_behavior}")
     print(f"{'█'*70}")
 
     raw_rdms = build_raw_social_rdms(
@@ -148,27 +243,13 @@ def main():
         concat_metric='correlation',
         include_combined=True)
 
-    # Which versions to run
-    if args.partial_only:
-        versions = [('rank_partialed', True)]
-    elif args.no_partial_only:
-        versions = [('raw_no_partial', False)]
-    else:
-        versions = [('raw_no_partial', False), ('rank_partialed', True)]
+    versions = []
+    if RUN_RAW_NO_PARTIAL: versions.append(('raw_no_partial',  False))
+    if RUN_RANK_PARTIALED: versions.append(('rank_partialed',  True))
 
     rank_confound_mat = build_rank_distance_matrix(identities, info_df)
-
-    out_json = {
-        'region': cfg.region,
-        'config': {
-            'window': list(cfg.window),
-            'neural_metric': cfg.neural_metric,
-            'rank_transform_behavior': cfg.rank_transform_behavior,
-            'n_permutations': cfg.n_permutations,
-            'n_bootstrap': cfg.n_bootstrap,
-        },
-        'results': {},
-    }
+    save_root = f"{cfg.save_dir}/{cfg.region}"
+    comps_by_version = {}
 
     for tag, do_partial in versions:
         confound = rank_confound_mat if do_partial else None
@@ -181,17 +262,20 @@ def main():
             rng_seed=cfg.rng_seed,
             confound_matrix=confound)
         print_group_comparisons(group_comp)
-        out_json['results'][tag] = _serialize_group_comp(group_comp)
+        comps_by_version[tag] = group_comp
 
-    save_root = f"{cfg.save_dir}/{cfg.region}"
-    os.makedirs(save_root, exist_ok=True)
-    json_path = f"{save_root}/rawsocial_results.json"
-    with open(json_path, 'w') as f:
-        json.dump(out_json, f, indent=2, default=str)
-    print(f"\nResults written to {json_path}")
+        plot_rho_per_group_per_matrix(
+            group_comp, cfg.group_colors,
+            title=f"Raw social RSA — {tag} {partial_str}",
+            save_path=f"{save_root}/per_group_{tag}.png")
 
-    if cfg.save_plots:
-        plt.show()
+    if len(comps_by_version) > 1:
+        plot_versions_side_by_side(
+            comps_by_version, cfg.group_colors,
+            title=f"Raw social RSA — comparison",
+            save_path=f"{save_root}/comparison.png")
+
+    plt.show()
 
 
 if __name__ == '__main__':
