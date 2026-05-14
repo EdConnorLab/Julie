@@ -42,6 +42,8 @@ from rsa_social import (
     print_group_comparisons,
     print_between_group_comparisons,
     plot_scatter_multi,
+    # Rank confound
+    build_rank_distance_matrix,
 )
 from rsa_plotting import plot_neural_rdm
 
@@ -375,7 +377,8 @@ def plot_rsa_ci(group_comparisons, group_colors, title, save_path=None):
 # ──────────────────────────────────────────────────────────
 
 def run_similarity_condition(neural_sim, identities, interactions, info_df, cfg,
-                              symmetrize, log_transform, condition_label, save_dir_base):
+                              symmetrize, log_transform, condition_label, save_dir_base,
+                              confound_matrix=None):
     """
     Run similarity-based analysis for one condition.
     Neural similarity (Pearson r) vs raw interaction counts.
@@ -395,7 +398,8 @@ def run_similarity_condition(neural_sim, identities, interactions, info_df, cfg,
         neural_sim, social_sims, identities, info_df,
         n_permutations=cfg.n_permutations,
         n_bootstrap=cfg.n_bootstrap,
-        rng_seed=cfg.rng_seed)
+        rng_seed=cfg.rng_seed,
+        confound_matrix=confound_matrix)
     print_group_comparisons(group_comp)
 
     # Between-group Δρ
@@ -457,7 +461,8 @@ def run_similarity_condition(neural_sim, identities, interactions, info_df, cfg,
 # ──────────────────────────────────────────────────────────
 
 def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, cfg,
-                                 symmetrize, log_transform, condition_label, save_dir_base):
+                                 symmetrize, log_transform, condition_label, save_dir_base,
+                                 confound_matrix=None):
     """
     Run dissimilarity-based analysis for one condition.
     Neural RDM (1-r) vs social RDMs (profile distance, max-count).
@@ -479,7 +484,8 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
         neural_rdm, social_rdms, identities, info_df,
         n_permutations=cfg.n_permutations,
         n_bootstrap=cfg.n_bootstrap,
-        rng_seed=cfg.rng_seed)
+        rng_seed=cfg.rng_seed,
+        confound_matrix=confound_matrix)
     print_group_comparisons(group_comp)
 
     # Between-group Δρ
@@ -537,9 +543,9 @@ def main():
     args, _ = parser.parse_known_args()
 
     cfg = SocialRSAConfig(
-        region='AMG',
+        region='ALL',
         session=None,
-        window=(0.400, 0.700),
+        window=(0.300, 0.600),
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
         neural_metric='correlation',
@@ -547,9 +553,10 @@ def main():
         exclude_groups=['Stranger Things'],
         normalization=None,
         subtract_group_mean=False,  # True = remove group-level signal from neural responses
-        rank_transform_behavior= True,  # True = rank-transform behavioral profiles
-        n_permutations=2000,
-        between_group_permutations=2000,   # 0 = off; set >0 to test Δρ between groups
+        partial_out_rank=True,      # True = partial out rank distance from social RSA
+        rank_transform_behavior=False,  # True = rank-transform behavioral profiles
+        n_permutations=1000,
+        between_group_permutations=1000,   # 0 = off; set >0 to test Δρ between groups
         n_bootstrap=2000,                  # 0 = off; set >0 for bootstrap 95% CI on ρ
         pseudo_population=True,
         save_plots=True,
@@ -583,6 +590,7 @@ def main():
     print(f"  Between-group Δρ permutations: {cfg.between_group_permutations}")
     print(f"  Bootstrap CI: {cfg.n_bootstrap}")
     print(f"  Subtract group mean: {cfg.subtract_group_mean}")
+    print(f"  Partial out rank: {cfg.partial_out_rank}")
     print(f"  Rank transform behavior: {cfg.rank_transform_behavior}")
     print(f"{'='*60}\n")
 
@@ -613,10 +621,17 @@ def main():
         # Build neural similarity matrix (Pearson r, not 1-r)
         neural_sim = build_neural_similarity_matrix(rate_matrix)
 
+        # Build rank distance confound matrix if requested
+        rank_confound = None
+        if cfg.partial_out_rank:
+            rank_confound = build_rank_distance_matrix(identities, info_df)
+            print(f"  Partial out rank: ON (|rank_i - rank_j| as confound)")
+
         gms_tag = " (group-mean subtracted)" if cfg.subtract_group_mean else ""
+        rank_tag = " (rank partialed)" if cfg.partial_out_rank else ""
 
         print(f"\n{'='*60}")
-        print(f"Session: {session_label}{gms_tag}")
+        print(f"Session: {session_label}{gms_tag}{rank_tag}")
         print(f"  Identities ({len(identities)}): {identities}")
         print(f"{'='*60}")
 
@@ -672,7 +687,8 @@ def main():
             group_comp, between_comp, _ = run_dissimilarity_condition(
                 neural_rdm, identities, interactions, info_df, cfg,
                 symmetrize=symmetrize, log_transform=log_transform,
-                condition_label=label, save_dir_base=save_dir_base)
+                condition_label=label, save_dir_base=save_dir_base,
+                confound_matrix=rank_confound)
             dissim_results[label] = (group_comp, between_comp)
 
         # ══════════════════════════════════════════════════

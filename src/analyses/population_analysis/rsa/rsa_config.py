@@ -38,6 +38,12 @@ class RSAConfig:
     # ── Group-mean subtraction (remove group/familiarity signal from neural responses) ──
     subtract_group_mean: bool = False
 
+    # ── Partial RSA (run_rsa.py): regress out these model RDMs before testing each factor ──
+    # e.g. ['familiarity', 'group'] → for each target factor, partial out
+    # familiarity and group, then correlate residuals.
+    # Factors listed here are auto-built even if not in model_factors.
+    partial_out: List[str] = field(default_factory=list)
+
     # ── Stats ──
     n_permutations: int = 0           # 0 = skip permutation test
     rng_seed: int = 42
@@ -82,6 +88,9 @@ class SocialRSAConfig(RSAConfig):
 
     # ── Social profile RDMs ──
     rank_transform_behavior: bool = False   # True = rank-transform behavioral profiles before distance
+
+    # ── Partial out rank from social RSA (|rank_i - rank_j| as confound within each group) ──
+    partial_out_rank: bool = False
 
     # ── Social RSA stats ──
     between_group_permutations: int = 0     # 0 = skip between-group Δρ test

@@ -25,6 +25,7 @@ def main():
         min_reps_per_monkey=7,
         neural_metric='correlation',           # 'correlation' or 'euclidean' or 'cosine' or 'mahalanobis'
         model_factors=['group', 'familiarity', 'sex','age_continuous'],
+        partial_out=['familiarity', 'group'],          # regress these out when testing other factors
         exclude_groups=['Stranger Things'],                     # e.g. ['Stranger Things'] to drop
         normalization='soft',                   # None, 'soft', or 'zscore'
         n_permutations=0,                      # set to e.g. 1000 for perm test
@@ -51,6 +52,7 @@ def main():
     print(f"  Normalization: {cfg.normalization}")
     print(f"  Neural Metric: {cfg.neural_metric}")
     print(f"  Factors: {cfg.model_factors}")
+    print(f"  Partial out: {cfg.partial_out or 'none'}")
     print(f"  Exclude groups: {cfg.exclude_groups or 'none'}")
     print(f"  Permutations: {cfg.n_permutations}")
     print(f"  Mode: {'pseudo-population' if cfg.pseudo_population else 'per-session'}")
@@ -59,7 +61,7 @@ def main():
     if cfg.pseudo_population:
         # ─── Pseudo-population mode ───
         result = run_rsa_pseudopop(df, info_df, cfg)
-        _print_comparisons(result)
+        _print_comparisons(result, cfg)
 
         save_dir = f"{cfg.save_dir}/{cfg.region}_pseudopop"
         # plot_neural_rdm(result, cfg, save_dir=save_dir)
@@ -80,7 +82,7 @@ def main():
             result = run_rsa_session(df, sess, info_df, cfg)
             if result is None:
                 continue
-            _print_comparisons(result)
+            _print_comparisons(result, cfg)
             results.append(result)
 
             save_dir = f"{cfg.save_dir}/{cfg.region}/{sess}"
@@ -102,11 +104,14 @@ def main():
     plt.show()
 
 
-def _print_comparisons(result):
+def _print_comparisons(result, cfg=None):
     print(f"  {result['n_identities']} identities, {result['n_neurons']} neurons")
+    partial_out = getattr(cfg, 'partial_out', []) if cfg else []
     for factor, comp in result['comparisons'].items():
         p_str = f"p={comp['p_val']:.4f}" if comp['p_val'] is not None else "no perm test"
-        print(f"  {factor:20s}  ρ = {comp['rho']:+.4f}  ({p_str})")
+        confounds = [p for p in partial_out if p != factor]
+        tag = f"  | partial out: {', '.join(confounds)}" if confounds else ""
+        print(f"  {factor:20s}  ρ = {comp['rho']:+.4f}  ({p_str}){tag}")
 
 
 def _print_summary_table(results, cfg):

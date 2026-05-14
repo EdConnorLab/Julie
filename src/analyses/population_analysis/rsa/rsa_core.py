@@ -11,7 +11,7 @@ Core RSA functions:
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import squareform, pdist
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, rankdata
 from itertools import combinations
 
 
@@ -363,6 +363,93 @@ def compare_rdms(neural_rdm, model_rdm, n_permutations=0, rng_seed=42):
     return dict(rho=rho, p_val=p_val, null_distribution=null_dist)
 
 
+def compare_rdms_partial(neural_rdm, target_rdm, confound_rdms,
+                         n_permutations=0, rng_seed=42):
+    """
+    Partial Spearman correlation between neural RDM and a target model RDM,
+    controlling for one or more confound model RDMs.
+
+    Method: rank-transform all vectors, then OLS-regress out confounds from
+    both the neural and target vectors, and Pearson-correlate the residuals.
+
+    Permutation test: shuffle rows+cols of the neural RDM, recompute the
+    partial correlation each time.
+
+    Parameters
+    ----------
+    neural_rdm : ndarray (n, n)
+    target_rdm : ndarray (n, n)
+        The model RDM whose unique contribution you want to test.
+    confound_rdms : list of ndarray (n, n)
+        Model RDMs to partial out (e.g. familiarity, group).
+    n_permutations : int
+    rng_seed : int
+
+    Returns
+    -------
+    result : dict with keys:
+        'rho'   : float, partial Spearman correlation
+        'p_val' : float or None
+        'null_distribution' : ndarray or None
+    """
+    v_neural = _upper_triangle(neural_rdm)
+    v_target = _upper_triangle(target_rdm)
+    v_confounds = [_upper_triangle(c) for c in confound_rdms]
+
+    # Build combined NaN mask across neural, target, and all confounds
+    mask = ~(np.isnan(v_neural) | np.isnan(v_target))
+    for vc in v_confounds:
+        mask &= ~np.isnan(vc)
+
+    if mask.sum() < 3 + len(confound_rdms):
+        return dict(rho=np.nan, p_val=np.nan, null_distribution=None)
+
+    def _partial_rho(v_n, v_t, v_cs, m):
+        """Compute partial Spearman rho on masked data."""
+        # Rank transform (Spearman = Pearson on ranks)
+        r_n = rankdata(v_n[m])
+        r_t = rankdata(v_t[m])
+
+        # Build confound design matrix with intercept
+        C = np.column_stack([rankdata(vc[m]) for vc in v_cs])
+        C = np.column_stack([np.ones(m.sum()), C])
+
+        # Regress confounds out of neural ranks
+        betas_n = np.linalg.lstsq(C, r_n, rcond=None)[0]
+        resid_n = r_n - C @ betas_n
+
+        # Regress confounds out of target ranks
+        betas_t = np.linalg.lstsq(C, r_t, rcond=None)[0]
+        resid_t = r_t - C @ betas_t
+
+        # Pearson on residuals = partial Spearman
+        std_n = np.std(resid_n)
+        std_t = np.std(resid_t)
+        if std_n < 1e-12 or std_t < 1e-12:
+            return 0.0
+        return np.corrcoef(resid_n, resid_t)[0, 1]
+
+    rho = _partial_rho(v_neural, v_target, v_confounds, mask)
+
+    p_val = None
+    null_dist = None
+
+    if n_permutations > 0:
+        rng = np.random.default_rng(rng_seed)
+        n = neural_rdm.shape[0]
+        null_dist = np.zeros(n_permutations)
+
+        for perm_i in range(n_permutations):
+            perm = rng.permutation(n)
+            shuffled = neural_rdm[np.ix_(perm, perm)]
+            v_shuf = _upper_triangle(shuffled)
+            null_dist[perm_i] = _partial_rho(v_shuf, v_target, v_confounds, mask)
+
+        p_val = np.mean(np.abs(null_dist) >= np.abs(rho))
+
+    return dict(rho=rho, p_val=p_val, null_distribution=null_dist)
+
+
 # ──────────────────────────────────────────────────────────
 # 5. Per-session pipeline
 # ──────────────────────────────────────────────────────────
@@ -406,14 +493,30 @@ def run_rsa_session(df, session, info_df, cfg):
                                       soft_const=cfg.soft_normalize_const)
 
     neural_rdm = build_neural_rdm(rate_matrix, metric=cfg.neural_metric)
-    model_rdms, model_labels = build_model_rdms(valid_ids, info_df, cfg.model_factors)
 
+    # Ensure partial_out factors are built even if not in model_factors
+    all_factors = list(cfg.model_factors)
+    for pf in getattr(cfg, 'partial_out', []):
+        if pf not in all_factors:
+            all_factors.append(pf)
+    model_rdms, model_labels = build_model_rdms(valid_ids, info_df, all_factors)
+
+    # Run comparisons: partial or standard
+    partial_out = getattr(cfg, 'partial_out', [])
     comparisons = {}
     for factor in cfg.model_factors:
-        comparisons[factor] = compare_rdms(
-            neural_rdm, model_rdms[factor],
-            n_permutations=cfg.n_permutations,
-            rng_seed=cfg.rng_seed)
+        confound_factors = [p for p in partial_out if p != factor]
+        if confound_factors:
+            confound_rdms = [model_rdms[p] for p in confound_factors]
+            comparisons[factor] = compare_rdms_partial(
+                neural_rdm, model_rdms[factor], confound_rdms,
+                n_permutations=cfg.n_permutations,
+                rng_seed=cfg.rng_seed)
+        else:
+            comparisons[factor] = compare_rdms(
+                neural_rdm, model_rdms[factor],
+                n_permutations=cfg.n_permutations,
+                rng_seed=cfg.rng_seed)
 
     return dict(
         session=session,
@@ -491,14 +594,30 @@ def run_rsa_pseudopop(df, info_df, cfg):
                                           soft_const=cfg.soft_normalize_const)
 
     neural_rdm = build_neural_rdm(combined_matrix, metric=cfg.neural_metric)
-    model_rdms, model_labels = build_model_rdms(common_ids, info_df, cfg.model_factors)
 
+    # Ensure partial_out factors are built even if not in model_factors
+    all_factors = list(cfg.model_factors)
+    for pf in getattr(cfg, 'partial_out', []):
+        if pf not in all_factors:
+            all_factors.append(pf)
+    model_rdms, model_labels = build_model_rdms(common_ids, info_df, all_factors)
+
+    # Run comparisons: partial or standard
+    partial_out = getattr(cfg, 'partial_out', [])
     comparisons = {}
     for factor in cfg.model_factors:
-        comparisons[factor] = compare_rdms(
-            neural_rdm, model_rdms[factor],
-            n_permutations=cfg.n_permutations,
-            rng_seed=cfg.rng_seed)
+        confound_factors = [p for p in partial_out if p != factor]
+        if confound_factors:
+            confound_rdms = [model_rdms[p] for p in confound_factors]
+            comparisons[factor] = compare_rdms_partial(
+                neural_rdm, model_rdms[factor], confound_rdms,
+                n_permutations=cfg.n_permutations,
+                rng_seed=cfg.rng_seed)
+        else:
+            comparisons[factor] = compare_rdms(
+                neural_rdm, model_rdms[factor],
+                n_permutations=cfg.n_permutations,
+                rng_seed=cfg.rng_seed)
 
     return dict(
         session='pseudo_pop',
