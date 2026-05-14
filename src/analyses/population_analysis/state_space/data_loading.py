@@ -7,17 +7,19 @@ def load_and_filter(cfg):
     df = df[df['MonkeyName'] != 'NewMonkey']
     df = df.dropna(subset=['MonkeyGroup'])
 
+    df = df.copy()
+
+    # Build session ID from date + round (region-agnostic)
+    df['session'] = df['Date'].astype(str) + '_' + df['Round No.'].astype(str)
+
+    # Filter by region (affects which neurons, not which sessions)
     if cfg.region != 'ALL':
         df = df[df['Location'] == cfg.region]
-
-    df = df.copy()
-    df['session'] = (df['Location'] + '_' + df['Date'].astype(str)
-                     + '_' + df['Round No.'].astype(str))
 
     if cfg.session is not None:
         df = df[df['session'] == cfg.session]
         if len(df) == 0:
-            raise ValueError(f"No data for session '{cfg.session}'")
+            raise ValueError(f"No data for session '{cfg.session}' with region='{cfg.region}'")
 
     # Drop short trials
     durs = df['EpochStartStop'].apply(lambda x: x[1] - x[0])
