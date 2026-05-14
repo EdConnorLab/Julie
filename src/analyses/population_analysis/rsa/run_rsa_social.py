@@ -543,7 +543,7 @@ def main():
     args, _ = parser.parse_known_args()
 
     cfg = SocialRSAConfig(
-        region='ALL',
+        region='AMG',
         session=None,
         window=(0.300, 0.600),
         min_epoch_duration=1.0,
@@ -553,10 +553,10 @@ def main():
         exclude_groups=['Stranger Things'],
         normalization=None,
         subtract_group_mean=False,  # True = remove group-level signal from neural responses
-        partial_out_rank=True,      # True = partial out rank distance from social RSA
+        partial_out_rank=False,      # True = partial out rank distance from social RSA
         rank_transform_behavior=False,  # True = rank-transform behavioral profiles
-        n_permutations=1000,
-        between_group_permutations=1000,   # 0 = off; set >0 to test Δρ between groups
+        n_permutations=2000,
+        between_group_permutations=2000,   # 0 = off; set >0 to test Δρ between groups
         n_bootstrap=2000,                  # 0 = off; set >0 for bootstrap 95% CI on ρ
         pseudo_population=True,
         save_plots=True,

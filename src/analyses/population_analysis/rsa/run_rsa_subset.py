@@ -66,7 +66,6 @@ def _stars(p):
     if p < 0.05:  return '*'
     return ''
 
-
 def plot_per_group_dots(summary, group_colors, title, save_path=None):
     """
     Dot plot with 95% CI error bars: per-group mean ρ across matrices.
@@ -97,8 +96,11 @@ def plot_per_group_dots(summary, group_colors, title, save_path=None):
             stars.append(_stars(p))
 
         means = np.asarray(means)
-        lo_err = np.asarray(lo_err)
-        hi_err = np.asarray(hi_err)
+        # ── FIX: clamp error bars to be non-negative ──
+        lo_err = np.maximum(0.0, np.asarray(lo_err))
+        hi_err = np.maximum(0.0, np.asarray(hi_err))
+        # ──────────────────────────────────────────────
+
         offset = (gi - (n_groups - 1) / 2) * jitter
         xpos = x + offset
         valid = ~np.isnan(means)
@@ -112,7 +114,8 @@ def plot_per_group_dots(summary, group_colors, title, save_path=None):
                     label=group, zorder=3)
         for i, s in enumerate(stars):
             if valid[i] and s:
-                ax.text(xpos[i], means[i] + hi_err[i] + 0.02, s,
+                y_star = means[i] + hi_err[i] + 0.02
+                ax.text(xpos[i], y_star, s,
                         ha='center', va='bottom', fontsize=10,
                         fontweight='bold', color=color)
 
