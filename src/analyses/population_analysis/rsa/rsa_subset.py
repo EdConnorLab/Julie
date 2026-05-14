@@ -1,49 +1,52 @@
 # rsa_subset.py
 """
-Group-size control for social RSA.
+Group-size control for social RSA with significance testing.
 
 Best Frans has n=5 monkeys (10 pairs). Zombies and Instigators have n=9
 (36 pairs). Pair-count imbalance can drive per-group ρ comparisons.
 
-This module provides utilities to downsample larger groups to a target
-size (default 5), run RSA on the subsampled identities N times with
-different random draws, and aggregate per-group ρ (mean, std, CI).
+This module:
+  1. Caps every group at `target_size` (default 5) and runs the
+     dissimilarity-mode social RSA `n_draws` times with different
+     random subsamples of the larger groups.
+  2. Returns aggregated per-group ρ statistics AND between-group Δρ
+     statistics — both with p-values derived from permutation nulls
+     pooled across draws.
 
-Typical use:
-    from rsa_subset import run_subsampled_dissimilarity_rsa
-    summary = run_subsampled_dissimilarity_rsa(
-        result, info_df, interactions, cfg,
-        target_size=5, n_draws=200, rng_seed=42,
-        symmetrize=False, log_transform=False)
+Significance approach
+---------------------
+Each draw d performs M neural-RDM-shuffle permutations, yielding
+  obs ρ_d        and  null ρ_{d, m}   for m = 1..M
+The statistic we report is ρ_mean = mean_d ρ_d. Its null distribution
+is built as
+  null_mean_m = mean_d null ρ_{d, m}
+which is a valid null for the mean statistic because each draw's
+permutations are independent.
 
-`result` is the dict returned by run_rsa_pseudopop / run_rsa_session.
-`summary` is {group: {matrix_name: {rho_mean, rho_std, rho_ci_low,
-rho_ci_high, draw_rhos}}}.
+p-value (two-tailed) = mean( |null_mean| ≥ |ρ_mean| )
+
+Same logic for between-group Δρ.
 """
 
 import numpy as np
+from itertools import combinations
+from scipy.stats import spearmanr
 
 from rsa_core import build_neural_rdm
 from rsa_social import (
     build_social_rdms,
-    compare_neural_to_social_by_group,
     _get_group_indices,
+    _upper_triangle,
+    _partial_spearman,
 )
 
 
-def _group_of(identity, info_df):
-    info = info_df.set_index(info_df['Name'].astype(str))
-    if identity in info.index:
-        return info.loc[identity, 'Group Name']
-    return None
-
+# ──────────────────────────────────────────────────────────
+# Subsampling
+# ──────────────────────────────────────────────────────────
 
 def balanced_subset_indices(identities, info_df, target_size, rng):
-    """
-    Pick a subset of indices into `identities` such that every group is
-    capped at `target_size`. Groups already at or below the cap are kept
-    intact. Returns a sorted np.ndarray of indices.
-    """
+    """Random index subset that caps every group at `target_size`."""
     group_indices = _get_group_indices(identities, info_df)
     keep = []
     for group, idxs in group_indices.items():
@@ -56,51 +59,207 @@ def balanced_subset_indices(identities, info_df, target_size, rng):
 
 
 def _subset_result(result, sub_idx, cfg):
-    """Apply index subset to a pseudopop/session result dict."""
     rate_sub = result['rate_matrix'][sub_idx, :]
     ids_sub = [result['identities'][i] for i in sub_idx]
     rdm_sub = build_neural_rdm(rate_sub, metric=cfg.neural_metric)
     return ids_sub, rate_sub, rdm_sub
 
 
+# ──────────────────────────────────────────────────────────
+# Single-draw stats (observed + null arrays)
+# ──────────────────────────────────────────────────────────
+
+def _rho_or_partial(v_neural, v_social, v_confound, mask):
+    if v_confound is not None:
+        return _partial_spearman(v_neural, v_social, v_confound, mask)
+    r, _ = spearmanr(v_neural[mask], v_social[mask])
+    return r
+
+
+def _draw_stats(neural_rdm, social_rdms, identities, info_df,
+                confound_matrix, n_permutations, rng):
+    """
+    Compute observed and per-permutation null statistics for ONE draw.
+
+    Returns
+    -------
+    per_group : dict {mat_name: {group: {'rho': float, 'null': ndarray(M,),
+                                          'n_pairs': int}}}
+    between : dict {mat_name: {(g_a, g_b): {'delta': float,
+                                             'null': ndarray(M,),
+                                             'rho_a': float, 'rho_b': float}}}
+    """
+    group_indices = _get_group_indices(identities, info_df)
+    groups = sorted(group_indices.keys())
+    n = neural_rdm.shape[0]
+
+    # Pre-permute neural RDMs once per perm index, reused for all
+    # (matrix, group) combinations within the draw.
+    perm_rdms = []
+    for _ in range(n_permutations):
+        perm = rng.permutation(n)
+        perm_rdms.append(neural_rdm[np.ix_(perm, perm)])
+
+    per_group = {}
+    between = {}
+
+    for mat_name, social in social_rdms.items():
+        per_group[mat_name] = {}
+        between[mat_name] = {}
+
+        # ── per-group ─────────────────────────
+        group_obs = {}        # group → rho (or nan)
+        group_null = {}       # group → ndarray(M,) (nan-filled)
+        group_pairs = {}      # group → (v_neural_sub, v_social_sub, v_conf_sub, mask)
+        for g, idxs in group_indices.items():
+            idx = np.asarray(idxs)
+            if len(idx) < 3:
+                group_obs[g] = np.nan
+                group_null[g] = np.full(n_permutations, np.nan)
+                per_group[mat_name][g] = {
+                    'rho': np.nan, 'null': group_null[g], 'n_pairs': 0}
+                continue
+
+            n_sub = neural_rdm[np.ix_(idx, idx)]
+            s_sub = social[np.ix_(idx, idx)]
+            v_n = _upper_triangle(n_sub)
+            v_s = _upper_triangle(s_sub)
+            mask = ~(np.isnan(v_n) | np.isnan(v_s))
+            v_c = None
+            if confound_matrix is not None:
+                v_c = _upper_triangle(confound_matrix[np.ix_(idx, idx)])
+                mask &= ~np.isnan(v_c)
+
+            min_required = 4 if v_c is not None else 3
+            if mask.sum() < min_required:
+                group_obs[g] = np.nan
+                group_null[g] = np.full(n_permutations, np.nan)
+                per_group[mat_name][g] = {
+                    'rho': np.nan, 'null': group_null[g],
+                    'n_pairs': int(mask.sum())}
+                continue
+
+            rho = _rho_or_partial(v_n, v_s, v_c, mask)
+            null = np.full(n_permutations, np.nan)
+            for m_i, p_rdm in enumerate(perm_rdms):
+                v_np = _upper_triangle(p_rdm[np.ix_(idx, idx)])
+                null[m_i] = _rho_or_partial(v_np, v_s, v_c, mask)
+
+            group_obs[g] = rho
+            group_null[g] = null
+            group_pairs[g] = (idx, mask)
+            per_group[mat_name][g] = {
+                'rho': float(rho), 'null': null,
+                'n_pairs': int(mask.sum())}
+
+        # ── between-group Δρ ───────────────────
+        for g_a, g_b in combinations(groups, 2):
+            ra = group_obs.get(g_a, np.nan)
+            rb = group_obs.get(g_b, np.nan)
+            if np.isnan(ra) or np.isnan(rb):
+                between[mat_name][(g_a, g_b)] = {
+                    'delta': np.nan, 'rho_a': ra, 'rho_b': rb,
+                    'null': np.full(n_permutations, np.nan)}
+                continue
+            null_a = group_null[g_a]
+            null_b = group_null[g_b]
+            between[mat_name][(g_a, g_b)] = {
+                'delta': float(ra - rb),
+                'rho_a': float(ra), 'rho_b': float(rb),
+                'null': null_a - null_b,
+            }
+
+    return per_group, between
+
+
+# ──────────────────────────────────────────────────────────
+# Aggregation across draws
+# ──────────────────────────────────────────────────────────
+
+def _aggregate(per_draw, key_path, n_permutations, ci_level=0.95):
+    """
+    Given a list of dicts (one per draw) and a path of nested keys leading
+    to a {'obs': float, 'null': ndarray(M,)} pair, compute:
+      mean_obs, std_obs, ci_low/high, p_value (from pooled null)
+    """
+    obs_vals = []
+    null_stack = []
+    for d in per_draw:
+        node = d
+        for k in key_path:
+            node = node.get(k, None)
+            if node is None:
+                break
+        if node is None:
+            continue
+        obs_vals.append(node['obs'])
+        null_stack.append(node['null'])
+
+    obs_vals = np.asarray(obs_vals, dtype=float)
+    valid = ~np.isnan(obs_vals)
+    if valid.sum() == 0:
+        return {'mean': np.nan, 'std': np.nan,
+                'ci_low': np.nan, 'ci_high': np.nan,
+                'p_val': np.nan, 'n_valid': 0,
+                'n_draws_total': len(obs_vals)}
+
+    mean_obs = float(np.mean(obs_vals[valid]))
+    std_obs = float(np.std(obs_vals[valid]))
+    alpha = 1.0 - ci_level
+    ci_low = float(np.percentile(obs_vals[valid], 100 * alpha / 2))
+    ci_high = float(np.percentile(obs_vals[valid], 100 * (1 - alpha / 2)))
+
+    # Null distribution of the mean: average across draws for each perm index.
+    # Only use draws that had valid null arrays (no NaN).
+    null_arr = np.stack([n for n, v in zip(null_stack, valid) if v], axis=0)
+    null_arr_clean = np.where(np.isnan(null_arr), 0.0, null_arr)
+    # If many NaNs, mean is biased; we accept it (nullable rows are rare here).
+    null_mean = null_arr_clean.mean(axis=0)
+    p_val = float(np.mean(np.abs(null_mean) >= np.abs(mean_obs)))
+
+    return {'mean': mean_obs, 'std': std_obs,
+            'ci_low': ci_low, 'ci_high': ci_high,
+            'p_val': p_val,
+            'n_valid': int(valid.sum()),
+            'n_draws_total': int(len(obs_vals))}
+
+
+# ──────────────────────────────────────────────────────────
+# Top-level runner
+# ──────────────────────────────────────────────────────────
+
 def run_subsampled_dissimilarity_rsa(result, info_df, interactions, cfg,
-                                     target_size=5, n_draws=200, rng_seed=42,
+                                     target_size=5, n_draws=200,
+                                     n_permutations_per_draw=200,
+                                     rng_seed=42,
                                      symmetrize=False, log_transform=False,
                                      behavior_types=('affiliation', 'agonism', 'submission'),
                                      confound_matrix_fn=None,
                                      ci_level=0.95):
     """
-    Run the dissimilarity-mode social RSA N times, each time downsampling
-    every group to `target_size`. Aggregate per-group ρ across draws.
-
-    Parameters
-    ----------
-    result : dict
-        Output of run_rsa_pseudopop or run_rsa_session. Must contain
-        'rate_matrix', 'identities'.
-    info_df : DataFrame  (monkeyinfo.csv)
-    interactions : dict  (output of load_all_interaction_matrices)
-    cfg : SocialRSAConfig
-    target_size : int
-    n_draws : int
-    rng_seed : int
-    symmetrize, log_transform : bool
-    behavior_types : tuple of str
-    confound_matrix_fn : callable(identities, info_df) → (n,n) ndarray or None
-        E.g. lambda ids, info: build_rank_distance_matrix(ids, info).
-        Computed once per draw on the subsampled identities.
-    ci_level : float
+    Run dissimilarity-mode social RSA `n_draws` times on subsampled
+    identities (every group capped at `target_size`). Each draw runs
+    `n_permutations_per_draw` neural-RDM shuffles to build a null
+    distribution. Aggregate across draws for per-group and between-
+    group statistics.
 
     Returns
     -------
-    summary : dict {group: {matrix_name: {rho_mean, rho_std,
-                                          rho_ci_low, rho_ci_high,
-                                          n_pairs_typical, draw_rhos}}}
+    summary : dict
+        {
+          'per_group':   {mat_name: {group: {mean, std, ci_low, ci_high,
+                                              p_val, n_valid, n_draws_total}}},
+          'between':     {mat_name: {(g_a, g_b): {mean_delta, std_delta,
+                                                   ci_low, ci_high, p_val,
+                                                   mean_rho_a, mean_rho_b,
+                                                   n_valid, n_draws_total}}},
+          'meta': {target_size, n_draws, n_permutations_per_draw, ...},
+        }
     """
     rng = np.random.default_rng(rng_seed)
+    perm_rng = np.random.default_rng(rng_seed + 17)
 
-    # Per (matrix, group) collect a list of ρ values
-    collected = {}  # {mat_name: {group: [rhos]}}
+    draw_records = []  # list of (per_group_dict, between_dict)
 
     for draw_i in range(n_draws):
         sub_idx = balanced_subset_indices(
@@ -118,51 +277,178 @@ def run_subsampled_dissimilarity_rsa(result, info_df, interactions, cfg,
         if confound_matrix_fn is not None:
             confound = confound_matrix_fn(ids_sub, info_df)
 
-        group_comp = compare_neural_to_social_by_group(
+        per_group, between = _draw_stats(
             rdm_sub, social_rdms, ids_sub, info_df,
-            n_permutations=0, n_bootstrap=0,
-            rng_seed=cfg.rng_seed,
-            confound_matrix=confound)
+            confound, n_permutations_per_draw, perm_rng)
 
-        for mat_name, groups in group_comp.items():
-            mat_bucket = collected.setdefault(mat_name, {})
-            for group, entry in groups.items():
-                bucket = mat_bucket.setdefault(group, [])
-                bucket.append(entry.get('rho', np.nan))
+        # Reshape into nested 'obs'/'null' form for _aggregate
+        pg_packed = {}
+        for mat, by_grp in per_group.items():
+            pg_packed[mat] = {}
+            for grp, entry in by_grp.items():
+                pg_packed[mat][grp] = {'obs': entry['rho'], 'null': entry['null']}
 
-    # Aggregate
-    alpha = 1.0 - ci_level
-    summary = {}
-    for mat_name, by_group in collected.items():
-        for group, rhos in by_group.items():
-            arr = np.asarray(rhos, dtype=float)
-            valid = arr[~np.isnan(arr)]
-            entry = {
-                'rho_mean': float(np.mean(valid)) if valid.size else np.nan,
-                'rho_std':  float(np.std(valid))  if valid.size else np.nan,
-                'rho_ci_low':  float(np.percentile(valid, 100 * alpha / 2)) if valid.size else np.nan,
-                'rho_ci_high': float(np.percentile(valid, 100 * (1 - alpha / 2))) if valid.size else np.nan,
-                'n_draws_valid': int(valid.size),
-                'n_draws_total': int(arr.size),
-                'draw_rhos': arr,
-            }
-            summary.setdefault(group, {})[mat_name] = entry
+        bw_packed = {}
+        for mat, by_pair in between.items():
+            bw_packed[mat] = {}
+            for pair, entry in by_pair.items():
+                bw_packed[mat][pair] = {
+                    'obs': entry['delta'], 'null': entry['null'],
+                    'rho_a': entry['rho_a'], 'rho_b': entry['rho_b']}
 
-    return summary
+        draw_records.append((pg_packed, bw_packed))
+
+    # ── aggregate per-group ──
+    per_group_summary = {}
+    if draw_records:
+        first_pg = draw_records[0][0]
+        for mat_name, by_grp in first_pg.items():
+            per_group_summary[mat_name] = {}
+            for grp in by_grp.keys():
+                draws_pg = [r[0] for r in draw_records]
+                per_group_summary[mat_name][grp] = _aggregate(
+                    draws_pg, [mat_name, grp],
+                    n_permutations_per_draw, ci_level)
+
+    # ── aggregate between-group ──
+    between_summary = {}
+    if draw_records:
+        first_bw = draw_records[0][1]
+        for mat_name, by_pair in first_bw.items():
+            between_summary[mat_name] = {}
+            for pair in by_pair.keys():
+                # Aggregate Δρ
+                draws_bw = [r[1] for r in draw_records]
+                base = _aggregate(
+                    draws_bw, [mat_name, pair],
+                    n_permutations_per_draw, ci_level)
+                # Also record mean ρ per side, for context
+                rho_a_vals = [r[1][mat_name][pair]['rho_a'] for r in draw_records
+                              if mat_name in r[1] and pair in r[1][mat_name]]
+                rho_b_vals = [r[1][mat_name][pair]['rho_b'] for r in draw_records
+                              if mat_name in r[1] and pair in r[1][mat_name]]
+                rho_a_arr = np.asarray(rho_a_vals, dtype=float)
+                rho_b_arr = np.asarray(rho_b_vals, dtype=float)
+                base['mean_rho_a'] = float(np.nanmean(rho_a_arr))
+                base['mean_rho_b'] = float(np.nanmean(rho_b_arr))
+                between_summary[mat_name][pair] = base
+
+    return {
+        'per_group': per_group_summary,
+        'between':   between_summary,
+        'meta': {
+            'target_size': target_size,
+            'n_draws': n_draws,
+            'n_permutations_per_draw': n_permutations_per_draw,
+            'ci_level': ci_level,
+            'symmetrize': symmetrize,
+            'log_transform': log_transform,
+        },
+    }
 
 
-def print_subsample_summary(summary, title='Subsampled RSA (per-group)'):
-    """Pretty-print the output of run_subsampled_dissimilarity_rsa."""
-    print(f"\n{'='*70}")
+# ──────────────────────────────────────────────────────────
+# Pretty printing
+# ──────────────────────────────────────────────────────────
+
+def _stars(p):
+    if p is None or np.isnan(p):
+        return ''
+    if p < 0.001: return '***'
+    if p < 0.01:  return '**'
+    if p < 0.05:  return '*'
+    return ''
+
+
+def print_subsample_summary(summary, title='Subsampled RSA — per-group'):
+    pg = summary['per_group']
+    meta = summary['meta']
+    print(f"\n{'='*78}")
     print(f"  {title}")
-    print(f"{'='*70}")
-    for group in sorted(summary.keys()):
-        print(f"\n  {group}:")
-        print(f"    {'Matrix':<28s}{'mean ρ':>10s}{'std':>8s}{'95% CI':>22s}{'n_valid':>10s}")
-        print(f"    {'-'*78}")
-        for mat in sorted(summary[group].keys()):
-            e = summary[group][mat]
-            ci = f"[{e['rho_ci_low']:+.3f},{e['rho_ci_high']:+.3f}]"
-            print(f"    {mat:<28s}{e['rho_mean']:>+10.4f}{e['rho_std']:>8.3f}"
-                  f"{ci:>22s}{e['n_draws_valid']:>10d}")
+    print(f"  target_size={meta['target_size']}, n_draws={meta['n_draws']}, "
+          f"perms/draw={meta['n_permutations_per_draw']}")
+    print(f"{'='*78}")
+
+    # Get groups
+    all_groups = set()
+    for by_grp in pg.values():
+        all_groups.update(by_grp.keys())
+    all_groups = sorted(all_groups)
+
+    print(f"\n  {'Matrix':<28s}", end='')
+    for g in all_groups:
+        print(f"{g:>26s}", end='')
     print()
+    print(f"  {'-'*28}{'-'*(26*len(all_groups))}")
+
+    for mat_name in sorted(pg.keys()):
+        row = f"  {mat_name:<28s}"
+        for g in all_groups:
+            e = pg[mat_name].get(g, {})
+            if e.get('mean') is None or np.isnan(e.get('mean', np.nan)):
+                row += f"{'--':>26s}"
+            else:
+                star = _stars(e.get('p_val'))
+                row += f"  {e['mean']:>+.3f}±{e['std']:.3f} p={e['p_val']:.3f}{star:<3s}"
+        print(row)
+    print()
+
+
+def print_subsample_between_groups(summary,
+                                    title='Subsampled RSA — between-group Δρ'):
+    bw = summary['between']
+    print(f"\n{'='*78}")
+    print(f"  {title}")
+    print(f"{'='*78}")
+
+    all_pairs = set()
+    for by_pair in bw.values():
+        all_pairs.update(by_pair.keys())
+    all_pairs = sorted(all_pairs)
+
+    for pair in all_pairs:
+        g_a, g_b = pair
+        print(f"\n  {g_a}  vs  {g_b}:")
+        print(f"    {'Matrix':<28s}{'mean ρ_a':>12s}{'mean ρ_b':>12s}"
+              f"{'Δρ':>10s}{'95% CI':>22s}{'p':>10s}")
+        print(f"    {'-'*94}")
+        for mat_name in sorted(bw.keys()):
+            e = bw[mat_name].get(pair, {})
+            if np.isnan(e.get('mean', np.nan)):
+                print(f"    {mat_name:<28s}{'--':>56s}")
+                continue
+            star = _stars(e.get('p_val'))
+            ci = f"[{e['ci_low']:+.3f},{e['ci_high']:+.3f}]"
+            print(f"    {mat_name:<28s}"
+                  f"{e['mean_rho_a']:>+12.3f}"
+                  f"{e['mean_rho_b']:>+12.3f}"
+                  f"{e['mean']:>+10.3f}"
+                  f"{ci:>22s}"
+                  f"   {e['p_val']:.3f}{star}")
+    print()
+
+
+def summary_to_json(summary):
+    """Strip ndarrays etc. to make summary JSON-serializable."""
+    def _clean(d):
+        out = {}
+        for k, v in d.items():
+            if isinstance(v, np.ndarray):
+                continue
+            if isinstance(v, (np.floating, float)):
+                out[k] = None if np.isnan(v) else float(v)
+            elif isinstance(v, (np.integer, int)):
+                out[k] = int(v)
+            elif isinstance(v, dict):
+                out[k] = _clean(v)
+            else:
+                out[k] = v
+        return out
+
+    out = {'meta': summary['meta'], 'per_group': {}, 'between': {}}
+    for mat, by_grp in summary['per_group'].items():
+        out['per_group'][mat] = {g: _clean(e) for g, e in by_grp.items()}
+    for mat, by_pair in summary['between'].items():
+        out['between'][mat] = {
+            f"{a}__vs__{b}": _clean(e) for (a, b), e in by_pair.items()}
+    return out

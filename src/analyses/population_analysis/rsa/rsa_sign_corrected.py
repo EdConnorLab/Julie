@@ -318,6 +318,27 @@ def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
         sess_df = df[df['session'] == sess]
         per_session_ids.append(set(sess_df['MonkeyName'].unique()) & known)
     common_ids = sorted(set.intersection(*per_session_ids))
+
+    # Identity-coverage diagnostic (helps explain pair-count shortfalls)
+    union_ids = sorted(set().union(*per_session_ids))
+    dropped = sorted(set(union_ids) - set(common_ids))
+    info_lookup = info_df.set_index(info_df['Name'].astype(str))
+    print(f"\n  Identity coverage across {len(sessions)} sessions:")
+    print(f"    union of identities  : {len(union_ids)}")
+    print(f"    common to all sessions: {len(common_ids)}")
+    if dropped:
+        print(f"    dropped (missing in ≥1 session):")
+        for m in dropped:
+            grp = info_lookup.loc[m, 'Group Name'] if m in info_lookup.index else '?'
+            missing_in = [s for s, ids in zip(sessions, per_session_ids) if m not in ids]
+            print(f"      {m} ({grp}) — missing in {len(missing_in)} session(s): "
+                  f"{missing_in[:5]}{'…' if len(missing_in) > 5 else ''}")
+    # Per-group surviving counts
+    from collections import Counter
+    surviving_groups = Counter(
+        info_lookup.loc[m, 'Group Name'] for m in common_ids if m in info_lookup.index)
+    print(f"    per-group surviving counts: {dict(surviving_groups)}")
+
     if len(common_ids) < 3:
         raise ValueError(f"Only {len(common_ids)} common identities; cannot run RSA")
 
