@@ -175,53 +175,35 @@ def _draw_stats(neural_rdm, social_rdms, identities, info_df,
 # ──────────────────────────────────────────────────────────
 # Aggregation across draws
 # ──────────────────────────────────────────────────────────
-
 def _aggregate(per_draw, key_path, n_permutations, ci_level=0.95):
-    """
-    Given a list of dicts (one per draw) and a path of nested keys leading
-    to a {'obs': float, 'null': ndarray(M,)} pair, compute:
-      mean_obs, std_obs, ci_low/high, p_value (from pooled null)
-    """
     obs_vals = []
-    null_stack = []
+    p_per_draw = []
     for d in per_draw:
         node = d
         for k in key_path:
             node = node.get(k, None)
-            if node is None:
-                break
-        if node is None:
-            continue
-        obs_vals.append(node['obs'])
-        null_stack.append(node['null'])
+            if node is None: break
+        if node is None: continue
+        obs = node['obs']
+        null = node['null']
+        if np.isnan(obs): continue
+        obs_vals.append(obs)
+        # p-value for THIS draw
+        valid_null = null[~np.isnan(null)]
+        if len(valid_null) > 0:
+            p_per_draw.append(np.mean(np.abs(valid_null) >= np.abs(obs)))
 
-    obs_vals = np.asarray(obs_vals, dtype=float)
-    valid = ~np.isnan(obs_vals)
-    if valid.sum() == 0:
-        return {'mean': np.nan, 'std': np.nan,
-                'ci_low': np.nan, 'ci_high': np.nan,
-                'p_val': np.nan, 'n_valid': 0,
-                'n_draws_total': len(obs_vals)}
-
-    mean_obs = float(np.mean(obs_vals[valid]))
-    std_obs = float(np.std(obs_vals[valid]))
+    obs_vals = np.array(obs_vals)
     alpha = 1.0 - ci_level
-    ci_low = float(np.percentile(obs_vals[valid], 100 * alpha / 2))
-    ci_high = float(np.percentile(obs_vals[valid], 100 * (1 - alpha / 2)))
-
-    # Null distribution of the mean: average across draws for each perm index.
-    # Only use draws that had valid null arrays (no NaN).
-    null_arr = np.stack([n for n, v in zip(null_stack, valid) if v], axis=0)
-    null_arr_clean = np.where(np.isnan(null_arr), 0.0, null_arr)
-    # If many NaNs, mean is biased; we accept it (nullable rows are rare here).
-    null_mean = null_arr_clean.mean(axis=0)
-    p_val = float(np.mean(np.abs(null_mean) >= np.abs(mean_obs)))
-
-    return {'mean': mean_obs, 'std': std_obs,
-            'ci_low': ci_low, 'ci_high': ci_high,
-            'p_val': p_val,
-            'n_valid': int(valid.sum()),
-            'n_draws_total': int(len(obs_vals))}
+    return {
+        'mean': float(np.mean(obs_vals)),
+        'std': float(np.std(obs_vals)),
+        'ci_low': float(np.percentile(obs_vals, 100 * alpha / 2)),
+        'ci_high': float(np.percentile(obs_vals, 100 * (1 - alpha / 2))),
+        'p_val': float(np.median(p_per_draw)),  # median p across draws
+        'n_valid': len(obs_vals),
+        'n_draws_total': len(obs_vals),
+    }
 
 
 # ──────────────────────────────────────────────────────────
