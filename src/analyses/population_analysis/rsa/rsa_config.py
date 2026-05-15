@@ -45,7 +45,7 @@ class RSAConfig:
     visual_responsiveness_filter: bool = False
     vr_baseline_window: Tuple[float, float] = (0.0, 0.100)    # 0–100 ms
     vr_response_window: Tuple[float, float] = (0.150, 0.600)  # 150–600 ms
-    vr_alpha: float = 0.05
+    vr_alpha: float = 0.2
     vr_require_increase: bool = True   # only excitatory responses
 
     # ── Partial RSA (run_rsa.py): regress out these model RDMs before testing each factor ──

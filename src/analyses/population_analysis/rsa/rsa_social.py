@@ -84,8 +84,8 @@ def load_all_interaction_matrices(behavior_files):
         for btype, fpath in files.items():
             matrix, monkey_ids = load_interaction_matrix(fpath)
             interactions[group][btype] = (matrix, monkey_ids)
-            print(f"  Loaded {group} {btype}: {len(monkey_ids)} monkeys, "
-                  f"shape {matrix.shape}")
+            # print(f"  Loaded {group} {btype}: {len(monkey_ids)} monkeys, "
+            #       f"shape {matrix.shape}")
     return interactions
 
 

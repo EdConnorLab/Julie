@@ -185,7 +185,7 @@ def plot_versions_side_by_side(comps_by_version, group_colors,
 
 def main():
     # ── CONFIG (edit here) ──────────────────────────────
-    REGION = 'ALL'
+    REGION = 'ER'
     RUN_RAW_NO_PARTIAL = True
     RUN_RANK_PARTIALED = True
     RANK_TRANSFORM_BEHAVIOR = False

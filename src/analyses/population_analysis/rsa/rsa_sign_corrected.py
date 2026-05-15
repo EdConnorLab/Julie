@@ -2,50 +2,56 @@
 """
 Sign-corrected RSA for opponent neuron populations (e.g. amygdala).
 
-Motivation
-----------
-If a region contains two subpopulations that code the same axis in
-OPPOSITE directions (e.g. some AMG neurons fire MORE for high-submission
-focal monkeys, others fire LESS), pooling them into a single population
-RDM washes out the signal: opposing neurons contribute opposite-direction
-vectors that partially cancel.
+Corrected version — NO split-half.
+-  Uses ALL trials for both sign estimation and RDM construction.
+-  Permutation test re-estimates signs on every shuffle, so the null
+   distribution captures inflation from the sign-selection procedure.
 
-Approach: split-half within neuron (avoid circularity)
-------------------------------------------------------
-For each neuron:
-  - Trials per identity are randomly split into two halves (A, B).
-  - On half A: regress (firing rate per identity) ~ (submission score per
-    identity); record the SIGN of the slope.
-  - On half B: compute firing rate per identity; flip sign of neurons
-    whose half-A slope was negative.
-  - Pool flipped half-B vectors across sessions → pseudo-population matrix
-    → neural RDM → compare to social RDM.
+Approach
+--------
+1. Compute trial-averaged firing rates per identity using all trials.
+2. Regress each neuron's rate vector against a social axis score
+   (e.g. submission received) → sign = +1 or −1.
+3. Build neural RDM(s):
+   - 'flip'   : multiply negative-slope neurons by −1, build one RDM
+   - 'subpop' : separate pos/neg neurons into two independent RDMs
+   - 'both'   : return all three
+4. Compare to social RDMs with corrected permutation test.
 
-Two output modes:
-  - 'flip'         : single combined RDM with negative-slope neurons flipped
-  - 'subpop'       : two RDMs, one per subpopulation (pos slope, neg slope)
-  - 'both'         : returns both for direct comparison
+Corrected permutation test
+--------------------------
+For each permutation:
+  a) Shuffle the social axis scores across identities.
+  b) Re-estimate neuron signs from the SHUFFLED scores.
+  c) Rebuild neural RDM(s) using the new signs.
+  d) Compare to the REAL (unshuffled) social RDM → null ρ.
 
-The submission axis is computed from the submission interaction matrix
-(column sum per focal monkey within its group → "total submission
-received"). Ranked within group so groups are comparable.
+This null captures both data reuse AND selection bias, so the
+p-value is valid despite not splitting trials.
 """
 
 import numpy as np
 import pandas as pd
+from scipy.stats import spearmanr
+from scipy.spatial.distance import squareform
 
-from rsa_core import build_neural_rdm, normalize_rates
+from rsa_core import (
+    compute_firing_rates,
+    build_neural_rdm,
+    normalize_rates,
+)
 
 
 # ──────────────────────────────────────────────────────────
-# Submission axis
+# Social axis scores (unchanged from original)
 # ──────────────────────────────────────────────────────────
 
 def compute_submission_scores(identities, info_df, interactions,
                                behavior_type='submission',
-                               aggregate='column_sum', rank_within_group=True):
+                               aggregate='column_sum',
+                               rank_within_group=True):
     """
-    Compute a scalar submission score per identity.
+    Compute a scalar social-axis score per identity.
 
     Parameters
     ----------
@@ -58,18 +64,19 @@ def compute_submission_scores(identities, info_df, interactions,
         'column_sum' = total received from groupmates (high = dominant)
         'row_sum'    = total given to groupmates (high = subordinate)
     rank_within_group : bool
-        If True, replace raw scores with within-group ranks. Makes
-        scores comparable across groups.
+        If True, replace raw scores with within-group ranks.
 
     Returns
     -------
     scores : ndarray (n_identities,)
         NaN where identity not found in any group's matrix.
     """
+    from scipy.stats import rankdata as _rankdata
+
     info = info_df.set_index(info_df['Name'].astype(str))
 
     scores = np.full(len(identities), np.nan)
-    by_group = {}  # group → {'ids': [...], 'idx_in_identities': [...], 'vals': [...]}
+    by_group = {}
 
     for k, m in enumerate(identities):
         if m not in info.index:
@@ -78,25 +85,24 @@ def compute_submission_scores(identities, info_df, interactions,
         if group not in interactions or behavior_type not in interactions[group]:
             continue
         matrix, monkey_ids = interactions[group][behavior_type]
-        if m not in monkey_ids:
+        monkey_ids_str = [str(x) for x in monkey_ids]
+        if m not in monkey_ids_str:
             continue
-        idx = monkey_ids.index(m)
-
+        idx = monkey_ids_str.index(m)
         if aggregate == 'column_sum':
-            val = float(np.nansum(matrix[:, idx])) - float(matrix[idx, idx])
+            val = float(matrix[:, idx].sum())
         elif aggregate == 'row_sum':
-            val = float(np.nansum(matrix[idx, :])) - float(matrix[idx, idx])
+            val = float(matrix[idx, :].sum())
         else:
             raise ValueError(f"Unknown aggregate: {aggregate}")
-
-        bucket = by_group.setdefault(group, {'k': [], 'val': []})
-        bucket['k'].append(k)
-        bucket['val'].append(val)
+        scores[k] = val
+        by_group.setdefault(group, {'k': [], 'val': []})
+        by_group[group]['k'].append(k)
+        by_group[group]['val'].append(val)
 
     if rank_within_group:
         for group, bucket in by_group.items():
-            vals = np.asarray(bucket['val'], dtype=float)
-            ranks = np.argsort(np.argsort(vals)).astype(float)
+            ranks = _rankdata(bucket['val']).astype(float)
             for k, r in zip(bucket['k'], ranks):
                 scores[k] = r
     else:
@@ -108,99 +114,18 @@ def compute_submission_scores(identities, info_df, interactions,
 
 
 # ──────────────────────────────────────────────────────────
-# Split-half firing rates
-# ──────────────────────────────────────────────────────────
-
-def compute_firing_rates_split_half(df, identities, window, min_reps_total, rng):
-    """
-    Compute firing rates per neuron per identity for two random halves
-    of the trials. Trials for each identity are split randomly into A/B.
-
-    Parameters
-    ----------
-    df : DataFrame (already filtered to one session)
-    identities : list of str
-    window : (start_s, end_s)
-    min_reps_total : int
-        Identity must have at least this many trials TOTAL to be kept.
-        Each half then gets ⌈n/2⌉ and ⌊n/2⌋ trials.
-    rng : np.random.Generator
-
-    Returns
-    -------
-    rate_A : ndarray (n_identities_valid, n_neurons)
-    rate_B : ndarray (n_identities_valid, n_neurons)
-    valid_identities : list of str
-    neuron_ids : list
-    """
-    win_start, win_end = window
-    win_dur = win_end - win_start
-
-    neuron_ids = sorted(df['NeuronID'].unique())
-    neuron_to_idx = {nid: i for i, nid in enumerate(neuron_ids)}
-    n_neurons = len(neuron_ids)
-
-    trial_meta = (df.groupby('TaskField')
-                    .first()[['MonkeyName']]
-                    .reset_index())
-
-    valid = []
-    rows_A = []
-    rows_B = []
-
-    for monkey in identities:
-        trials = trial_meta[trial_meta['MonkeyName'] == monkey]['TaskField'].values
-        if len(trials) < min_reps_total:
-            continue
-
-        shuffled = trials.copy()
-        rng.shuffle(shuffled)
-        half = len(shuffled) // 2
-        if half < 1:
-            continue
-        trials_A = shuffled[:half]
-        trials_B = shuffled[half:2 * half]  # symmetric halves; drop the odd extra
-
-        def _avg_rate(trial_list):
-            sum_counts = np.zeros(n_neurons, dtype=float)
-            for tf in trial_list:
-                trial_rows = df[df['TaskField'] == tf]
-                for _, row in trial_rows.iterrows():
-                    n_idx = neuron_to_idx[row['NeuronID']]
-                    epoch_start = row['EpochStartStop'][0]
-                    spk = row['SpikeTimes'] - epoch_start
-                    count = np.sum((spk >= win_start) & (spk < win_end))
-                    sum_counts[n_idx] += count
-            return (sum_counts / len(trial_list)) / win_dur
-
-        rows_A.append(_avg_rate(trials_A))
-        rows_B.append(_avg_rate(trials_B))
-        valid.append(monkey)
-
-    return np.array(rows_A), np.array(rows_B), valid, neuron_ids
-
-
-# ──────────────────────────────────────────────────────────
-# Sign estimation
+# Sign estimation (unchanged)
 # ──────────────────────────────────────────────────────────
 
 def estimate_neuron_signs(rate_matrix, scores):
     """
-    OLS slope sign for each neuron's (firing rate per identity)
-    against the scalar `scores` (per identity).
-
-    Parameters
-    ----------
-    rate_matrix : ndarray (n_identities, n_neurons)
-    scores : ndarray (n_identities,)
-        May contain NaN; identities with NaN are dropped from the regression.
+    OLS slope sign for each neuron's firing rate per identity
+    against the scalar `scores`.
 
     Returns
     -------
     signs : ndarray (n_neurons,)  ∈ {+1, -1}
-        Neurons with zero (or undefined) slope get +1 (no flip).
     slopes : ndarray (n_neurons,)
-        Raw OLS slopes (for diagnostics).
     """
     mask = ~np.isnan(scores)
     if mask.sum() < 3:
@@ -208,7 +133,7 @@ def estimate_neuron_signs(rate_matrix, scores):
         return np.ones(n_neurons), np.full(n_neurons, np.nan)
 
     x = scores[mask]
-    R = rate_matrix[mask, :]  # (n_valid, n_neurons)
+    R = rate_matrix[mask, :]
     x_centered = x - x.mean()
     var_x = float(np.sum(x_centered ** 2))
     if var_x < 1e-12:
@@ -222,262 +147,346 @@ def estimate_neuron_signs(rate_matrix, scores):
 
 
 # ──────────────────────────────────────────────────────────
-# Per-session split-half pipeline
+# Helper: build sign-corrected RDMs from rate matrix + signs
 # ──────────────────────────────────────────────────────────
 
-def _session_split_half(sess_df, common_ids, scores_for_common, cfg, rng):
+def _build_sign_corrected_rdms(rate_matrix, signs, metric, mode):
     """
-    For one session:
-      - split trials A/B for each identity
-      - estimate per-neuron sign on A
-      - return half-B rate matrix, signs, slopes, neuron_ids
-        (rows aligned to common_ids; identities lacking enough trials → NaN row)
+    Given a rate matrix and per-neuron signs, build RDM(s).
+
+    Returns dict with keys depending on mode:
+      'flip'   → {'flipped': rdm}
+      'subpop' → {'pos': rdm_or_None, 'neg': rdm_or_None}
+      'both'   → all of the above
+    """
+    out = {}
+
+    if mode in ('flip', 'both'):
+        flipped = rate_matrix * signs[None, :]
+        out['flipped'] = build_neural_rdm(flipped, metric=metric)
+
+    if mode in ('subpop', 'both'):
+        pos_mask = signs > 0
+        neg_mask = signs < 0
+        out['pos'] = (build_neural_rdm(rate_matrix[:, pos_mask], metric=metric)
+                      if pos_mask.sum() >= 2 else None)
+        out['neg'] = (build_neural_rdm(rate_matrix[:, neg_mask], metric=metric)
+                      if neg_mask.sum() >= 2 else None)
+
+    return out
+
+
+# ──────────────────────────────────────────────────────────
+# Corrected permutation test
+# ──────────────────────────────────────────────────────────
+
+def _upper_triangle(rdm):
+    """Extract upper triangle of a square matrix as 1-D vector."""
+    n = rdm.shape[0]
+    idx = np.triu_indices(n, k=1)
+    return rdm[idx]
+
+
+def compare_with_corrected_permutation(rate_matrix, scores, social_rdms,
+                                        identities, info_df, metric,
+                                        mode, n_permutations, rng_seed):
+    """
+    Sign-corrected RSA with permutation test that re-estimates signs
+    on every shuffle.
+
+    Parameters
+    ----------
+    rate_matrix : ndarray (n_identities, n_neurons)
+        Full trial-averaged rates (ALL trials).
+    scores : ndarray (n_identities,)
+        Social axis scores for sign estimation.
+    social_rdms : dict {name: ndarray (n, n)}
+        Social RDMs to test against.
+    identities : list of str
+    info_df : DataFrame
+    metric : str
+        Neural distance metric ('correlation', etc.).
+    mode : str  ('flip', 'subpop', 'both')
+    n_permutations : int
+    rng_seed : int
 
     Returns
     -------
-    rate_B_aligned : ndarray (len(common_ids), n_neurons)
-        NaN row where identity missing.
-    signs : ndarray (n_neurons,)
-    slopes : ndarray (n_neurons,)
-    neuron_ids : list
+    results : dict
+        {rdm_variant: {social_matrix: {group: {rho, p_val, n_pairs}}}}
+    observed_rdms : dict
+        The actual neural RDMs produced by sign correction.
+    signs : ndarray
+    slopes : ndarray
     """
-    rate_A, rate_B, valid_ids, neuron_ids = compute_firing_rates_split_half(
-        sess_df, common_ids, cfg.window, cfg.min_reps_per_monkey, rng)
+    rng = np.random.default_rng(rng_seed)
+    n = len(identities)
 
-    n_neurons = len(neuron_ids)
+    # ── Identify group membership for per-group testing ──
+    info_lookup = info_df.set_index(info_df['Name'].astype(str))
+    id_to_group = {}
+    for m in identities:
+        if m in info_lookup.index:
+            id_to_group[m] = info_lookup.loc[m, 'Group Name']
 
-    if len(valid_ids) < 3:
-        rate_B_aligned = np.full((len(common_ids), n_neurons), np.nan)
-        return rate_B_aligned, np.ones(n_neurons), np.full(n_neurons, np.nan), neuron_ids
+    # Build group masks for pairwise comparisons
+    group_pairs = {}  # {group_name: list of (i, j) upper-triangle indices}
+    for i in range(n):
+        for j in range(i + 1, n):
+            gi = id_to_group.get(identities[i])
+            gj = id_to_group.get(identities[j])
+            if gi is not None and gj is not None and gi == gj:
+                group_pairs.setdefault(gi, []).append((i, j))
 
-    # Subset submission scores to valid_ids order
-    valid_idx_in_common = [common_ids.index(m) for m in valid_ids]
-    scores_valid = scores_for_common[valid_idx_in_common]
+    # ── Observed: estimate signs, build RDMs, compute ρ ──
+    signs, slopes = estimate_neuron_signs(rate_matrix, scores)
+    observed_rdms = _build_sign_corrected_rdms(rate_matrix, signs, metric, mode)
 
-    signs, slopes = estimate_neuron_signs(rate_A, scores_valid)
+    # Compute observed ρ for each variant × social matrix × group
+    def _compute_rho(neural_rdm, social_rdm, pairs):
+        """Spearman ρ on within-group pairs only."""
+        if neural_rdm is None or len(pairs) < 3:
+            return np.nan
+        n_vec = np.array([neural_rdm[i, j] for i, j in pairs])
+        s_vec = np.array([social_rdm[i, j] for i, j in pairs])
+        # Drop NaN pairs (cross-group in social RDM)
+        valid = ~(np.isnan(n_vec) | np.isnan(s_vec))
+        if valid.sum() < 3:
+            return np.nan
+        rho, _ = spearmanr(n_vec[valid], s_vec[valid])
+        return rho
 
-    # Align rate_B back to common_ids (NaN for missing identities)
-    rate_B_aligned = np.full((len(common_ids), n_neurons), np.nan)
-    for k, m in enumerate(valid_ids):
-        rate_B_aligned[common_ids.index(m), :] = rate_B[k, :]
+    # Structure: {variant: {social_name: {group: observed_rho}}}
+    obs = {}
+    variants = list(observed_rdms.keys())
+    for var in variants:
+        obs[var] = {}
+        for soc_name, soc_rdm in social_rdms.items():
+            obs[var][soc_name] = {}
+            for group, pairs in group_pairs.items():
+                obs[var][soc_name][group] = _compute_rho(
+                    observed_rdms[var], soc_rdm, pairs)
 
-    return rate_B_aligned, signs, slopes, neuron_ids
+    # ── Permutation: shuffle scores → re-estimate signs → rebuild RDMs ──
+    null_dist = {var: {sn: {g: [] for g in group_pairs}
+                       for sn in social_rdms}
+                 for var in variants}
+
+    valid_score_mask = ~np.isnan(scores)
+    valid_indices = np.where(valid_score_mask)[0]
+
+    for perm_i in range(n_permutations):
+        # Shuffle the scores among valid (non-NaN) identities
+        shuffled_scores = scores.copy()
+        shuffled_valid = scores[valid_score_mask].copy()
+        rng.shuffle(shuffled_valid)
+        shuffled_scores[valid_score_mask] = shuffled_valid
+
+        # Re-estimate signs with shuffled scores
+        perm_signs, _ = estimate_neuron_signs(rate_matrix, shuffled_scores)
+
+        # Rebuild neural RDMs with new signs
+        perm_rdms = _build_sign_corrected_rdms(
+            rate_matrix, perm_signs, metric, mode)
+
+        # Compute ρ for each variant × social × group
+        for var in variants:
+            for soc_name, soc_rdm in social_rdms.items():
+                for group, pairs in group_pairs.items():
+                    rho = _compute_rho(perm_rdms[var], soc_rdm, pairs)
+                    null_dist[var][soc_name][group].append(rho)
+
+    # ── Compute p-values ──
+    results = {}
+    for var in variants:
+        results[var] = {}
+        for soc_name in social_rdms:
+            results[var][soc_name] = {}
+            for group, pairs in group_pairs.items():
+                obs_rho = obs[var][soc_name][group]
+                null_arr = np.array(null_dist[var][soc_name][group])
+
+                if np.isnan(obs_rho):
+                    p_val = np.nan
+                else:
+                    # Two-tailed
+                    p_val = float(np.mean(np.abs(null_arr) >= np.abs(obs_rho)))
+
+                results[var][soc_name][group] = {
+                    'rho': obs_rho,
+                    'p_val': p_val,
+                    'n_pairs': len(pairs),
+                }
+
+    return results, observed_rdms, signs, slopes
 
 
 # ──────────────────────────────────────────────────────────
-# Top-level pipeline
+# Top-level pipeline (corrected)
 # ──────────────────────────────────────────────────────────
 
 def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
-                                  mode='flip', sign_axis='submission',
+                                  mode='both', sign_axis='submission',
                                   axis_aggregate='column_sum',
+                                  n_permutations=2000,
                                   rng_seed=42):
     """
-    Pseudo-population RSA with sign correction.
+    Pseudo-population RSA with sign correction and corrected
+    permutation test.
+
+    No split-half: all trials are used for both sign estimation
+    and RDM construction. The permutation test re-estimates signs
+    on every shuffle to account for selection bias.
 
     Parameters
     ----------
     df : DataFrame  (already filtered by region, min epoch, etc.)
     info_df : DataFrame
     interactions : dict
-    cfg : RSAConfig
-    mode : str
-        'flip'   = single combined RDM, negative-slope neurons flipped
-        'subpop' = two separate RDMs (pos slope, neg slope)
-        'both'   = returns flip-combined AND subpop RDMs
-    sign_axis : str
-        Behavior type to define the preference axis ('submission' default).
-    axis_aggregate : str
-        'column_sum' (received, default) or 'row_sum' (given).
+    cfg : RSAConfig / SocialRSAConfig
+    mode : str  ('flip', 'subpop', 'both')
+    sign_axis : str  ('submission', 'agonism', 'affiliation')
+    axis_aggregate : str  ('column_sum' or 'row_sum')
+    n_permutations : int
     rng_seed : int
 
     Returns
     -------
-    result : dict with keys
-        'identities'   : list of str
-        'scores'       : ndarray (n_identities,) — axis values used
-        'signs'        : ndarray (n_neurons_total,) — +1/-1 per pooled neuron
-        'slopes'       : ndarray (n_neurons_total,)
-        'rate_matrix_flipped' : ndarray (n_identities, n_neurons) or None
-        'rate_matrix_pos'     : ndarray or None
-        'rate_matrix_neg'     : ndarray or None
-        'neural_rdm_flipped'  : ndarray (n,n) or None
-        'neural_rdm_pos'      : ndarray or None
-        'neural_rdm_neg'      : ndarray or None
-        'n_neurons_pos', 'n_neurons_neg' : int
-        'session_neurons'     : list of (session, neuron_id) for traceability
+    result : dict with keys:
+        'identities', 'scores', 'signs', 'slopes',
+        'n_neurons', 'n_neurons_pos', 'n_neurons_neg',
+        'observed_rdms'  : {variant: neural RDM}
+        'comparisons'    : {variant: {social_name: {group: {rho, p_val, n_pairs}}}}
     """
-    rng = np.random.default_rng(rng_seed)
-
     sessions = sorted(df['session'].unique())
     known = set(info_df['Name'].astype(str))
 
-    # Find identities present in all sessions (pseudopop convention)
+    # Find identities present in all sessions
     per_session_ids = []
     for sess in sessions:
         sess_df = df[df['session'] == sess]
         per_session_ids.append(set(sess_df['MonkeyName'].unique()) & known)
     common_ids = sorted(set.intersection(*per_session_ids))
 
-    # Identity-coverage diagnostic (helps explain pair-count shortfalls)
-    union_ids = sorted(set().union(*per_session_ids))
-    dropped = sorted(set(union_ids) - set(common_ids))
-    info_lookup = info_df.set_index(info_df['Name'].astype(str))
-    print(f"\n  Identity coverage across {len(sessions)} sessions:")
-    print(f"    union of identities  : {len(union_ids)}")
-    print(f"    common to all sessions: {len(common_ids)}")
-    if dropped:
-        print(f"    dropped (missing in ≥1 session):")
-        for m in dropped:
-            grp = info_lookup.loc[m, 'Group Name'] if m in info_lookup.index else '?'
-            missing_in = [s for s, ids in zip(sessions, per_session_ids) if m not in ids]
-            print(f"      {m} ({grp}) — missing in {len(missing_in)} session(s): "
-                  f"{missing_in[:5]}{'…' if len(missing_in) > 5 else ''}")
-    # Per-group surviving counts
+    # Diagnostics
     from collections import Counter
+    info_lookup = info_df.set_index(info_df['Name'].astype(str))
     surviving_groups = Counter(
-        info_lookup.loc[m, 'Group Name'] for m in common_ids if m in info_lookup.index)
-    print(f"    per-group surviving counts: {dict(surviving_groups)}")
+        info_lookup.loc[m, 'Group Name'] for m in common_ids
+        if m in info_lookup.index)
+    print(f"\n  Identity coverage across {len(sessions)} sessions:")
+    print(f"    common to all sessions: {len(common_ids)}")
+    print(f"    per-group counts: {dict(surviving_groups)}")
 
     if len(common_ids) < 3:
-        raise ValueError(f"Only {len(common_ids)} common identities; cannot run RSA")
+        raise ValueError(f"Only {len(common_ids)} common identities")
 
-    # Submission scores aligned to common_ids
+    # ── Compute firing rates using ALL trials (no split-half) ──
+    all_rate_matrices = []
+    all_neuron_ids = []
+
+    for sess in sessions:
+        sess_df = df[df['session'] == sess]
+        rate_mat, valid_ids, neuron_ids = compute_firing_rates(
+            sess_df, common_ids, cfg.window, min_reps=1)
+        if valid_ids != common_ids:
+            print(f"  Warning: session {sess} dropped some identities")
+            continue
+        all_rate_matrices.append(rate_mat)
+        all_neuron_ids.extend(f"{sess}__{nid}" for nid in neuron_ids)
+
+    rate_matrix = np.hstack(all_rate_matrices)  # (n_identities, n_neurons)
+    print(f"  Pseudo-population: {rate_matrix.shape[1]} neurons")
+
+    # Optional normalization
+    if cfg.normalization is not None:
+        rate_matrix = normalize_rates(
+            rate_matrix, method=cfg.normalization,
+            soft_const=getattr(cfg, 'soft_normalize_const', 5.0))
+
+    # ── Social axis scores ──
     scores = compute_submission_scores(
         common_ids, info_df, interactions,
         behavior_type=sign_axis, aggregate=axis_aggregate,
         rank_within_group=True)
 
-    # Per-session split-half
-    all_rate_B = []      # list of (n_common, n_neurons_session)
-    all_signs = []
-    all_slopes = []
-    session_neurons = []
+    # ── Build social RDMs to test against ──
+    from rsa_social import build_social_rdms
+    social_rdms = build_social_rdms(
+        common_ids, interactions,
+        behavior_types=['affiliation', 'agonism', 'submission'],
+        symmetrize=False, profile_metric='correlation',
+        log_transform=False, include_combined=True,
+        rank_transform=getattr(cfg, 'rank_transform_behavior', False))
 
-    for sess in sessions:
-        sess_df = df[df['session'] == sess]
-        rate_B_aligned, signs, slopes, neuron_ids = _session_split_half(
-            sess_df, common_ids, scores, cfg, rng)
-        all_rate_B.append(rate_B_aligned)
-        all_signs.append(signs)
-        all_slopes.append(slopes)
-        session_neurons.extend([(sess, nid) for nid in neuron_ids])
+    # ── Run corrected comparison ──
+    print(f"  Running corrected permutation test ({n_permutations} permutations)...")
+    comparisons, observed_rdms, signs, slopes = \
+        compare_with_corrected_permutation(
+            rate_matrix, scores, social_rdms,
+            common_ids, info_df,
+            metric=cfg.neural_metric,
+            mode=mode,
+            n_permutations=n_permutations,
+            rng_seed=rng_seed)
 
-    # Drop sessions/neurons where rate_B is fully NaN (no valid identities)
-    pooled_B = np.hstack(all_rate_B)           # (n_common, n_neurons_total)
-    pooled_signs = np.concatenate(all_signs)
-    pooled_slopes = np.concatenate(all_slopes)
+    n_pos = int((signs > 0).sum())
+    n_neg = int((signs < 0).sum())
+    print(f"  Signs: {n_pos} positive, {n_neg} negative")
 
-    # Drop neurons that have NaN for any identity (incomplete coverage)
-    keep_neuron = ~np.any(np.isnan(pooled_B), axis=0)
-    pooled_B = pooled_B[:, keep_neuron]
-    pooled_signs = pooled_signs[keep_neuron]
-    pooled_slopes = pooled_slopes[keep_neuron]
-    session_neurons = [sn for sn, k in zip(session_neurons, keep_neuron) if k]
-
-    print(f"  Sign-corrected pseudopop: {pooled_B.shape[1]} neurons "
-          f"({int((pooled_signs > 0).sum())} pos, "
-          f"{int((pooled_signs < 0).sum())} neg)")
-
-    # Optional normalization
-    if cfg.normalization is not None:
-        pooled_B = normalize_rates(pooled_B, method=cfg.normalization,
-                                    soft_const=getattr(cfg, 'soft_normalize_const', 5.0))
-
-    result = {
+    return {
         'identities': common_ids,
         'scores': scores,
-        'signs': pooled_signs,
-        'slopes': pooled_slopes,
-        'session_neurons': session_neurons,
-        'n_neurons_pos': int((pooled_signs > 0).sum()),
-        'n_neurons_neg': int((pooled_signs < 0).sum()),
-        'rate_matrix_flipped': None,
-        'rate_matrix_pos': None,
-        'rate_matrix_neg': None,
-        'neural_rdm_flipped': None,
-        'neural_rdm_pos': None,
-        'neural_rdm_neg': None,
+        'signs': signs,
+        'slopes': slopes,
+        'n_neurons': rate_matrix.shape[1],
+        'n_neurons_pos': n_pos,
+        'n_neurons_neg': n_neg,
+        'neuron_ids': all_neuron_ids,
+        'rate_matrix': rate_matrix,
+        'observed_rdms': observed_rdms,
+        'comparisons': comparisons,
     }
 
-    if mode in ('flip', 'both'):
-        flipped = pooled_B * pooled_signs[None, :]
-        result['rate_matrix_flipped'] = flipped
-        result['neural_rdm_flipped'] = build_neural_rdm(
-            flipped, metric=cfg.neural_metric)
-
-    if mode in ('subpop', 'both'):
-        pos_mask = pooled_signs > 0
-        neg_mask = pooled_signs < 0
-        if pos_mask.sum() >= 2:
-            result['rate_matrix_pos'] = pooled_B[:, pos_mask]
-            result['neural_rdm_pos'] = build_neural_rdm(
-                result['rate_matrix_pos'], metric=cfg.neural_metric)
-        if neg_mask.sum() >= 2:
-            result['rate_matrix_neg'] = pooled_B[:, neg_mask]
-            result['neural_rdm_neg'] = build_neural_rdm(
-                result['rate_matrix_neg'], metric=cfg.neural_metric)
-
-    # Match keys used by run_rsa_pseudopop callers
-    result['session'] = 'pseudo_pop_sign_corrected'
-    result['n_neurons'] = pooled_B.shape[1]
-    result['n_identities'] = len(common_ids)
-    result['rate_matrix'] = result['rate_matrix_flipped'] if result['rate_matrix_flipped'] is not None else pooled_B
-    result['neural_rdm'] = result['neural_rdm_flipped']
-
-    return result
-
 
 # ──────────────────────────────────────────────────────────
-# Convenience: run multiple split-half draws and average
+# Pretty-print results
 # ──────────────────────────────────────────────────────────
 
-def run_sign_corrected_multi_draw(df, info_df, interactions, cfg,
-                                   mode='flip', sign_axis='submission',
-                                   axis_aggregate='column_sum',
-                                   n_draws=10, rng_seed=42):
-    """
-    Run `run_sign_corrected_pseudopop` n_draws times with different
-    trial-split seeds and average the resulting RDM(s). Reduces
-    variance from the random A/B split.
+def _stars(p):
+    if p is None or (isinstance(p, float) and np.isnan(p)):
+        return ''
+    if p < 0.001: return '***'
+    if p < 0.01:  return '**'
+    if p < 0.05:  return '*'
+    return ''
 
-    Returns the same dict structure as run_sign_corrected_pseudopop,
-    but rate_matrix_* and neural_rdm_* are averaged across draws.
-    """
-    rng = np.random.default_rng(rng_seed)
-    seeds = rng.integers(0, 2**31 - 1, size=n_draws)
 
-    accum = None
-    for d, s in enumerate(seeds):
-        res = run_sign_corrected_pseudopop(
-            df, info_df, interactions, cfg,
-            mode=mode, sign_axis=sign_axis,
-            axis_aggregate=axis_aggregate, rng_seed=int(s))
-        if accum is None:
-            accum = {k: (v.copy() if isinstance(v, np.ndarray) else v)
-                     for k, v in res.items()}
-            accum['_count_flipped'] = 0
-            accum['_count_pos'] = 0
-            accum['_count_neg'] = 0
+def print_sign_corrected_results(comparisons):
+    """Print results in a readable table, one section per RDM variant."""
+    for variant, by_social in comparisons.items():
+        print(f"\n  --- {variant} ---\n")
 
-        for key, cnt_key in [('neural_rdm_flipped', '_count_flipped'),
-                              ('neural_rdm_pos',     '_count_pos'),
-                              ('neural_rdm_neg',     '_count_neg')]:
-            if res.get(key) is not None:
-                if accum.get(key) is None or accum[cnt_key] == 0:
-                    accum[key] = res[key].copy()
+        # Collect all groups
+        all_groups = sorted({
+            g for soc_results in by_social.values()
+            for g in soc_results.keys()})
+
+        header = f"  {'RDM/RSM':<45s}" + "".join(
+            f"{g:>25s}" for g in all_groups)
+        print(header)
+        print("  " + "-" * (45 + 25 * len(all_groups)))
+
+        for soc_name in sorted(by_social.keys()):
+            row = f"  {soc_name:<45s}"
+            for group in all_groups:
+                entry = by_social[soc_name].get(group, {})
+                rho = entry.get('rho', np.nan)
+                p = entry.get('p_val', np.nan)
+                n = entry.get('n_pairs', 0)
+                star = _stars(p)
+                if np.isnan(rho):
+                    row += f"{'—':>25s}"
                 else:
-                    accum[key] = accum[key] + res[key]
-                accum[cnt_key] += 1
-
-    for key, cnt_key in [('neural_rdm_flipped', '_count_flipped'),
-                          ('neural_rdm_pos',     '_count_pos'),
-                          ('neural_rdm_neg',     '_count_neg')]:
-        if accum.get(cnt_key, 0) > 0:
-            accum[key] = accum[key] / accum[cnt_key]
-
-    for k in ('_count_flipped', '_count_pos', '_count_neg'):
-        accum.pop(k, None)
-
-    accum['neural_rdm'] = accum['neural_rdm_flipped']
-    return accum
+                    row += f"{rho:+.4f} (n={n}) p={p:.3f}{star:3s}".rjust(25)
+            print(row)

@@ -537,11 +537,6 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
 # ──────────────────────────────────────────────────────────
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser(description='Social RSA Analysis')
-    parser.add_argument('--region', type=str, default=None,
-                        help='Brain region (AMG, ER, ALL, etc.). Overrides config.')
-    args, _ = parser.parse_known_args()
 
     cfg = SocialRSAConfig(
         region='AMG',
@@ -562,13 +557,9 @@ def main():
         pseudo_population=True,
         save_plots=True,
         save_dir='rsa_social_results',
-        visual_responsiveness_filter=True,
+        visual_responsiveness_filter=False,
     )
 
-    # CLI overrides
-    if args.region:
-        cfg.region = args.region
-    cfg.validate()
 
     info_df = pd.read_csv(MONKEY_INFO_PATH)
     df = load_and_filter(cfg)
@@ -795,61 +786,6 @@ def main():
             dissim_results, cond_labels)
 
         print(f"\n{'='*70}")
-
-        # ══════════════════════════════════════════════════
-        # Save structured results to JSON for report generation
-        # ══════════════════════════════════════════════════
-        def _serialize_results(results_dict):
-            """Convert results dict to JSON-safe format."""
-            out = {}
-            for cond_label, (group_comp, between_comp) in results_dict.items():
-                cond_out = {'per_group': {}, 'between_group': {}}
-                for mat_name, groups in group_comp.items():
-                    cond_out['per_group'][mat_name] = {}
-                    for grp, entry in groups.items():
-                        cond_out['per_group'][mat_name][grp] = {
-                            k: (float(v) if isinstance(v, (np.floating, float)) and not np.isnan(v)
-                                 else None if isinstance(v, (np.floating, float)) and np.isnan(v)
-                                 else v)
-                            for k, v in entry.items()
-                            if k != 'null_distribution'
-                        }
-                if between_comp is not None:
-                    for mat_name, pairs in between_comp.items():
-                        cond_out['between_group'][mat_name] = {}
-                        for pair, entry in pairs.items():
-                            pair_key = f"{pair[0]}__vs__{pair[1]}"
-                            cond_out['between_group'][mat_name][pair_key] = {
-                                k: (float(v) if isinstance(v, (np.floating, float)) and not np.isnan(v)
-                                     else None if isinstance(v, (np.floating, float)) and np.isnan(v)
-                                     else v)
-                                for k, v in entry.items()
-                            }
-                out[cond_label] = cond_out
-            return out
-
-        import json
-        json_path = f"{cfg.save_dir}/{cfg.region}/results.json"
-        os.makedirs(os.path.dirname(json_path), exist_ok=True)
-        json_data = {
-            'region': cfg.region,
-            'config': {
-                'window': list(cfg.window),
-                'normalization': cfg.normalization,
-                'neural_metric': cfg.neural_metric,
-                'n_permutations': cfg.n_permutations,
-                'between_group_permutations': cfg.between_group_permutations,
-                'n_bootstrap': cfg.n_bootstrap,
-                'subtract_group_mean': cfg.subtract_group_mean,
-                'rank_transform_behavior': cfg.rank_transform_behavior,
-            },
-            'session': session_label,
-            'identities': identities,
-            'dissimilarity': _serialize_results(dissim_results),
-        }
-        with open(json_path, 'w') as f:
-            json.dump(json_data, f, indent=2)
-        print(f"\nResults saved to {json_path}")
 
     plt.show()
 

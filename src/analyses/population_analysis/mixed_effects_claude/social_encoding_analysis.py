@@ -196,6 +196,16 @@ def reduce_features(features, n_components=2):
 
     print(f"    PCA: {features.shape[1]} features → {n_components} PCs "
           f"({pca.explained_variance_ratio_.round(3)} var explained)")
+
+    # PCA loadings (features × PCs)
+    loadings = pd.DataFrame(
+        pca.components_.T,  # transpose: rows = features
+        index=features.columns,
+        columns=pc_cols
+    )
+
+    print("\nPCA loadings:")
+    print(loadings.round(3))
     return pc_df, pca, scaler
 
 
