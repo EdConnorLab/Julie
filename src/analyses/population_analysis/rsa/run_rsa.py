@@ -20,17 +20,16 @@ MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinf
 def main():
     cfg = RSAConfig(
         region='AMG',                          # 'AMG', 'ER', or 'ALL'
-        session=None,                          # None = all sessions
+        session=None,                          # None = pseudo-population; 'session_id' = single session
         window=(0.200, 0.600),                 # analysis window (seconds)
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
         neural_metric='correlation',           # 'correlation' or 'euclidean' or 'cosine' or 'mahalanobis'
         model_factors=['group', 'familiarity', 'sex','age_continuous'],
-        partial_out=['familiarity', 'group'],          # regress these out when testing other factors
-        exclude_groups=['Stranger Things'],                     # e.g. ['Stranger Things'] to drop
-        normalization='soft',                   # None, 'soft', or 'zscore'
+        partial_out=['familiarity', 'group'],  # regress these out when testing other factors
+        exclude_groups=['Stranger Things'],
+        normalization='soft',                  # None or 'soft'
         n_permutations=0,                      # set to e.g. 1000 for perm test
-        pseudo_population=True,               # True = pool neurons across sessions
         rdm_sort_mode='by_factor',
         save_plots=True,
         save_dir=f'rsa_results',
@@ -59,51 +58,30 @@ def main():
     print(f"  Partial out: {cfg.partial_out or 'none'}")
     print(f"  Exclude groups: {cfg.exclude_groups or 'none'}")
     print(f"  Permutations: {cfg.n_permutations}")
-    print(f"  Mode: {'pseudo-population' if cfg.pseudo_population else 'per-session'}")
+    print(f"  Mode: {'pseudo-population' if cfg.session is None else f'single session ({cfg.session})'}")
     print(f"{'='*60}\n")
 
-    if cfg.pseudo_population:
-        # ─── Pseudo-population mode ───
+    if cfg.session is None:
+        # ─── Pseudo-population mode (all sessions) ───
         result = run_rsa_pseudopop(df, info_df, cfg)
         _print_comparisons(result, cfg)
 
         save_dir = f"{cfg.save_dir}/{cfg.region}_pseudopop"
-        # plot_neural_rdm(result, cfg, save_dir=save_dir)
         plot_neural_rdm_multi_sort(result, cfg, save_dir=save_dir)
         plot_model_rdms(result, cfg, save_dir=save_dir)
-        # plot_rsa_bar([result], cfg, save_dir=save_dir)
-        # for factor in cfg.model_factors:
-        #     if factor in ('group', 'sex', 'age_bin', 'familiarity'):
-        #         plot_mds(result, cfg, color_by=factor, save_dir=save_dir)
 
     else:
-        # ─── Per-session mode ───
-        sessions = sorted(df['session'].unique())
-        results = []
-
-        for sess in sessions:
-            print(f"\n--- Session: {sess} ---")
-            result = run_rsa_session(df, sess, info_df, cfg)
-            if result is None:
-                continue
+        # ─── Single-session mode ───
+        result = run_rsa_session(df, cfg.session, info_df, cfg)
+        if result is not None:
             _print_comparisons(result, cfg)
-            results.append(result)
-
-            save_dir = f"{cfg.save_dir}/{cfg.region}/{sess}"
+            save_dir = f"{cfg.save_dir}/{cfg.region}/{cfg.session}"
             plot_neural_rdm(result, cfg, save_dir=save_dir)
             plot_neural_rdm_multi_sort(result, cfg, save_dir=save_dir)
             plot_model_rdms(result, cfg, save_dir=save_dir)
             for factor in cfg.model_factors:
                 if factor in ('group', 'sex', 'age_bin', 'familiarity'):
                     plot_mds(result, cfg, color_by=factor, save_dir=save_dir)
-
-        if results:
-            # Summary bar chart across sessions
-            summary_dir = f"{cfg.save_dir}/{cfg.region}/summary"
-            plot_rsa_bar(results, cfg, save_dir=summary_dir)
-
-            # Print summary table
-            _print_summary_table(results, cfg)
 
     plt.show()
 

@@ -206,7 +206,7 @@ def main():
 
     cfg = SocialRSAConfig(
         region=REGION,
-        session=None,
+        session=None,                          # None = pseudo-population
         window=(0.300, 0.600),
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
@@ -219,7 +219,6 @@ def main():
         n_permutations=0,
         between_group_permutations=0,
         n_bootstrap=0,
-        pseudo_population=True,
         save_plots=True,
         save_dir='rsa_subset_results',
         rng_seed=SEED,

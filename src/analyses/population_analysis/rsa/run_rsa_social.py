@@ -25,7 +25,7 @@ import matplotlib.patches as mpatches
 from analyses.population_analysis.state_space.data_loading import load_and_filter
 from visual_responsiveness_filter import filter_visually_responsive
 from rsa_config import SocialRSAConfig
-from rsa_core import run_rsa_session, run_rsa_pseudopop, build_neural_rdm
+from rsa_core import run_rsa_session, run_rsa_pseudopop
 from rsa_social import (
     load_all_interaction_matrices,
     # Similarity approach
@@ -70,52 +70,6 @@ BEHAVIOR_FILES = {
         'submission':  '/home/connorlab/Documents/GitHub/Julie/social_data/instigators_social_data/instigators_feature_df_submission.xlsx',
     },
 }
-
-
-# ──────────────────────────────────────────────────────────
-# Group-mean subtraction
-# ──────────────────────────────────────────────────────────
-
-def subtract_group_means(rate_matrix, identities, info_df):
-    """
-    Remove group-level mean from each monkey's neural response vector.
-
-    For each group, compute the mean response across all monkeys in that
-    group, then subtract it. This removes the dominant "which group is
-    this monkey from" signal and keeps only within-group variation.
-
-    Parameters
-    ----------
-    rate_matrix : ndarray, shape (n_identities, n_neurons)
-    identities : list of str
-    info_df : DataFrame with 'Name' and 'Group Name' columns
-
-    Returns
-    -------
-    residual : ndarray, shape (n_identities, n_neurons)
-    """
-    info = info_df.set_index(info_df['Name'].astype(str))
-    residual = rate_matrix.copy()
-
-    # Map each identity to its group
-    id_to_group = {}
-    for m in identities:
-        if m in info.index:
-            id_to_group[m] = info.loc[m, 'Group Name']
-
-    # Get unique groups and subtract means
-    groups = sorted(set(id_to_group.values()))
-    for g in groups:
-        idx = [i for i, m in enumerate(identities) if id_to_group.get(m) == g]
-        if len(idx) < 2:
-            continue
-        group_mean = rate_matrix[idx].mean(axis=0)
-        for i in idx:
-            residual[i] -= group_mean
-
-    print(f"  Group-mean subtraction: removed mean of {len(groups)} groups "
-          f"from {len(identities)} identities")
-    return residual
 
 
 # ──────────────────────────────────────────────────────────
@@ -540,7 +494,7 @@ def main():
 
     cfg = SocialRSAConfig(
         region='AMG',
-        session=None,
+        session=None,                          # None = pseudo-population; 'session_id' = single session
         window=(0.400, 0.700),
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
@@ -548,13 +502,11 @@ def main():
         model_factors=[],
         exclude_groups=['Stranger Things'],
         normalization=None,
-        subtract_group_mean=False,  # True = remove group-level signal from neural responses
-        partial_out_rank=False,      # True = partial out rank distance from social RSA
-        rank_transform_behavior=False,  # True = rank-transform behavioral profiles
+        partial_out_rank=False,
+        rank_transform_behavior=False,
         n_permutations=2000,
-        between_group_permutations=2000,   # 0 = off; set >0 to test Δρ between groups
-        n_bootstrap=2000,                  # 0 = off; set >0 for bootstrap 95% CI on ρ
-        pseudo_population=True,
+        between_group_permutations=2000,
+        n_bootstrap=2000,
         save_plots=True,
         save_dir='rsa_social_results',
         visual_responsiveness_filter=False,
@@ -581,38 +533,26 @@ def main():
     print(f"  Window: {cfg.window[0]*1000:.0f}–{cfg.window[1]*1000:.0f} ms")
     print(f"  Normalization: {cfg.normalization}")
     print(f"  Neural metric: {cfg.neural_metric}")
-    print(f"  Mode: {'pseudo-population' if cfg.pseudo_population else 'per-session'}")
+    print(f"  Mode: {'pseudo-population' if cfg.session is None else f'single session ({cfg.session})'}")
     print(f"  Permutations: {cfg.n_permutations}")
     print(f"  Between-group Δρ permutations: {cfg.between_group_permutations}")
     print(f"  Bootstrap CI: {cfg.n_bootstrap}")
-    print(f"  Subtract group mean: {cfg.subtract_group_mean}")
     print(f"  Partial out rank: {cfg.partial_out_rank}")
     print(f"  Rank transform behavior: {cfg.rank_transform_behavior}")
     print(f"{'='*60}\n")
 
-    if cfg.pseudo_population:
+    if cfg.session is None:
         result = run_rsa_pseudopop(df, info_df, cfg)
         results_list = [result]
     else:
-        sessions = sorted(df['session'].unique())
-        results_list = []
-        for sess in sessions:
-            print(f"\n--- Session: {sess} ---")
-            r = run_rsa_session(df, sess, info_df, cfg)
-            if r is not None:
-                results_list.append(r)
+        r = run_rsa_session(df, cfg.session, info_df, cfg)
+        results_list = [r] if r is not None else []
 
     for result in results_list:
         identities = result['identities']
         neural_rdm = result['neural_rdm']
         rate_matrix = result['rate_matrix']
         session_label = result['session']
-
-        # Optional: subtract group means to remove familiarity/group signal
-        if cfg.subtract_group_mean:
-            rate_matrix = subtract_group_means(rate_matrix, identities, info_df)
-            neural_rdm = build_neural_rdm(rate_matrix, metric=cfg.neural_metric)
-            result = dict(result, rate_matrix=rate_matrix, neural_rdm=neural_rdm)
 
         # Build neural similarity matrix (Pearson r, not 1-r)
         neural_sim = build_neural_similarity_matrix(rate_matrix)
@@ -623,11 +563,10 @@ def main():
             rank_confound = build_rank_distance_matrix(identities, info_df)
             print(f"  Partial out rank: ON (|rank_i - rank_j| as confound)")
 
-        gms_tag = " (group-mean subtracted)" if cfg.subtract_group_mean else ""
         rank_tag = " (rank partialed)" if cfg.partial_out_rank else ""
 
         print(f"\n{'='*60}")
-        print(f"Session: {session_label}{gms_tag}{rank_tag}")
+        print(f"Session: {session_label}{rank_tag}")
         print(f"  Identities ({len(identities)}): {identities}")
         print(f"{'='*60}")
 
@@ -638,7 +577,7 @@ def main():
             plot_neural_rdm(result, cfg, save_dir=save_dir_base)
             plot_social_matrix(
                 neural_sim, identities, info_df,
-                title=f"Neural Similarity (Pearson r){gms_tag} | {session_label}",
+                title=f"Neural Similarity (Pearson r) | {session_label}",
                 group_colors=cfg.group_colors,
                 cbar_label='Pearson r',
                 save_path=f"{save_dir_base}/neural_similarity.png")

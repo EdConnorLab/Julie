@@ -16,7 +16,8 @@ class RSAConfig:
     data_path: str = '/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered'
     monkey_info_path: str = '/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv'
     region: str = 'ALL'              # 'AMG', 'ER', or 'ALL'
-    session: Optional[str] = None    # None = all sessions
+    session: Optional[str] = None    # None = all sessions → pseudo-population mode
+                                     # 'session_id' = single-session mode
 
     # ── Firing-rate window (seconds relative to epoch start) ──
     window: Tuple[float, float] = (0.200, 0.600)
@@ -30,13 +31,9 @@ class RSAConfig:
     neural_metric: str = 'correlation'   # 'correlation' (1-r) or 'euclidean' or 'cosine' or 'mahalanobis'
 
     # ── Normalization (applied per neuron before building RDM) ──
-    normalization: str = None            # None    = raw firing rates
-                                         # 'soft'    = divide by (range + const); conservative
-                                         # 'zscore'  = subtract mean, divide by std; fully equalizes
+    normalization: str = None            # None   = raw firing rates
+                                         # 'soft' = divide by (range + const); conservative equalization
     soft_normalize_const: float = 5.0    # only used when normalization='soft'
-
-    # ── Group-mean subtraction (remove group/familiarity signal from neural responses) ──
-    subtract_group_mean: bool = False
 
     # ── Visual responsiveness filter ──
     # Keeps only neurons with significant stimulus-driven responses.
@@ -55,11 +52,10 @@ class RSAConfig:
     partial_out: List[str] = field(default_factory=list)
 
     # ── Stats ──
+    # n_permutations  : p-value for "is ρ > 0?" within each group.
+    #                   Shuffles neural RDM rows+cols to build a null distribution of ρ.
     n_permutations: int = 0           # 0 = skip permutation test
     rng_seed: int = 42
-
-    # ── Pseudo-population (pool neurons across sessions within a region) ──
-    pseudo_population: bool = False   # False = per-session RSA
 
     # ── Plotting ──
     save_plots: bool = True
@@ -103,5 +99,11 @@ class SocialRSAConfig(RSAConfig):
     partial_out_rank: bool = False
 
     # ── Social RSA stats ──
+    # between_group_permutations : p-value for "does ρ differ between groups?"
+    #   Pools within-group pairs from both groups, shuffles group labels,
+    #   recomputes Δρ = ρ_A − ρ_B to test if the observed difference is above chance.
     between_group_permutations: int = 0     # 0 = skip between-group Δρ test
+
+    # n_bootstrap : 95% confidence interval on ρ within each group (not a p-value).
+    #   Resamples pairs with replacement to quantify estimation uncertainty.
     n_bootstrap: int = 0                    # 0 = skip bootstrap CI on ρ

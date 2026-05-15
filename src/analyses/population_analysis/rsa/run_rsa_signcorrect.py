@@ -131,7 +131,7 @@ def main():
 
     cfg = SocialRSAConfig(
         region=REGION,
-        session=None,
+        session=None,                          # None = pseudo-population
         window=(0.400, 0.700),
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
@@ -141,12 +141,11 @@ def main():
         normalization=None,
         rank_transform_behavior=False,
         n_permutations=N_PERMUTATIONS,
-        pseudo_population=True,
         save_plots=True,
         save_dir='rsa_signcorrect_results',
         rng_seed=SEED,
         visual_responsiveness_filter=True,
-        vr_response_window = (0.400, 0.700),
+        vr_response_window=(0.400, 0.700),
         vr_alpha=0.15,
     )
     cfg.validate()

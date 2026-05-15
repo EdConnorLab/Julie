@@ -27,9 +27,8 @@ def normalize_rates(rate_matrix, method='none', soft_const=5.0):
     ----------
     rate_matrix : ndarray, shape (n_identities, n_neurons)
     method : str
-        'none'   → no normalization (return as-is)
-        'soft'   → divide by (range + const); conservative equalization
-        'zscore' → subtract mean, divide by std; full equalization
+        'none' → no normalization (return as-is)
+        'soft' → divide by (range + const); conservative equalization
     soft_const : float
         Additive constant for soft normalization (spikes/s).
 
@@ -41,23 +40,12 @@ def normalize_rates(rate_matrix, method='none', soft_const=5.0):
         return rate_matrix
 
     if method == 'soft':
-        rng = rate_matrix.max(axis=0) - rate_matrix.min(axis=0) # finding range for each neuron
+        rng = rate_matrix.max(axis=0) - rate_matrix.min(axis=0)
         denom = rng + soft_const
         normalized = rate_matrix / denom
         n_flat = np.sum(rng < 1e-6)
         if n_flat > 0:
             print(f"  Soft-norm: {n_flat}/{rate_matrix.shape[1]} neurons had near-zero range")
-        return normalized
-
-    if method == 'zscore':
-        mu = rate_matrix.mean(axis=0)
-        sd = rate_matrix.std(axis=0)
-        # Neurons with zero std (no modulation) → leave as zero
-        n_flat = np.sum(sd < 1e-10)
-        if n_flat > 0:
-            print(f"  Z-score: {n_flat}/{rate_matrix.shape[1]} neurons had near-zero std (set to 0)")
-        sd[sd < 1e-10] = 1.0  # avoid div-by-zero; numerator will be ~0 anyway
-        normalized = (rate_matrix - mu) / sd
         return normalized
 
     raise ValueError(f"Unknown normalization method: {method}")
