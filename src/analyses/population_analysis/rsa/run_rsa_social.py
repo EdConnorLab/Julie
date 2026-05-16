@@ -1,19 +1,10 @@
 # run_rsa_social.py
 """
-RSA analysis comparing neural data to social behavior data.
+RSA analysis comparing neural dissimilarity (1-r) to social behavioral profile RDMs.
 
-Two analysis modes:
-
-  SIMILARITY MODE (primary):
-      Neural similarity (Pearson r) vs raw interaction counts.
-      No transformation of social data.
-      Positive ρ = "monkeys who interact more have more similar neural responses"
-
-  DISSIMILARITY MODE (original):
-      Neural RDM (1-r) vs social RDMs (profile distance or max-count).
-      Includes behavioral profile and direct interaction approaches.
-
-Both modes run per-group comparisons and produce scatter plots.
+Per-group Spearman ρ, optional bootstrap 95% CI, and optional between-group Δρ test.
+Runs two symmetry conditions (asymmetric / symmetrized) and saves flat plots to:
+  {save_dir}/{region}_{win_start}_{win_end}_{rank_tag}/asym_*.png  sym_*.png
 """
 
 import os
@@ -28,22 +19,13 @@ from rsa_config import SocialRSAConfig
 from rsa_core import run_rsa_session, run_rsa_pseudopop
 from rsa_social import (
     load_all_interaction_matrices,
-    # Similarity approach
     build_neural_similarity_matrix,
-    build_all_similarity_matrices,
-    compare_similarity_matrices,
-    compare_similarity_by_group,
-    # Dissimilarity approach
     build_social_rdms,
-    compare_neural_to_social,
     compare_neural_to_social_by_group,
-    # Between-group
     compare_between_groups,
-    # Shared
     print_group_comparisons,
     print_between_group_comparisons,
     plot_scatter_multi,
-    # Rank confound
     build_rank_distance_matrix,
 )
 from rsa_plotting import plot_neural_rdm
@@ -328,99 +310,17 @@ def plot_rsa_ci(group_comparisons, group_colors, title, save_path=None):
 
 
 # ──────────────────────────────────────────────────────────
-# Run one similarity condition
-# ──────────────────────────────────────────────────────────
-
-def run_similarity_condition(neural_sim, identities, interactions, info_df, cfg,
-                              symmetrize, log_transform, condition_label, save_dir_base,
-                              confound_matrix=None):
-    """
-    Run similarity-based analysis for one condition.
-    Neural similarity (Pearson r) vs raw interaction counts.
-    """
-    print(f"\n{'─'*50}")
-    print(f"  SIMILARITY: {condition_label}")
-    print(f"{'─'*50}")
-
-    social_sims = build_all_similarity_matrices(
-        identities, interactions,
-        behavior_types=['affiliation', 'agonism', 'submission'],
-        symmetrize=symmetrize, log_transform=log_transform)
-
-    # Per-group
-    print(f"\n  Per-group:")
-    group_comp = compare_similarity_by_group(
-        neural_sim, social_sims, identities, info_df,
-        n_permutations=cfg.n_permutations,
-        n_bootstrap=cfg.n_bootstrap,
-        rng_seed=cfg.rng_seed,
-        confound_matrix=confound_matrix)
-    print_group_comparisons(group_comp)
-
-    # Between-group Δρ
-    between_comp = None
-    if cfg.between_group_permutations > 0:
-        print(f"\n  Between-group Δρ ({cfg.between_group_permutations} permutations):")
-        between_comp = compare_between_groups(
-            neural_sim, social_sims, identities, info_df,
-            n_permutations=cfg.between_group_permutations,
-            rng_seed=cfg.rng_seed)
-        print_between_group_comparisons(between_comp)
-
-    # Plots
-    if cfg.save_plots:
-        suffix = condition_label.lower().replace(' ', '_').replace(',', '')
-        save_dir = f"{save_dir_base}/similarity/{suffix}"
-
-        # Social similarity heatmaps
-        for name, sim in social_sims.items():
-            plot_social_matrix(
-                sim, identities, info_df,
-                title=f"Social: {name} ({condition_label})",
-                group_colors=cfg.group_colors,
-                cbar_label='Interaction count',
-                save_path=f"{save_dir}/social_sim_{name}.png")
-
-        # Neural similarity heatmap
-        plot_social_matrix(
-            neural_sim, identities, info_df,
-            title=f"Neural similarity (Pearson r)",
-            group_colors=cfg.group_colors,
-            cbar_label='Pearson r',
-            save_path=f"{save_dir}/neural_similarity.png")
-
-        # Bar charts (per-group only)
-        plot_rsa_by_group(group_comp, cfg.group_colors,
-                          title=f"Similarity RSA by group ({condition_label})",
-                          save_path=f"{save_dir}/rsa_by_group.png")
-
-        if cfg.n_bootstrap > 0:
-            plot_rsa_ci(group_comp, cfg.group_colors,
-                        title=f"RSA with 95% CI ({condition_label})",
-                        save_path=f"{save_dir}/rsa_ci.png")
-
-        # Scatter plots
-        plot_scatter_multi(
-            neural_sim, social_sims, identities, info_df,
-            cfg.group_colors,
-            neural_label='Neural similarity (Pearson r)',
-            social_label_prefix='Interaction count',
-            title=f"Neural similarity vs interaction count ({condition_label})",
-            save_path=f"{save_dir}/scatter.png")
-
-    return group_comp, between_comp, social_sims
-
-
-# ──────────────────────────────────────────────────────────
 # Run one dissimilarity condition
 # ──────────────────────────────────────────────────────────
 
 def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, cfg,
-                                 symmetrize, log_transform, condition_label, save_dir_base,
-                                 confound_matrix=None):
+                                 symmetrize, log_transform, condition_label, save_dir,
+                                 prefix='', confound_matrix=None):
     """
     Run dissimilarity-based analysis for one condition.
-    Neural RDM (1-r) vs social RDMs (profile distance, max-count).
+    Neural RDM (1-r) vs social behavioral profile RDMs.
+
+    Plots are saved flat into save_dir with filename prefix (e.g. 'asym_' or 'sym_').
     """
     print(f"\n{'─'*50}")
     print(f"  DISSIMILARITY: {condition_label}")
@@ -455,25 +355,22 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
 
     # Plots
     if cfg.save_plots:
-        suffix = condition_label.lower().replace(' ', '_').replace(',', '')
-        save_dir = f"{save_dir_base}/dissimilarity/{suffix}"
-
         for name, rdm in social_rdms.items():
             plot_social_matrix(
                 rdm, identities, info_df,
                 title=f"Social RDM: {name} ({condition_label})",
                 group_colors=cfg.group_colors,
                 cbar_label='Dissimilarity',
-                save_path=f"{save_dir}/social_rdm_{name}.png")
+                save_path=f"{save_dir}/{prefix}social_rdm_{name}.png")
 
         plot_rsa_by_group(group_comp, cfg.group_colors,
-                          title=f"Dissimilarity RSA by group ({condition_label})",
-                          save_path=f"{save_dir}/rsa_by_group.png")
+                          title=f"RSA by group ({condition_label})",
+                          save_path=f"{save_dir}/{prefix}rsa_by_group.png")
 
         if cfg.n_bootstrap > 0:
             plot_rsa_ci(group_comp, cfg.group_colors,
-                        title=f"RSA with 95% CI ({condition_label})",
-                        save_path=f"{save_dir}/rsa_ci.png")
+                        title=f"RSA 95% CI ({condition_label})",
+                        save_path=f"{save_dir}/{prefix}rsa_ci.png")
 
         plot_scatter_multi(
             neural_rdm, social_rdms, identities, info_df,
@@ -481,7 +378,7 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
             neural_label='Neural dissimilarity (1 - r)',
             social_label_prefix='Social dissimilarity',
             title=f"Neural vs Social dissimilarity ({condition_label})",
-            save_path=f"{save_dir}/scatter.png")
+            save_path=f"{save_dir}/{prefix}scatter.png")
 
     return group_comp, between_comp, social_rdms
 
@@ -563,66 +460,38 @@ def main():
             rank_confound = build_rank_distance_matrix(identities, info_df)
             print(f"  Partial out rank: ON (|rank_i - rank_j| as confound)")
 
-        rank_tag = " (rank partialed)" if cfg.partial_out_rank else ""
+        win_start = int(cfg.window[0] * 1000)
+        win_end   = int(cfg.window[1] * 1000)
+        rank_tag  = 'rank_transform' if cfg.rank_transform_behavior else 'no_rank_transform'
+        save_dir_base = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{rank_tag}"
 
         print(f"\n{'='*60}")
-        print(f"Session: {session_label}{rank_tag}")
         print(f"  Identities ({len(identities)}): {identities}")
+        print(f"  Saving to: {save_dir_base}/")
         print(f"{'='*60}")
 
-        save_dir_base = f"{cfg.save_dir}/{cfg.region}/{session_label}"
-
-        # Plot neural matrices for reference
+        # Neural reference plots (condition-independent, no prefix)
         if cfg.save_plots:
             plot_neural_rdm(result, cfg, save_dir=save_dir_base)
             plot_social_matrix(
                 neural_sim, identities, info_df,
-                title=f"Neural Similarity (Pearson r) | {session_label}",
+                title=f"Neural Similarity (Pearson r) | {cfg.region} {win_start}–{win_end} ms",
                 group_colors=cfg.group_colors,
                 cbar_label='Pearson r',
                 save_path=f"{save_dir_base}/neural_similarity.png")
 
-        # ══════════════════════════════════════════════════
-        # SIMILARITY MODE (commented out — interaction-based, not showing signal)
-        # Uncomment to re-enable: neural r vs raw interaction counts
-        # ══════════════════════════════════════════════════
-        # print(f"\n{'═'*60}")
-        # print(f"  SIMILARITY MODE: neural r vs raw interaction counts")
-        # print(f"{'═'*60}")
-        #
-        # sim_results = {}
-        # conditions = [
-        #     (False, False, "asymmetric, raw"),
-        #     (True,  False, "symmetrized, raw"),
-        #     (False, True,  "asymmetric, log"),
-        #     (True,  True,  "symmetrized, log"),
-        # ]
-        #
-        # for symmetrize, log_transform, label in conditions:
-        #     group_comp, between_comp, _ = run_similarity_condition(
-        #         neural_sim, identities, interactions, info_df, cfg,
-        #         symmetrize=symmetrize, log_transform=log_transform,
-        #         condition_label=label, save_dir_base=save_dir_base)
-        #     sim_results[label] = (group_comp, between_comp)
-
-        # ══════════════════════════════════════════════════
-        # DISSIMILARITY MODE: neural 1-r vs social RDMs (profile only)
-        # ══════════════════════════════════════════════════
-        print(f"\n{'═'*60}")
-        print(f"  DISSIMILARITY MODE: neural 1-r vs social RDMs (profile)")
-        print(f"{'═'*60}")
-
+        # ── Dissimilarity RSA: neural 1-r vs social behavioral profile RDMs ──
         conditions = [
-            (False, False, "asymmetric"),
-            (True,  False, "symmetrized"),
+            (False, False, "asymmetric",  "asym_"),
+            (True,  False, "symmetrized", "sym_"),
         ]
 
         dissim_results = {}
-        for symmetrize, log_transform, label in conditions:
+        for symmetrize, log_transform, label, prefix in conditions:
             group_comp, between_comp, _ = run_dissimilarity_condition(
                 neural_rdm, identities, interactions, info_df, cfg,
                 symmetrize=symmetrize, log_transform=log_transform,
-                condition_label=label, save_dir_base=save_dir_base,
+                condition_label=label, save_dir=save_dir_base, prefix=prefix,
                 confound_matrix=rank_confound)
             dissim_results[label] = (group_comp, between_comp)
 
@@ -633,7 +502,7 @@ def main():
         print(f"SUMMARY (per-group): {session_label}")
         print(f"{'='*70}")
 
-        cond_labels = [c[2] for c in conditions]
+        cond_labels = [c[2] for c in conditions]  # label string is index 2 in 4-tuple
 
         def _print_per_group_summary(mode_label, results_dict, cond_labels):
             """Print a per-group summary table for one mode (similarity or dissimilarity)."""
@@ -716,10 +585,6 @@ def main():
                                 row += f"  {d:>+.4f} {star:<12s}"
                         print(row)
 
-        # --- Similarity summary commented out (mode disabled above) ---
-        # _print_per_group_summary(
-        #     "SIMILARITY (neural r vs interaction counts)",
-        #     sim_results, cond_labels)
         _print_per_group_summary(
             "DISSIMILARITY (neural 1-r vs social profile RDMs)",
             dissim_results, cond_labels)
