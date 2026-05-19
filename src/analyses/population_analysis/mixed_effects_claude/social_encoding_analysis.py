@@ -577,9 +577,9 @@ def run_group(df, group_name, cfg):
 
 def main():
     cfg = SocialEncodingConfig(
-        region='ALL',
+        region='AMG',
         session=None,
-        window=(0.300, 0.500),
+        window=(0.400, 0.700),
         min_epoch_duration=2.0,
         min_reps_per_monkey=2,
         exclude_groups=['Stranger Things'],
