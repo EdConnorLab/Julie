@@ -431,7 +431,7 @@ def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
         exclude_ids=list(exclude_ids) if exclude_ids else None)
 
     # ── Build social RDMs to test against ──
-    from rsa_social import build_social_rdms
+    from rsa_social import build_social_rdms, build_dominance_interactions
     tx = getattr(cfg, 'transform_social_behavior', None)
     social_rdms = build_social_rdms(
         common_ids, interactions,
@@ -441,6 +441,19 @@ def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
         include_combined=True,
         rank_transform=(tx == 'rank'),
         exclude_ids=list(exclude_ids) if exclude_ids else None)
+
+    # Dominance: log1p already baked in during construction, so log_transform=False;
+    # exclude_ids=None because build_dominance_interactions already strips them.
+    interactions_with_dom = build_dominance_interactions(
+        interactions, exclude_ids=list(exclude_ids) if exclude_ids else None)
+    social_rdms_dom = build_social_rdms(
+        common_ids, interactions_with_dom,
+        behavior_types=['dominance'],
+        symmetrize=False, profile_metric='correlation',
+        log_transform=False, include_combined=False,
+        rank_transform=(tx == 'rank'),
+        exclude_ids=None)
+    social_rdms.update(social_rdms_dom)
 
     # ── Run corrected comparison ──
     print(f"  Running corrected permutation test ({n_permutations} permutations)...")
