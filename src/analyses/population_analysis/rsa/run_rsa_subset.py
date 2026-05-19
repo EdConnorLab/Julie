@@ -215,7 +215,7 @@ def main():
         exclude_groups=['Stranger Things'],
         normalization=None,
         partial_out_rank=PARTIAL_OUT_RANK,
-        rank_transform_behavior=False,
+        transform_social_behavior=None,        # None | 'rank' | 'log'
         n_permutations=0,
         between_group_permutations=0,
         n_bootstrap=0,
@@ -255,7 +255,11 @@ def main():
     if cfg.partial_out_rank:
         confound_fn = lambda ids, info: build_rank_distance_matrix(ids, info)
 
-    save_root = f"{cfg.save_dir}/{cfg.region}"
+    win_start = int(cfg.window[0] * 1000)
+    win_end   = int(cfg.window[1] * 1000)
+    tx_tag    = cfg.transform_social_behavior or 'raw'
+    save_root = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{tx_tag}"
+    log_transform = (cfg.transform_social_behavior == 'log')
 
     for symmetrize, label in conditions:
         print(f"\n  --- Condition: {label} ---")
@@ -265,7 +269,7 @@ def main():
             n_draws=N_DRAWS,
             n_permutations_per_draw=PERMS_PER_DRAW,
             rng_seed=cfg.rng_seed,
-            symmetrize=symmetrize, log_transform=False,
+            symmetrize=symmetrize, log_transform=log_transform,
             behavior_types=('affiliation', 'agonism', 'submission'),
             confound_matrix_fn=confound_fn,
             ci_level=0.95)

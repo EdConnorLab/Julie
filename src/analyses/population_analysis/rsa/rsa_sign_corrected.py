@@ -49,7 +49,8 @@ from rsa_core import (
 def compute_submission_scores(identities, info_df, interactions,
                                behavior_type='submission',
                                aggregate='column_sum',
-                               rank_within_group=True):
+                               rank_within_group=True,
+                               exclude_ids=None):
     """
     Compute a scalar social-axis score per identity.
 
@@ -65,6 +66,9 @@ def compute_submission_scores(identities, info_df, interactions,
         'row_sum'    = total given to groupmates (high = subordinate)
     rank_within_group : bool
         If True, replace raw scores with within-group ranks.
+    exclude_ids : list of str, optional
+        Monkey IDs to strip from the interaction matrix (rows AND cols)
+        before computing scores, so their contributions don't count.
 
     Returns
     -------
@@ -74,6 +78,7 @@ def compute_submission_scores(identities, info_df, interactions,
     from scipy.stats import rankdata as _rankdata
 
     info = info_df.set_index(info_df['Name'].astype(str))
+    _exclude = set(exclude_ids or [])
 
     scores = np.full(len(identities), np.nan)
     by_group = {}
@@ -86,6 +91,13 @@ def compute_submission_scores(identities, info_df, interactions,
             continue
         matrix, monkey_ids = interactions[group][behavior_type]
         monkey_ids_str = [str(x) for x in monkey_ids]
+
+        if _exclude:
+            keep = [i for i, mid in enumerate(monkey_ids_str) if mid not in _exclude]
+            if len(keep) < len(monkey_ids_str):
+                matrix = matrix[np.ix_(keep, keep)]
+                monkey_ids_str = [monkey_ids_str[i] for i in keep]
+
         if m not in monkey_ids_str:
             continue
         idx = monkey_ids_str.index(m)
@@ -368,6 +380,13 @@ def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
         per_session_ids.append(set(sess_df['MonkeyName'].unique()) & known)
     common_ids = sorted(set.intersection(*per_session_ids))
 
+    # Sensitivity analysis: drop excluded identities
+    exclude_ids = set(getattr(cfg, 'exclude_identities', []) or [])
+    if exclude_ids:
+        removed = [m for m in common_ids if m in exclude_ids]
+        common_ids = [m for m in common_ids if m not in exclude_ids]
+        print(f"  [Sensitivity] Excluded identities: {removed}")
+
     # Diagnostics
     from collections import Counter
     info_lookup = info_df.set_index(info_df['Name'].astype(str))
@@ -408,16 +427,20 @@ def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
     scores = compute_submission_scores(
         common_ids, info_df, interactions,
         behavior_type=sign_axis, aggregate=axis_aggregate,
-        rank_within_group=True)
+        rank_within_group=True,
+        exclude_ids=list(exclude_ids) if exclude_ids else None)
 
     # ── Build social RDMs to test against ──
     from rsa_social import build_social_rdms
+    tx = getattr(cfg, 'transform_social_behavior', None)
     social_rdms = build_social_rdms(
         common_ids, interactions,
         behavior_types=['affiliation', 'agonism', 'submission'],
         symmetrize=False, profile_metric='correlation',
-        log_transform=False, include_combined=True,
-        rank_transform=getattr(cfg, 'rank_transform_behavior', False))
+        log_transform=(tx == 'log'),
+        include_combined=True,
+        rank_transform=(tx == 'rank'),
+        exclude_ids=list(exclude_ids) if exclude_ids else None)
 
     # ── Run corrected comparison ──
     print(f"  Running corrected permutation test ({n_permutations} permutations)...")

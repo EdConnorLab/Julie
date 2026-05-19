@@ -253,7 +253,7 @@ def run_subsampled_dissimilarity_rsa(result, info_df, interactions, cfg,
             behavior_types=list(behavior_types),
             symmetrize=symmetrize, profile_metric='correlation',
             log_transform=log_transform, include_combined=True,
-            rank_transform=getattr(cfg, 'rank_transform_behavior', False))
+            rank_transform=(getattr(cfg, 'transform_social_behavior', None) == 'rank'))
 
         confound = None
         if confound_matrix_fn is not None:

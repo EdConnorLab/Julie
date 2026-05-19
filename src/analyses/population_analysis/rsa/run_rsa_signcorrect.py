@@ -139,7 +139,8 @@ def main():
         model_factors=[],
         exclude_groups=['Stranger Things'],
         normalization=None,
-        rank_transform_behavior=False,
+        transform_social_behavior=None,        # None | 'rank' | 'log'
+        exclude_identities=[],                 # e.g. ['7124'] to drop alpha
         n_permutations=N_PERMUTATIONS,
         save_plots=True,
         save_dir='rsa_signcorrect_results',
@@ -180,7 +181,10 @@ def main():
 
     print_sign_corrected_results(result['comparisons'])
 
-    save_root = f"{cfg.save_dir}/{cfg.region}"
+    win_start = int(cfg.window[0] * 1000)
+    win_end   = int(cfg.window[1] * 1000)
+    tx_tag    = cfg.transform_social_behavior or 'raw'
+    save_root = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{tx_tag}"
     plot_slope_distribution(
         result['slopes'], result['signs'],
         title=f"Sign-corrected RSA — {SIGN_AXIS}-axis slopes "

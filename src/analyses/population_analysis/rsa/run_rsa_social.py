@@ -315,11 +315,14 @@ def plot_rsa_ci(group_comparisons, group_colors, title, save_path=None):
 # ──────────────────────────────────────────────────────────
 
 def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, cfg,
-                                 symmetrize, log_transform, condition_label, save_dir,
+                                 symmetrize, condition_label, save_dir,
                                  prefix='', confound_matrix=None):
     """
     Run dissimilarity-based analysis for one condition.
     Neural RDM (1-r) vs social behavioral profile RDMs.
+
+    Transform applied to behavioral profiles is controlled by
+    cfg.transform_social_behavior (None | 'rank' | 'log').
 
     Plots are saved flat into save_dir with filename prefix (e.g. 'asym_' or 'sym_').
     Always includes dominance RDMs (log1p(agonism) + log1p(submission.T)).
@@ -328,13 +331,16 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
     print(f"  DISSIMILARITY: {condition_label}")
     print(f"{'─'*50}")
 
-    # Standard behavior types (with condition log_transform)
+    log_transform  = (cfg.transform_social_behavior == 'log')
+    rank_transform = (cfg.transform_social_behavior == 'rank')
+
+    # Standard behavior types
     social_rdms = build_social_rdms(
         identities, interactions,
         behavior_types=['affiliation', 'agonism', 'submission'],
         symmetrize=symmetrize, profile_metric='correlation',
         log_transform=log_transform, include_combined=True,
-        rank_transform=cfg.rank_transform_behavior,
+        rank_transform=rank_transform,
         exclude_ids=cfg.exclude_identities)
 
     # Dominance: log already baked in during construction, so log_transform=False
@@ -345,7 +351,7 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
         behavior_types=['dominance'],
         symmetrize=symmetrize, profile_metric='correlation',
         log_transform=False, include_combined=False,
-        rank_transform=cfg.rank_transform_behavior,
+        rank_transform=rank_transform,
         exclude_ids=None)   # already stripped inside build_dominance_interactions
     social_rdms.update(social_rdms_dominance)
 
@@ -415,7 +421,7 @@ def main():
         model_factors=[],
         exclude_groups=['Stranger Things', 'Best Frans'],
         normalization=None,
-        rank_transform_behavior=False,
+        transform_social_behavior=None,        # None | 'rank' | 'log'
         n_permutations=2000,
         between_group_permutations=2000,
         n_bootstrap=2000,
@@ -424,6 +430,7 @@ def main():
         visual_responsiveness_filter=False,
         exclude_identities=['7124', 'G942']
     )
+    cfg.validate()
 
 
     info_df = pd.read_csv(MONKEY_INFO_PATH)
@@ -451,7 +458,7 @@ def main():
     print(f"  Between-group Δρ permutations: {cfg.between_group_permutations}")
     print(f"  Bootstrap CI: {cfg.n_bootstrap}")
     print(f"  Partial out rank: {cfg.partial_out_rank}")
-    print(f"  Rank transform behavior: {cfg.rank_transform_behavior}")
+    print(f"  Social behavior transform: {cfg.transform_social_behavior or 'raw'}")
     print(f"{'='*60}\n")
 
     if cfg.session is None:
@@ -488,8 +495,8 @@ def main():
 
         win_start = int(cfg.window[0] * 1000)
         win_end   = int(cfg.window[1] * 1000)
-        rank_tag  = 'rank_transform' if cfg.rank_transform_behavior else 'no_rank_transform'
-        save_dir_base = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{rank_tag}"
+        tx_tag    = cfg.transform_social_behavior or 'raw'
+        save_dir_base = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{tx_tag}"
 
         print(f"\n{'='*60}")
         print(f"  Identities ({len(identities)}): {identities}")
@@ -508,16 +515,15 @@ def main():
 
         # ── Dissimilarity RSA: neural 1-r vs social behavioral profile RDMs ──
         conditions = [
-            (False, False, "asymmetric", "asym_"),
-            # (True, False, "symmetrized", "sym_"),
-            (False, True, "asymmetric_log", "asym_log_"),
+            (False, "asymmetric",  "asym_"),
+            (True,  "symmetrized", "sym_"),
         ]
 
         dissim_results = {}
-        for symmetrize, log_transform, label, prefix in conditions:
+        for symmetrize, label, prefix in conditions:
             group_comp, between_comp, _ = run_dissimilarity_condition(
                 neural_rdm, identities, interactions, info_df, cfg,
-                symmetrize=symmetrize, log_transform=log_transform,
+                symmetrize=symmetrize,
                 condition_label=label, save_dir=save_dir_base, prefix=prefix,
                 confound_matrix=rank_confound)
             dissim_results[label] = (group_comp, between_comp)
@@ -529,7 +535,7 @@ def main():
         print(f"SUMMARY (per-group): {session_label}")
         print(f"{'='*70}")
 
-        cond_labels = [c[2] for c in conditions]  # label string is index 2 in 4-tuple
+        cond_labels = [c[1] for c in conditions]  # label string is index 1 in (symmetrize, label, prefix)
 
         def _print_per_group_summary(mode_label, results_dict, cond_labels):
             """Print a per-group summary table for one mode (similarity or dissimilarity)."""
