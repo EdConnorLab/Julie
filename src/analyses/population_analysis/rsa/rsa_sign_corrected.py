@@ -368,6 +368,13 @@ def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
         per_session_ids.append(set(sess_df['MonkeyName'].unique()) & known)
     common_ids = sorted(set.intersection(*per_session_ids))
 
+    # Sensitivity analysis: drop excluded identities
+    exclude_ids = set(getattr(cfg, 'exclude_identities', []) or [])
+    if exclude_ids:
+        removed = [m for m in common_ids if m in exclude_ids]
+        common_ids = [m for m in common_ids if m not in exclude_ids]
+        print(f"  [Sensitivity] Excluded identities: {removed}")
+
     # Diagnostics
     from collections import Counter
     info_lookup = info_df.set_index(info_df['Name'].astype(str))
@@ -412,12 +419,15 @@ def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
 
     # ── Build social RDMs to test against ──
     from rsa_social import build_social_rdms
+    tx = getattr(cfg, 'transform_social_behavior', None)
     social_rdms = build_social_rdms(
         common_ids, interactions,
         behavior_types=['affiliation', 'agonism', 'submission'],
         symmetrize=False, profile_metric='correlation',
-        log_transform=False, include_combined=True,
-        rank_transform=getattr(cfg, 'rank_transform_behavior', False))
+        log_transform=(tx == 'log'),
+        include_combined=True,
+        rank_transform=(tx == 'rank'),
+        exclude_ids=list(exclude_ids) if exclude_ids else None)
 
     # ── Run corrected comparison ──
     print(f"  Running corrected permutation test ({n_permutations} permutations)...")

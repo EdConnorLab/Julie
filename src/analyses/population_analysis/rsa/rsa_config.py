@@ -93,7 +93,11 @@ class SocialRSAConfig(RSAConfig):
     """
 
     # ── Social profile RDMs ──
-    rank_transform_behavior: bool = False   # True = rank-transform behavioral profiles before distance
+    # transform_social_behavior :
+    #   None   = raw interaction counts
+    #   'rank' = rank-transform each profile vector before distance
+    #   'log'  = log1p-transform the interaction matrix before profiling
+    transform_social_behavior: Optional[str] = None
 
     # ── Partial out rank from social RSA (|rank_i - rank_j| as confound within each group) ──
     partial_out_rank: bool = False
@@ -112,3 +116,11 @@ class SocialRSAConfig(RSAConfig):
     # n_bootstrap : 95% confidence interval on ρ within each group (not a p-value).
     #   Resamples pairs with replacement to quantify estimation uncertainty.
     n_bootstrap: int = 0                    # 0 = skip bootstrap CI on ρ
+
+    def validate(self):
+        super().validate()
+        valid = {None, 'rank', 'log'}
+        if self.transform_social_behavior not in valid:
+            raise ValueError(
+                f"transform_social_behavior must be one of {valid}, "
+                f"got {self.transform_social_behavior!r}")

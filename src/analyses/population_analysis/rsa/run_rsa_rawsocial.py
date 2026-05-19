@@ -188,7 +188,7 @@ def main():
     REGION = 'ALL'
     RUN_RAW_NO_PARTIAL = True
     RUN_RANK_PARTIALED = True
-    RANK_TRANSFORM_BEHAVIOR = False
+    TRANSFORM_SOCIAL_BEHAVIOR = None       # None | 'rank' | 'log'
     N_PERMUTATIONS = 1000
     N_BOOTSTRAP = 1000
     SEED = 42
@@ -205,7 +205,7 @@ def main():
         exclude_groups=['Stranger Things'],
         normalization=None,
         partial_out_rank=False,            # set per run below
-        rank_transform_behavior=RANK_TRANSFORM_BEHAVIOR,
+        transform_social_behavior=TRANSFORM_SOCIAL_BEHAVIOR,
         n_permutations=N_PERMUTATIONS,
         between_group_permutations=0,
         n_bootstrap=N_BOOTSTRAP,
@@ -238,11 +238,12 @@ def main():
     print(f"█  signed asymmetry  +  concat[row,col] (correlation distance)")
     print(f"{'█'*70}")
 
+    tx = cfg.transform_social_behavior
     raw_rdms = build_raw_social_rdms(
         identities, interactions,
         behavior_types=('affiliation', 'agonism', 'submission'),
-        log_transform=False,
-        rank_transform=cfg.rank_transform_behavior,
+        log_transform=(tx == 'log'),
+        rank_transform=(tx == 'rank'),
         concat_metric='correlation',
         include_combined=True)
 
@@ -251,7 +252,10 @@ def main():
     if RUN_RANK_PARTIALED: versions.append(('rank_partialed',  True))
 
     rank_confound_mat = build_rank_distance_matrix(identities, info_df)
-    save_root = f"{cfg.save_dir}/{cfg.region}"
+    win_start = int(cfg.window[0] * 1000)
+    win_end   = int(cfg.window[1] * 1000)
+    tx_tag    = tx or 'raw'
+    save_root = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{tx_tag}"
     comps_by_version = {}
 
     for tag, do_partial in versions:
