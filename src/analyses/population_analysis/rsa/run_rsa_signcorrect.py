@@ -121,7 +121,7 @@ def plot_variants_comparison(comparisons, n_neurons_info, group_colors, title, s
 
 def main():
     # ── CONFIG ──────────────────────────────────────────
-    REGION = 'AMG'
+    REGION = 'ALL'
     MODE = 'both'
     SIGN_AXIS = 'submission'
     AXIS_AGGREGATE = 'column_sum'

@@ -185,12 +185,12 @@ def plot_versions_side_by_side(comps_by_version, group_colors,
 
 def main():
     # ── CONFIG (edit here) ──────────────────────────────
-    REGION = 'ER'
+    REGION = 'ALL'
     RUN_RAW_NO_PARTIAL = True
     RUN_RANK_PARTIALED = True
     RANK_TRANSFORM_BEHAVIOR = False
     N_PERMUTATIONS = 1000
-    N_BOOTSTRAP = 0
+    N_BOOTSTRAP = 1000
     SEED = 42
     # ────────────────────────────────────────────────────
 

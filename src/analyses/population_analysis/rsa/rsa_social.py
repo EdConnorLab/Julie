@@ -94,8 +94,18 @@ def load_all_interaction_matrices(behavior_files):
 # ──────────────────────────────────────────────────────────
 
 def _build_monkey_lookup(interactions, behavior_type, symmetrize=False,
-                          log_transform=False):
-    """Build lookup tables from interaction data."""
+                          log_transform=False, exclude_ids=None):
+    """Build lookup tables from interaction data.
+
+    Parameters
+    ----------
+    exclude_ids : list of str or None
+        Monkey IDs whose rows AND columns are removed from each group matrix
+        before building profiles.  This ensures profile vectors no longer
+        contain any dimension for the excluded animal, so pairwise distances
+        reflect only relationships among the remaining monkeys.
+    """
+    exclude_ids = set(exclude_ids) if exclude_ids else set()
     monkey_to_group = {}
     group_matrices = {}
 
@@ -104,6 +114,12 @@ def _build_monkey_lookup(interactions, behavior_type, symmetrize=False,
             continue
         matrix, monkey_ids = btypes[behavior_type]
         matrix = matrix.copy().astype(float)
+
+        # Strip rows and columns for excluded monkeys
+        if exclude_ids:
+            keep = [i for i, mid in enumerate(monkey_ids) if mid not in exclude_ids]
+            matrix = matrix[np.ix_(keep, keep)]
+            monkey_ids = [monkey_ids[i] for i in keep]
 
         if symmetrize:
             matrix = (matrix + matrix.T) / 2.0
@@ -552,7 +568,7 @@ def compare_similarity_by_group(neural_sim, social_sims, identities,
 def build_behavioral_profile_rdm(identities, interactions, behavior_type,
                                   symmetrize=False, metric='correlation',
                                   log_transform=False, rank_transform=False,
-                                  use_columns=False):
+                                  use_columns=False, exclude_ids=None):
     """
     Build a behavioral profile RDM (dissimilarity).
 
@@ -564,13 +580,19 @@ def build_behavioral_profile_rdm(identities, interactions, behavior_type,
     rank_transform : bool
         If True, replace each profile vector with within-vector ranks.
         Removes magnitude effects from extreme counts.
+    exclude_ids : list of str or None
+        Monkey IDs to strip from interaction matrices (row + column) before
+        computing profiles.  The excluded monkeys' dimensions are absent from
+        every profile vector, so distances reflect only within-remaining-group
+        relationships.
     """
     n = len(identities)
     rdm = np.full((n, n), np.nan)
     np.fill_diagonal(rdm, 0.0)
 
     monkey_to_group, group_matrices = _build_monkey_lookup(
-        interactions, behavior_type, symmetrize, log_transform)
+        interactions, behavior_type, symmetrize, log_transform,
+        exclude_ids=exclude_ids)
 
     for i in range(n):
         for j in range(i + 1, n):
@@ -608,7 +630,7 @@ def build_combined_profile_rdm(identities, interactions,
                                 behavior_types=('affiliation', 'agonism', 'submission'),
                                 symmetrize=False, metric='correlation',
                                 log_transform=False, rank_transform=False,
-                                use_columns=False):
+                                use_columns=False, exclude_ids=None):
     """
     Build a combined behavioral profile RDM by concatenating profiles
     across behavior types.
@@ -619,6 +641,9 @@ def build_combined_profile_rdm(identities, interactions,
         False = row (directed), True = column (received).
     rank_transform : bool
         If True, rank each per-behavior profile before concatenation.
+    exclude_ids : list of str or None
+        Monkey IDs to strip from interaction matrices (row + column) before
+        computing profiles.
     """
     n = len(identities)
     rdm = np.full((n, n), np.nan)
@@ -627,7 +652,8 @@ def build_combined_profile_rdm(identities, interactions,
     all_lookups = {}
     for btype in behavior_types:
         monkey_to_group, group_matrices = _build_monkey_lookup(
-            interactions, btype, symmetrize, log_transform)
+            interactions, btype, symmetrize, log_transform,
+            exclude_ids=exclude_ids)
         all_lookups[btype] = (monkey_to_group, group_matrices)
 
     for i in range(n):
@@ -731,7 +757,7 @@ def build_interaction_rdm(identities, interactions, behavior_type,
 def build_social_rdms(identities, interactions, behavior_types=None,
                        symmetrize=False, profile_metric='correlation',
                        log_transform=False, include_combined=True,
-                       rank_transform=False):
+                       rank_transform=False, exclude_ids=None):
     """
     Build dissimilarity-based social RDMs.
 
@@ -744,6 +770,10 @@ def build_social_rdms(identities, interactions, behavior_types=None,
     ----------
     rank_transform : bool
         If True, rank-transform each profile vector before computing distances.
+    exclude_ids : list of str or None
+        Monkey IDs to strip from interaction matrices (row + column) before
+        computing profiles.  Pass cfg.exclude_identities here so the social
+        geometry reflects only within-remaining-group relationships.
     """
     if behavior_types is None:
         all_types = set()
@@ -762,7 +792,7 @@ def build_social_rdms(identities, interactions, behavior_types=None,
             identities, interactions, btype,
             symmetrize=symmetrize, metric=profile_metric,
             log_transform=log_transform, rank_transform=rank_transform,
-            use_columns=False)
+            use_columns=False, exclude_ids=exclude_ids)
 
         # Received profile (columns): how this monkey is treated by others
         if build_received:
@@ -770,7 +800,7 @@ def build_social_rdms(identities, interactions, behavior_types=None,
                 identities, interactions, btype,
                 symmetrize=symmetrize, metric=profile_metric,
                 log_transform=log_transform, rank_transform=rank_transform,
-                use_columns=True)
+                use_columns=True, exclude_ids=exclude_ids)
 
         # --- interaction approach commented out (uncomment to include) ---
         # interaction_rdm, _ = build_interaction_rdm(
@@ -784,7 +814,7 @@ def build_social_rdms(identities, interactions, behavior_types=None,
             behavior_types=behavior_types,
             symmetrize=symmetrize, metric=profile_metric,
             log_transform=log_transform, rank_transform=rank_transform,
-            use_columns=False)
+            use_columns=False, exclude_ids=exclude_ids)
 
         if build_received:
             social_rdms['combined_received'] = build_combined_profile_rdm(
@@ -792,7 +822,7 @@ def build_social_rdms(identities, interactions, behavior_types=None,
                 behavior_types=behavior_types,
                 symmetrize=symmetrize, metric=profile_metric,
                 log_transform=log_transform, rank_transform=rank_transform,
-                use_columns=True)
+                use_columns=True, exclude_ids=exclude_ids)
 
     return social_rdms
 
@@ -1147,20 +1177,29 @@ def plot_scatter_multi(neural_mat, social_mats, identities, info_df,
                        color=color, alpha=0.6, s=25, edgecolors='k', lw=0.2,
                        label=group_name, zorder=5)
 
-        # Overall rho
-        v_neural_all = _upper_triangle(neural_mat)
-        v_social_all = _upper_triangle(social_mat)
-        mask_all = ~(np.isnan(v_neural_all) | np.isnan(v_social_all))
-        if mask_all.sum() >= 3:
-            rho, _ = spearmanr(v_social_all[mask_all], v_neural_all[mask_all])
-            from numpy.polynomial.polynomial import polyfit
-            b, m = polyfit(v_social_all[mask_all], v_neural_all[mask_all], 1)
-            x_range = np.array([np.nanmin(v_social_all[mask_all]),
-                                np.nanmax(v_social_all[mask_all])])
-            ax.plot(x_range, b + m * x_range, 'k--', alpha=0.4, lw=1)
-            ax.set_title(f"{mat_name}\nρ = {rho:.3f}", fontsize=9)
-        else:
-            ax.set_title(mat_name, fontsize=9)
+        # Per-group regression lines and rho values
+        from numpy.polynomial.polynomial import polyfit
+        rho_strs = []
+        for group_name, indices in group_indices.items():
+            if len(indices) < 2:
+                continue
+            idx = np.array(indices)
+            neural_sub = neural_mat[np.ix_(idx, idx)]
+            social_sub = social_mat[np.ix_(idx, idx)]
+            vn = _upper_triangle(neural_sub)
+            vs = _upper_triangle(social_sub)
+            mask = ~(np.isnan(vn) | np.isnan(vs))
+            if mask.sum() < 3:
+                continue
+            rho_g, _ = spearmanr(vs[mask], vn[mask])
+            color = group_colors.get(group_name, 'gray')
+            b, m = polyfit(vs[mask], vn[mask], 1)
+            x_range = np.array([np.nanmin(vs[mask]), np.nanmax(vs[mask])])
+            ax.plot(x_range, b + m * x_range, '--', color=color, alpha=0.7, lw=1.5)
+            rho_strs.append(f"{group_name}: ρ={rho_g:.3f}")
+
+        subtitle = ', '.join(rho_strs) if rho_strs else ''
+        ax.set_title(f"{mat_name}\n{subtitle}", fontsize=9)
 
         ax.set_xlabel(f"{social_label_prefix}: {mat_name}", fontsize=8)
         ax.set_ylabel(neural_label, fontsize=8)
@@ -1180,3 +1219,72 @@ def plot_scatter_multi(neural_mat, social_mats, identities, info_df,
         fig.savefig(save_path, dpi=150, bbox_inches='tight')
 
     return fig
+
+
+# ──────────────────────────────────────────────────────────
+# Dominance matrix (agonism + submission combined)
+# ──────────────────────────────────────────────────────────
+
+def build_dominance_interactions(interactions, exclude_ids=None):
+    """
+    Construct a 'dominance' behavior type from agonism and submission.
+
+    For each group, builds a dominance matrix where:
+        dominance[i, j] = log1p(agonism[i, j]) + log1p(submission[j, i])
+
+    This captures both directions of the dominance signal:
+        - agonism[i,j]     : i directs aggression AT j  (i is dominant over j)
+        - submission[j,i]  : j submits TO i             (also reflects i dominant over j)
+
+    Log-transforming before adding handles the scale difference between
+    the sparse agonism matrix and the larger-valued submission matrix.
+
+    Parameters
+    ----------
+    exclude_ids : list of str or None
+        Monkey IDs whose rows AND columns are removed from the dominance
+        matrix before it is stored, consistent with how _build_monkey_lookup
+        handles exclude_ids for other behavior types.
+
+    Returns
+    -------
+    interactions_with_dominance : dict
+        Copy of `interactions` with an additional 'dominance' key per group.
+        The dominance matrix is NOT log-transformed internally (raw combined
+        values are stored); pass log_transform=False when building RDMs since
+        log was already applied during construction.
+    """
+    import copy
+    exclude_ids = set(exclude_ids) if exclude_ids else set()
+    interactions_out = copy.deepcopy(interactions)
+
+    for group_name, btypes in interactions.items():
+        if 'agonism' not in btypes or 'submission' not in btypes:
+            print(f"  Warning: {group_name} missing agonism or submission — skipping dominance")
+            continue
+
+        agonism_mat, monkey_ids_ag     = btypes['agonism']
+        submission_mat, monkey_ids_sub = btypes['submission']
+
+        if monkey_ids_ag != monkey_ids_sub:
+            print(f"  Warning: {group_name} agonism/submission monkey IDs differ — skipping dominance")
+            continue
+
+        agonism_mat    = agonism_mat.astype(float)
+        submission_mat = submission_mat.astype(float)
+
+        # dominance[i,j] = log1p(agonism i→j) + log1p(submission j→i)
+        dominance_mat = np.log1p(agonism_mat) + np.log1p(submission_mat.T)
+        np.fill_diagonal(dominance_mat, 0.0)
+
+        monkey_ids = list(monkey_ids_ag)
+
+        # Strip excluded monkeys (row + column) from dominance matrix
+        if exclude_ids:
+            keep = [i for i, mid in enumerate(monkey_ids) if mid not in exclude_ids]
+            dominance_mat = dominance_mat[np.ix_(keep, keep)]
+            monkey_ids = [monkey_ids[i] for i in keep]
+
+        interactions_out[group_name]['dominance'] = (dominance_mat, monkey_ids)
+
+    return interactions_out

@@ -98,6 +98,11 @@ class SocialRSAConfig(RSAConfig):
     # ── Partial out rank from social RSA (|rank_i - rank_j| as confound within each group) ──
     partial_out_rank: bool = False
 
+    # ── Sensitivity analysis: exclude specific monkeys ──
+    # List of monkey IDs to remove before RSA (e.g. ['7124'] to drop the alpha).
+    # Removes them from identities, neural RDM rows/cols, and social RDMs.
+    exclude_identities: List[str] = field(default_factory=list)
+
     # ── Social RSA stats ──
     # between_group_permutations : p-value for "does ρ differ between groups?"
     #   Pools within-group pairs from both groups, shuffles group labels,

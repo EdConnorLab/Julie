@@ -21,6 +21,7 @@ from rsa_social import (
     load_all_interaction_matrices,
     build_neural_similarity_matrix,
     build_social_rdms,
+    build_dominance_interactions,
     compare_neural_to_social_by_group,
     compare_between_groups,
     print_group_comparisons,
@@ -321,17 +322,32 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
     Neural RDM (1-r) vs social behavioral profile RDMs.
 
     Plots are saved flat into save_dir with filename prefix (e.g. 'asym_' or 'sym_').
+    Always includes dominance RDMs (log1p(agonism) + log1p(submission.T)).
     """
     print(f"\n{'─'*50}")
     print(f"  DISSIMILARITY: {condition_label}")
     print(f"{'─'*50}")
 
+    # Standard behavior types (with condition log_transform)
     social_rdms = build_social_rdms(
         identities, interactions,
         behavior_types=['affiliation', 'agonism', 'submission'],
         symmetrize=symmetrize, profile_metric='correlation',
         log_transform=log_transform, include_combined=True,
-        rank_transform=cfg.rank_transform_behavior)
+        rank_transform=cfg.rank_transform_behavior,
+        exclude_ids=cfg.exclude_identities)
+
+    # Dominance: log already baked in during construction, so log_transform=False
+    interactions_with_dom = build_dominance_interactions(
+        interactions, exclude_ids=cfg.exclude_identities)
+    social_rdms_dominance = build_social_rdms(
+        identities, interactions_with_dom,
+        behavior_types=['dominance'],
+        symmetrize=symmetrize, profile_metric='correlation',
+        log_transform=False, include_combined=False,
+        rank_transform=cfg.rank_transform_behavior,
+        exclude_ids=None)   # already stripped inside build_dominance_interactions
+    social_rdms.update(social_rdms_dominance)
 
     # Per-group
     print(f"\n  Per-group:")
@@ -390,16 +406,15 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
 def main():
 
     cfg = SocialRSAConfig(
-        region='AMG',
+        region='ALL',
         session=None,                          # None = pseudo-population; 'session_id' = single session
-        window=(0.400, 0.700),
+        window=(0.300, 0.600),
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
         neural_metric='correlation',
         model_factors=[],
-        exclude_groups=['Stranger Things'],
+        exclude_groups=['Stranger Things', 'Best Frans'],
         normalization=None,
-        partial_out_rank=False,
         rank_transform_behavior=False,
         n_permutations=2000,
         between_group_permutations=2000,
@@ -407,6 +422,7 @@ def main():
         save_plots=True,
         save_dir='rsa_social_results',
         visual_responsiveness_filter=False,
+        exclude_identities=['7124', 'G942']
     )
 
 
@@ -451,6 +467,16 @@ def main():
         rate_matrix = result['rate_matrix']
         session_label = result['session']
 
+        # ── Exclude specific identities (sensitivity analysis) ──
+        if cfg.exclude_identities:
+            keep_mask = [i for i, mid in enumerate(identities)
+                         if mid not in cfg.exclude_identities]
+            removed = [mid for mid in identities if mid in cfg.exclude_identities]
+            identities  = [identities[i] for i in keep_mask]
+            neural_rdm  = neural_rdm[np.ix_(keep_mask, keep_mask)]
+            rate_matrix = rate_matrix[keep_mask, :]
+            print(f"\n  [Sensitivity] Excluded: {removed}  →  {len(identities)} identities remaining")
+
         # Build neural similarity matrix (Pearson r, not 1-r)
         neural_sim = build_neural_similarity_matrix(rate_matrix)
 
@@ -482,8 +508,9 @@ def main():
 
         # ── Dissimilarity RSA: neural 1-r vs social behavioral profile RDMs ──
         conditions = [
-            (False, False, "asymmetric",  "asym_"),
-            (True,  False, "symmetrized", "sym_"),
+            (False, False, "asymmetric", "asym_"),
+            # (True, False, "symmetrized", "sym_"),
+            (False, True, "asymmetric_log", "asym_log_"),
         ]
 
         dissim_results = {}
