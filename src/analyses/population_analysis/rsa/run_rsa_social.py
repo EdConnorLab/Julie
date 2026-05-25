@@ -15,6 +15,7 @@ import matplotlib.patches as mpatches
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
 from visual_responsiveness_filter import filter_visually_responsive
+from analyses.population_analysis.neuron_filters import apply_neuron_filters
 from rsa_config import SocialRSAConfig
 from rsa_core import run_rsa_session, run_rsa_pseudopop
 from rsa_social import (
@@ -415,20 +416,26 @@ def main():
         region='ALL',
         session=None,                          # None = pseudo-population; 'session_id' = single session
         window=(0.300, 0.600),
-        min_epoch_duration=1.0,
+        min_epoch_duration=1.3,
         min_reps_per_monkey=7,
         neural_metric='correlation',
         model_factors=[],
         exclude_groups=['Stranger Things', 'Best Frans'],
         normalization=None,
-        transform_social_behavior=None,        # None | 'rank' | 'log'
+        transform_social_behavior='log',        # None | 'rank' | 'log'
         n_permutations=2000,
         between_group_permutations=2000,
         n_bootstrap=2000,
         save_plots=True,
         save_dir='rsa_social_results',
         visual_responsiveness_filter=False,
-        exclude_identities=['7124', 'G942']
+        # exclude_identities=['7124','G942'],
+        # ── Neuron filters (off by default) ──
+        peak_latency_filter=False,
+        peak_latency_range=(0.200, 0.700),
+        peak_latency_search_window=(0.0, 1.00),
+        neuron_id_filter_pkl='/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
+        exclude_identities=[],
     )
     cfg.validate()
 
@@ -443,6 +450,9 @@ def main():
 
     # Visual responsiveness filter (toggle via cfg.visual_responsiveness_filter)
     df = filter_visually_responsive(df, cfg)
+
+    # Optional neuron-level filters: pkl NeuronID whitelist and/or peak-latency filter
+    df = apply_neuron_filters(df, cfg)
 
     print("\n--- Loading interaction matrices ---")
     interactions = load_all_interaction_matrices(BEHAVIOR_FILES)
@@ -496,7 +506,7 @@ def main():
         win_start = int(cfg.window[0] * 1000)
         win_end   = int(cfg.window[1] * 1000)
         tx_tag    = cfg.transform_social_behavior or 'raw'
-        save_dir_base = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{tx_tag}"
+        save_dir_base = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{tx_tag}/filter"
 
         print(f"\n{'='*60}")
         print(f"  Identities ({len(identities)}): {identities}")

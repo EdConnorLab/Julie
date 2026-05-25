@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
 from visual_responsiveness_filter import filter_visually_responsive
+from analyses.population_analysis.neuron_filters import apply_neuron_filters
 from rsa_config import RSAConfig
 from rsa_core import run_rsa_session, run_rsa_pseudopop
 from rsa_plotting import (plot_neural_rdm, plot_model_rdms, plot_rsa_bar,
@@ -19,20 +20,25 @@ MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinf
 
 def main():
     cfg = RSAConfig(
-        region='AMG',                          # 'AMG', 'ER', or 'ALL'
+        region='ALL',                          # 'AMG', 'ER', or 'ALL'
         session=None,                          # None = pseudo-population; 'session_id' = single session
-        window=(0.200, 0.600),                 # analysis window (seconds)
+        window=(0.400, 0.700),                 # analysis window (seconds)
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
         neural_metric='correlation',           # 'correlation' or 'euclidean' or 'cosine' or 'mahalanobis'
         model_factors=['group', 'familiarity', 'sex','age_continuous'],
-        partial_out=['familiarity', 'group'],  # regress these out when testing other factors
+        partial_out= [],     #['familiarity', 'group'],  # regress these out when testing other factors
         exclude_groups=['Stranger Things'],
         normalization='soft',                  # None or 'soft'
         n_permutations=0,                      # set to e.g. 1000 for perm test
         rdm_sort_mode='by_factor',
+        # ── Neuron filters (off by default) ──
+        peak_latency_filter=True,
+        peak_latency_range=(0.200, 0.500),
+        peak_latency_search_window=(0.0, 1.00),
+        # neuron_id_filter_pkl='/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
         save_plots=True,
-        save_dir=f'rsa_results',
+        save_dir=f'rsa_results_filtered_KW',
     )
     cfg.validate()
 
@@ -47,6 +53,9 @@ def main():
 
     # Visual responsiveness filter (toggle via cfg.visual_responsiveness_filter)
     df = filter_visually_responsive(df, cfg)
+
+    # Optional neuron-level filters: pkl NeuronID whitelist and/or peak-latency filter
+    df = apply_neuron_filters(df, cfg)
 
     print(f"\n{'='*60}")
     print(f"RSA Analysis")
@@ -66,7 +75,7 @@ def main():
         result = run_rsa_pseudopop(df, info_df, cfg)
         _print_comparisons(result, cfg)
 
-        save_dir = f"{cfg.save_dir}/{cfg.region}_pseudopop"
+        save_dir = f"{cfg.save_dir}/{cfg.region}_{cfg.normalization}_pseudopop/"
         plot_neural_rdm_multi_sort(result, cfg, save_dir=save_dir)
         plot_model_rdms(result, cfg, save_dir=save_dir)
 

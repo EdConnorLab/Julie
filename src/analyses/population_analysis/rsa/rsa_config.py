@@ -45,6 +45,21 @@ class RSAConfig:
     vr_alpha: float = 0.2
     vr_require_increase: bool = True   # only excitatory responses
 
+    # ── Peak-latency filter ──
+    # For each neuron, compute per-identity PSTHs (Gaussian-smoothed),
+    # pick the peak time of the strongest-responding identity, and keep
+    # only neurons whose peak time lies inside peak_latency_range.
+    peak_latency_filter: bool = False
+    peak_latency_range: Tuple[float, float] = (0.200, 0.500)         # inclusive, seconds
+    peak_latency_search_window: Tuple[float, float] = (0.0, 0.800)   # where to look for the peak
+    peak_latency_bin_size: float = 0.020                              # PSTH bin width, seconds
+    peak_latency_smooth_sigma: float = 0.020                          # Gaussian σ, seconds
+
+    # ── Pkl-based NeuronID whitelist ──
+    # Path to a pickled DataFrame; only neurons whose NeuronID appears in
+    # its 'NeuronID' column are kept.  None = disabled.
+    neuron_id_filter_pkl: Optional[str] = None
+
     # ── Partial RSA (run_rsa.py): regress out these model RDMs before testing each factor ──
     # e.g. ['familiarity', 'group'] → for each target factor, partial out
     # familiarity and group, then correlate residuals.
@@ -82,6 +97,12 @@ class RSAConfig:
             raise ValueError(
                 f"window end ({self.window[1]}) exceeds min_epoch_duration "
                 f"({self.min_epoch_duration}). Increase min_epoch_duration or shrink window.")
+        if self.peak_latency_filter:
+            if self.peak_latency_range[0] >= self.peak_latency_range[1]:
+                raise ValueError("peak_latency_range start must be < end")
+            sw = self.peak_latency_search_window
+            if sw[0] >= sw[1]:
+                raise ValueError("peak_latency_search_window start must be < end")
 
 
 @dataclass

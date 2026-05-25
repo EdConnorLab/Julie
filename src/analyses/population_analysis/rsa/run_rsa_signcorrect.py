@@ -121,7 +121,7 @@ def plot_variants_comparison(comparisons, n_neurons_info, group_colors, title, s
 
 def main():
     # ── CONFIG ──────────────────────────────────────────
-    REGION = 'ALL'
+    REGION = 'ER'
     MODE = 'both'
     SIGN_AXIS = 'submission'
     AXIS_AGGREGATE = 'column_sum'
@@ -140,12 +140,12 @@ def main():
         exclude_groups=['Stranger Things'],
         normalization=None,
         transform_social_behavior=None,        # None | 'rank' | 'log'
-        exclude_identities=[],                 # e.g. ['7124'] to drop alpha
+        exclude_identities=['7124', 'G942'],                 # e.g. ['7124'] to drop alpha
         n_permutations=N_PERMUTATIONS,
         save_plots=True,
         save_dir='rsa_signcorrect_results',
         rng_seed=SEED,
-        visual_responsiveness_filter=True,
+        visual_responsiveness_filter=False,
         vr_response_window=(0.400, 0.700),
         vr_alpha=0.15,
     )
@@ -169,6 +169,7 @@ def main():
     print(f"█  region={cfg.region}, sign axis={SIGN_AXIS} ({AXIS_AGGREGATE})")
     print(f"█  mode={MODE}, window={cfg.window[0]*1000:.0f}–{cfg.window[1]*1000:.0f} ms")
     print(f"█  permutations={N_PERMUTATIONS}")
+    print(f"█  visual_responsive_filter={cfg.visual_responsiveness_filter}")
     print(f"{'█'*70}")
 
     result = run_sign_corrected_pseudopop(
