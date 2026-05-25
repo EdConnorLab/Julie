@@ -26,6 +26,7 @@ import statsmodels.formula.api as smf
 from analyses.population_analysis.state_space.data_loading import load_and_filter
 from social_encoding_config import SocialEncodingConfig
 from analyses.population_analysis.rsa.rsa_social import load_interaction_matrix
+from neuron_filters import apply_neuron_filters
 
 
 # ──────────────────────────────────────────────────────────
@@ -577,20 +578,25 @@ def run_group(df, group_name, cfg):
 
 def main():
     cfg = SocialEncodingConfig(
-        region='AMG',
+        region='ALL',
         session=None,
-        window=(0.400, 0.700),
+        window=(0.300, 0.600),
         min_epoch_duration=2.0,
-        min_reps_per_monkey=2,
+        min_reps_per_monkey=5,
         exclude_groups=['Stranger Things'],
         feature_mode='summary',
         n_feature_pcs=2,
         normalization=None,
         pseudo_population=True,
-        n_permutations=500,
+        n_permutations=5000,
         save_plots=True,
-        save_dir='social_encoding_results',
-        groups=['Zombies', 'Best Frans','Instigators'],
+        save_dir='social_encoding_results_final',
+        groups=['Zombies', 'Instigators'], # 'Best Frans'
+        # ── Neuron filters (off by default) ──
+        peak_latency_filter=True,
+        peak_latency_range=(0.200, 0.500),
+        peak_latency_search_window=(0.0, 2.000),
+        # neuron_id_filter_pkl='/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
     )
     cfg.validate()
 
@@ -611,6 +617,9 @@ def main():
         df = df[~df['MonkeyGroup'].isin(cfg.exclude_groups)].reset_index(drop=True)
         print(f"Excluded groups {cfg.exclude_groups}: "
               f"{df['MonkeyName'].nunique()} monkeys remaining")
+
+    # Optional neuron-level filters: pkl NeuronID whitelist and/or peak-latency filter
+    df = apply_neuron_filters(df, cfg)
 
     # ─── Compute trial-level firing rates ───
     print("\nComputing trial-level firing rates ...")
