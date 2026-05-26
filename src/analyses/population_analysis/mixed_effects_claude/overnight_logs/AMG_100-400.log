@@ -1,0 +1,633 @@
+
+======================================================================
+PCs Sweep — full_profile, AMG, 100-400ms
+  PCs: 2 to 5
+  Permutations: 5000
+======================================================================
+
+Loaded 55 files -> 120484 total trials
+Loaded 44161 rows, 19 sessions, 6710 trials, 123 neurons
+Computing trial-level firing rates ...
+
+──────────────────────────────────────────────────
+  n_pcs=2, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 2 PCs ([0.293 0.213] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2
+affiliation_to_7124       0.132       0.005
+affiliation_to_69X       -0.069       0.190
+affiliation_to_72X       -0.005       0.298
+affiliation_to_94B       -0.166      -0.249
+affiliation_to_110E      -0.138      -0.017
+affiliation_to_67G       -0.109      -0.196
+affiliation_to_81G       -0.019       0.144
+affiliation_to_143H      -0.091       0.046
+affiliation_to_87J       -0.173       0.309
+affiliation_to_151J       0.144      -0.122
+agonism_to_7124          -0.143       0.299
+agonism_to_69X           -0.217       0.228
+agonism_to_72X           -0.146      -0.092
+agonism_to_94B           -0.189      -0.170
+agonism_to_110E          -0.172       0.269
+agonism_to_67G           -0.219      -0.080
+agonism_to_81G           -0.187       0.129
+agonism_to_143H          -0.267       0.097
+agonism_to_87J           -0.097       0.284
+agonism_to_151J           0.084      -0.192
+submission_to_7124        0.260       0.147
+submission_to_69X         0.314       0.069
+submission_to_72X         0.263       0.174
+submission_to_94B         0.272       0.071
+submission_to_110E        0.008       0.024
+submission_to_67G         0.036      -0.251
+submission_to_81G         0.295       0.078
+submission_to_143H        0.253       0.120
+submission_to_87J         0.172       0.287
+submission_to_151J        0.208      -0.108
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0002
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.7488
+
+──────────────────────────────────────────────────
+  n_pcs=2, group=Best Frans
+──────────────────────────────────────────────────
+    PCA: 15 features → 2 PCs ([0.442 0.306] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2
+affiliation_to_G701      -0.065       0.107
+affiliation_to_14F        0.327      -0.185
+affiliation_to_68F        0.091       0.438
+affiliation_to_101G      -0.233      -0.368
+affiliation_to_19J       -0.356       0.152
+agonism_to_G701          -0.137      -0.176
+agonism_to_14F            0.340      -0.195
+agonism_to_68F            0.086       0.452
+agonism_to_101G          -0.269      -0.199
+agonism_to_19J           -0.331       0.231
+submission_to_G701        0.353       0.132
+submission_to_14F         0.345       0.144
+submission_to_68F         0.356      -0.132
+submission_to_101G        0.017      -0.282
+submission_to_19J        -0.071       0.319
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0024
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.5622
+
+──────────────────────────────────────────────────
+  n_pcs=2, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 2 PCs ([0.267 0.208] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2
+affiliation_to_G942      -0.127       0.322
+affiliation_to_35Y        0.014       0.098
+affiliation_to_49Y       -0.016       0.133
+affiliation_to_42Z        0.174       0.191
+affiliation_to_48Z        0.178       0.196
+affiliation_to_59E        0.115       0.101
+affiliation_to_68E        0.012       0.047
+affiliation_to_70G       -0.000       0.000
+affiliation_to_79G        0.000       0.000
+affiliation_to_144H      -0.000       0.000
+affiliation_to_86I        0.173       0.115
+affiliation_to_167I       0.108       0.244
+affiliation_to_114J       0.159       0.241
+affiliation_to_134J       0.116       0.082
+agonism_to_G942           0.000       0.000
+agonism_to_35Y            0.238       0.080
+agonism_to_49Y            0.183       0.096
+agonism_to_42Z            0.238       0.080
+agonism_to_48Z            0.286       0.126
+agonism_to_59E            0.253       0.109
+agonism_to_68E            0.272       0.166
+agonism_to_70G            0.000       0.000
+agonism_to_79G            0.000       0.000
+agonism_to_144H           0.000       0.000
+agonism_to_86I            0.120       0.078
+agonism_to_167I           0.194       0.115
+agonism_to_114J           0.246       0.164
+agonism_to_134J           0.226       0.047
+submission_to_G942       -0.127       0.205
+submission_to_35Y        -0.176       0.265
+submission_to_49Y        -0.169       0.282
+submission_to_42Z        -0.196       0.251
+submission_to_48Z        -0.175       0.252
+submission_to_59E        -0.190       0.235
+submission_to_68E        -0.142       0.050
+submission_to_70G         0.000       0.000
+submission_to_79G         0.000       0.000
+submission_to_144H        0.000       0.000
+submission_to_86I        -0.010       0.054
+submission_to_167I       -0.186       0.263
+submission_to_114J       -0.179       0.167
+submission_to_134J       -0.173       0.205
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0003
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.7120
+
+──────────────────────────────────────────────────
+  n_pcs=3, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 3 PCs ([0.293 0.213 0.143] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2  social_PC3
+affiliation_to_7124       0.132       0.005       0.369
+affiliation_to_69X       -0.069       0.190      -0.012
+affiliation_to_72X       -0.005       0.298       0.127
+affiliation_to_94B       -0.166      -0.249      -0.152
+affiliation_to_110E      -0.138      -0.017       0.033
+affiliation_to_67G       -0.109      -0.196       0.102
+affiliation_to_81G       -0.019       0.144      -0.154
+affiliation_to_143H      -0.091       0.046      -0.112
+affiliation_to_87J       -0.173       0.309       0.085
+affiliation_to_151J       0.144      -0.122       0.374
+agonism_to_7124          -0.143       0.299       0.201
+agonism_to_69X           -0.217       0.228       0.194
+agonism_to_72X           -0.146      -0.092       0.002
+agonism_to_94B           -0.189      -0.170       0.021
+agonism_to_110E          -0.172       0.269       0.134
+agonism_to_67G           -0.219      -0.080       0.026
+agonism_to_81G           -0.187       0.129      -0.111
+agonism_to_143H          -0.267       0.097       0.184
+agonism_to_87J           -0.097       0.284       0.221
+agonism_to_151J           0.084      -0.192       0.371
+submission_to_7124        0.260       0.147      -0.102
+submission_to_69X         0.314       0.069       0.032
+submission_to_72X         0.263       0.174       0.010
+submission_to_94B         0.272       0.071      -0.120
+submission_to_110E        0.008       0.024      -0.098
+submission_to_67G         0.036      -0.251       0.364
+submission_to_81G         0.295       0.078      -0.060
+submission_to_143H        0.253       0.120      -0.085
+submission_to_87J         0.172       0.287       0.092
+submission_to_151J        0.208      -0.108       0.336
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0017
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.0284
+
+──────────────────────────────────────────────────
+  n_pcs=3, group=Best Frans
+──────────────────────────────────────────────────
+    PCA: 15 features → 3 PCs ([0.442 0.306 0.164] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2  social_PC3
+affiliation_to_G701      -0.065       0.107       0.313
+affiliation_to_14F        0.327      -0.185      -0.195
+affiliation_to_68F        0.091       0.438      -0.151
+affiliation_to_101G      -0.233      -0.368      -0.056
+affiliation_to_19J       -0.356       0.152      -0.132
+agonism_to_G701          -0.137      -0.176       0.511
+agonism_to_14F            0.340      -0.195      -0.068
+agonism_to_68F            0.086       0.452      -0.005
+agonism_to_101G          -0.269      -0.199      -0.118
+agonism_to_19J           -0.331       0.231      -0.081
+submission_to_G701        0.353       0.132       0.171
+submission_to_14F         0.345       0.144       0.213
+submission_to_68F         0.356      -0.132      -0.104
+submission_to_101G        0.017      -0.282       0.496
+submission_to_19J        -0.071       0.319       0.451
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0028
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.8076
+
+──────────────────────────────────────────────────
+  n_pcs=3, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 3 PCs ([0.267 0.208 0.115] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2  social_PC3
+affiliation_to_G942      -0.127       0.322      -0.053
+affiliation_to_35Y        0.014       0.098       0.130
+affiliation_to_49Y       -0.016       0.133       0.019
+affiliation_to_42Z        0.174       0.191       0.284
+affiliation_to_48Z        0.178       0.196      -0.015
+affiliation_to_59E        0.115       0.101      -0.198
+affiliation_to_68E        0.012       0.047       0.023
+affiliation_to_70G       -0.000       0.000      -0.000
+affiliation_to_79G        0.000       0.000      -0.000
+affiliation_to_144H      -0.000       0.000      -0.000
+affiliation_to_86I        0.173       0.115       0.292
+affiliation_to_167I       0.108       0.244      -0.118
+affiliation_to_114J       0.159       0.241      -0.296
+affiliation_to_134J       0.116       0.082       0.033
+agonism_to_G942           0.000       0.000      -0.000
+agonism_to_35Y            0.238       0.080       0.274
+agonism_to_49Y            0.183       0.096       0.330
+agonism_to_42Z            0.238       0.080       0.274
+agonism_to_48Z            0.286       0.126      -0.207
+agonism_to_59E            0.253       0.109      -0.228
+agonism_to_68E            0.272       0.166       0.001
+agonism_to_70G            0.000       0.000      -0.000
+agonism_to_79G            0.000       0.000      -0.000
+agonism_to_144H           0.000       0.000      -0.000
+agonism_to_86I            0.120       0.078       0.034
+agonism_to_167I           0.194       0.115      -0.313
+agonism_to_114J           0.246       0.164      -0.228
+agonism_to_134J           0.226       0.047       0.260
+submission_to_G942       -0.127       0.205       0.026
+submission_to_35Y        -0.176       0.265       0.044
+submission_to_49Y        -0.169       0.282       0.009
+submission_to_42Z        -0.196       0.251      -0.003
+submission_to_48Z        -0.175       0.252      -0.033
+submission_to_59E        -0.190       0.235       0.152
+submission_to_68E        -0.142       0.050       0.053
+submission_to_70G         0.000       0.000      -0.000
+submission_to_79G         0.000       0.000      -0.000
+submission_to_144H        0.000       0.000      -0.000
+submission_to_86I        -0.010       0.054       0.243
+submission_to_167I       -0.186       0.263      -0.015
+submission_to_114J       -0.179       0.167      -0.052
+submission_to_134J       -0.173       0.205       0.086
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0003
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.8826
+
+──────────────────────────────────────────────────
+  n_pcs=4, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 4 PCs ([0.293 0.213 0.143 0.11 ] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2  social_PC3  social_PC4
+affiliation_to_7124       0.132       0.005       0.369       0.034
+affiliation_to_69X       -0.069       0.190      -0.012      -0.322
+affiliation_to_72X       -0.005       0.298       0.127      -0.313
+affiliation_to_94B       -0.166      -0.249      -0.152      -0.190
+affiliation_to_110E      -0.138      -0.017       0.033      -0.156
+affiliation_to_67G       -0.109      -0.196       0.102      -0.207
+affiliation_to_81G       -0.019       0.144      -0.154      -0.174
+affiliation_to_143H      -0.091       0.046      -0.112      -0.034
+affiliation_to_87J       -0.173       0.309       0.085       0.067
+affiliation_to_151J       0.144      -0.122       0.374      -0.149
+agonism_to_7124          -0.143       0.299       0.201       0.057
+agonism_to_69X           -0.217       0.228       0.194      -0.080
+agonism_to_72X           -0.146      -0.092       0.002      -0.358
+agonism_to_94B           -0.189      -0.170       0.021      -0.210
+agonism_to_110E          -0.172       0.269       0.134       0.140
+agonism_to_67G           -0.219      -0.080       0.026       0.167
+agonism_to_81G           -0.187       0.129      -0.111      -0.209
+agonism_to_143H          -0.267       0.097       0.184      -0.101
+agonism_to_87J           -0.097       0.284       0.221       0.189
+agonism_to_151J           0.084      -0.192       0.371       0.017
+submission_to_7124        0.260       0.147      -0.102      -0.203
+submission_to_69X         0.314       0.069       0.032      -0.151
+submission_to_72X         0.263       0.174       0.010      -0.045
+submission_to_94B         0.272       0.071      -0.120      -0.273
+submission_to_110E        0.008       0.024      -0.098       0.402
+submission_to_67G         0.036      -0.251       0.364      -0.047
+submission_to_81G         0.295       0.078      -0.060       0.067
+submission_to_143H        0.253       0.120      -0.085       0.048
+submission_to_87J         0.172       0.287       0.092      -0.069
+submission_to_151J        0.208      -0.108       0.336      -0.011
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0017
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.0792
+
+──────────────────────────────────────────────────
+  n_pcs=4, group=Best Frans
+──────────────────────────────────────────────────
+    PCA: 15 features → 4 PCs ([0.442 0.306 0.164 0.089] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2  social_PC3  social_PC4
+affiliation_to_G701      -0.065       0.107       0.313       0.714
+affiliation_to_14F        0.327      -0.185      -0.195      -0.178
+affiliation_to_68F        0.091       0.438      -0.151      -0.085
+affiliation_to_101G      -0.233      -0.368      -0.056      -0.083
+affiliation_to_19J       -0.356       0.152      -0.132       0.102
+agonism_to_G701          -0.137      -0.176       0.511      -0.260
+agonism_to_14F            0.340      -0.195      -0.068       0.191
+agonism_to_68F            0.086       0.452      -0.005      -0.099
+agonism_to_101G          -0.269      -0.199      -0.118       0.479
+agonism_to_19J           -0.331       0.231      -0.081      -0.094
+submission_to_G701        0.353       0.132       0.171       0.131
+submission_to_14F         0.345       0.144       0.213       0.054
+submission_to_68F         0.356      -0.132      -0.104       0.199
+submission_to_101G        0.017      -0.282       0.496      -0.148
+submission_to_19J        -0.071       0.319       0.451      -0.018
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0055
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.8440
+
+──────────────────────────────────────────────────
+  n_pcs=4, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 4 PCs ([0.267 0.208 0.115 0.103] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2  social_PC3  social_PC4
+affiliation_to_G942      -0.127       0.322      -0.053       0.009
+affiliation_to_35Y        0.014       0.098       0.130       0.261
+affiliation_to_49Y       -0.016       0.133       0.019       0.332
+affiliation_to_42Z        0.174       0.191       0.284      -0.120
+affiliation_to_48Z        0.178       0.196      -0.015      -0.145
+affiliation_to_59E        0.115       0.101      -0.198       0.107
+affiliation_to_68E        0.012       0.047       0.023       0.068
+affiliation_to_70G       -0.000       0.000      -0.000      -0.000
+affiliation_to_79G        0.000       0.000      -0.000       0.000
+affiliation_to_144H      -0.000       0.000      -0.000      -0.000
+affiliation_to_86I        0.173       0.115       0.292       0.260
+affiliation_to_167I       0.108       0.244      -0.118       0.050
+affiliation_to_114J       0.159       0.241      -0.296      -0.040
+affiliation_to_134J       0.116       0.082       0.033       0.040
+agonism_to_G942           0.000       0.000      -0.000      -0.000
+agonism_to_35Y            0.238       0.080       0.274      -0.222
+agonism_to_49Y            0.183       0.096       0.330       0.104
+agonism_to_42Z            0.238       0.080       0.274      -0.222
+agonism_to_48Z            0.286       0.126      -0.207      -0.043
+agonism_to_59E            0.253       0.109      -0.228      -0.048
+agonism_to_68E            0.272       0.166       0.001      -0.128
+agonism_to_70G            0.000       0.000      -0.000      -0.000
+agonism_to_79G            0.000       0.000      -0.000      -0.000
+agonism_to_144H           0.000       0.000      -0.000      -0.000
+agonism_to_86I            0.120       0.078       0.034       0.367
+agonism_to_167I           0.194       0.115      -0.313       0.178
+agonism_to_114J           0.246       0.164      -0.228       0.066
+agonism_to_134J           0.226       0.047       0.260      -0.165
+submission_to_G942       -0.127       0.205       0.026       0.332
+submission_to_35Y        -0.176       0.265       0.044       0.153
+submission_to_49Y        -0.169       0.282       0.009      -0.090
+submission_to_42Z        -0.196       0.251      -0.003      -0.226
+submission_to_48Z        -0.175       0.252      -0.033      -0.121
+submission_to_59E        -0.190       0.235       0.152       0.147
+submission_to_68E        -0.142       0.050       0.053      -0.029
+submission_to_70G         0.000       0.000      -0.000      -0.000
+submission_to_79G         0.000       0.000      -0.000      -0.000
+submission_to_144H        0.000       0.000      -0.000      -0.000
+submission_to_86I        -0.010       0.054       0.243       0.183
+submission_to_167I       -0.186       0.263      -0.015      -0.224
+submission_to_114J       -0.179       0.167      -0.052      -0.236
+submission_to_134J       -0.173       0.205       0.086      -0.031
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0009
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.7370
+
+──────────────────────────────────────────────────
+  n_pcs=5, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 5 PCs ([0.293 0.213 0.143 0.11  0.098] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2  social_PC3  social_PC4  social_PC5
+affiliation_to_7124       0.132       0.005       0.369       0.034      -0.227
+affiliation_to_69X       -0.069       0.190      -0.012      -0.322      -0.058
+affiliation_to_72X       -0.005       0.298       0.127      -0.313      -0.069
+affiliation_to_94B       -0.166      -0.249      -0.152      -0.190      -0.085
+affiliation_to_110E      -0.138      -0.017       0.033      -0.156       0.485
+affiliation_to_67G       -0.109      -0.196       0.102      -0.207       0.026
+affiliation_to_81G       -0.019       0.144      -0.154      -0.174      -0.187
+affiliation_to_143H      -0.091       0.046      -0.112      -0.034      -0.281
+affiliation_to_87J       -0.173       0.309       0.085       0.067      -0.136
+affiliation_to_151J       0.144      -0.122       0.374      -0.149       0.072
+agonism_to_7124          -0.143       0.299       0.201       0.057      -0.099
+agonism_to_69X           -0.217       0.228       0.194      -0.080       0.062
+agonism_to_72X           -0.146      -0.092       0.002      -0.358       0.307
+agonism_to_94B           -0.189      -0.170       0.021      -0.210       0.280
+agonism_to_110E          -0.172       0.269       0.134       0.140       0.194
+agonism_to_67G           -0.219      -0.080       0.026       0.167       0.195
+agonism_to_81G           -0.187       0.129      -0.111      -0.209      -0.254
+agonism_to_143H          -0.267       0.097       0.184      -0.101       0.071
+agonism_to_87J           -0.097       0.284       0.221       0.189       0.095
+agonism_to_151J           0.084      -0.192       0.371       0.017      -0.143
+submission_to_7124        0.260       0.147      -0.102      -0.203       0.107
+submission_to_69X         0.314       0.069       0.032      -0.151       0.087
+submission_to_72X         0.263       0.174       0.010      -0.045       0.197
+submission_to_94B         0.272       0.071      -0.120      -0.273      -0.040
+submission_to_110E        0.008       0.024      -0.098       0.402       0.240
+submission_to_67G         0.036      -0.251       0.364      -0.047       0.010
+submission_to_81G         0.295       0.078      -0.060       0.067       0.185
+submission_to_143H        0.253       0.120      -0.085       0.048       0.079
+submission_to_87J         0.172       0.287       0.092      -0.069       0.180
+submission_to_151J        0.208      -0.108       0.336      -0.011      -0.094
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0019
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.0770
+
+──────────────────────────────────────────────────
+  n_pcs=5, group=Best Frans
+──────────────────────────────────────────────────
+    Capped to 4 PCs (only 5 monkeys)
+    PCA: 15 features → 4 PCs ([0.442 0.306 0.164 0.089] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2  social_PC3  social_PC4
+affiliation_to_G701      -0.065       0.107       0.313       0.714
+affiliation_to_14F        0.327      -0.185      -0.195      -0.178
+affiliation_to_68F        0.091       0.438      -0.151      -0.085
+affiliation_to_101G      -0.233      -0.368      -0.056      -0.083
+affiliation_to_19J       -0.356       0.152      -0.132       0.102
+agonism_to_G701          -0.137      -0.176       0.511      -0.260
+agonism_to_14F            0.340      -0.195      -0.068       0.191
+agonism_to_68F            0.086       0.452      -0.005      -0.099
+agonism_to_101G          -0.269      -0.199      -0.118       0.479
+agonism_to_19J           -0.331       0.231      -0.081      -0.094
+submission_to_G701        0.353       0.132       0.171       0.131
+submission_to_14F         0.345       0.144       0.213       0.054
+submission_to_68F         0.356      -0.132      -0.104       0.199
+submission_to_101G        0.017      -0.282       0.496      -0.148
+submission_to_19J        -0.071       0.319       0.451      -0.018
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0055
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.8440
+
+──────────────────────────────────────────────────
+  n_pcs=5, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 5 PCs ([0.267 0.208 0.115 0.103 0.085] var explained)
+
+PCA loadings:
+                     social_PC1  social_PC2  social_PC3  social_PC4  social_PC5
+affiliation_to_G942      -0.127       0.322      -0.053       0.009       0.011
+affiliation_to_35Y        0.014       0.098       0.130       0.261       0.367
+affiliation_to_49Y       -0.016       0.133       0.019       0.332      -0.276
+affiliation_to_42Z        0.174       0.191       0.284      -0.120       0.022
+affiliation_to_48Z        0.178       0.196      -0.015      -0.145      -0.121
+affiliation_to_59E        0.115       0.101      -0.198       0.107       0.195
+affiliation_to_68E        0.012       0.047       0.023       0.068      -0.199
+affiliation_to_70G       -0.000       0.000      -0.000      -0.000       0.000
+affiliation_to_79G        0.000       0.000      -0.000       0.000       0.000
+affiliation_to_144H      -0.000       0.000      -0.000      -0.000      -0.000
+affiliation_to_86I        0.173       0.115       0.292       0.260      -0.048
+affiliation_to_167I       0.108       0.244      -0.118       0.050       0.164
+affiliation_to_114J       0.159       0.241      -0.296      -0.040       0.057
+affiliation_to_134J       0.116       0.082       0.033       0.040       0.393
+agonism_to_G942           0.000       0.000      -0.000      -0.000       0.000
+agonism_to_35Y            0.238       0.080       0.274      -0.222      -0.007
+agonism_to_49Y            0.183       0.096       0.330       0.104      -0.167
+agonism_to_42Z            0.238       0.080       0.274      -0.222      -0.007
+agonism_to_48Z            0.286       0.126      -0.207      -0.043       0.020
+agonism_to_59E            0.253       0.109      -0.228      -0.048      -0.056
+agonism_to_68E            0.272       0.166       0.001      -0.128      -0.124
+agonism_to_70G            0.000       0.000      -0.000      -0.000       0.000
+agonism_to_79G            0.000       0.000      -0.000      -0.000       0.000
+agonism_to_144H           0.000       0.000      -0.000      -0.000       0.000
+agonism_to_86I            0.120       0.078       0.034       0.367      -0.210
+agonism_to_167I           0.194       0.115      -0.313       0.178       0.081
+agonism_to_114J           0.246       0.164      -0.228       0.066       0.064
+agonism_to_134J           0.226       0.047       0.260      -0.165       0.100
+submission_to_G942       -0.127       0.205       0.026       0.332      -0.156
+submission_to_35Y        -0.176       0.265       0.044       0.153       0.062
+submission_to_49Y        -0.169       0.282       0.009      -0.090      -0.226
+submission_to_42Z        -0.196       0.251      -0.003      -0.226      -0.038
+submission_to_48Z        -0.175       0.252      -0.033      -0.121      -0.218
+submission_to_59E        -0.190       0.235       0.152       0.147       0.076
+submission_to_68E        -0.142       0.050       0.053      -0.029       0.371
+submission_to_70G         0.000       0.000      -0.000      -0.000       0.000
+submission_to_79G         0.000       0.000      -0.000      -0.000       0.000
+submission_to_144H        0.000       0.000      -0.000      -0.000       0.000
+submission_to_86I        -0.010       0.054       0.243       0.183       0.172
+submission_to_167I       -0.186       0.263      -0.015      -0.224      -0.049
+submission_to_114J       -0.179       0.167      -0.052      -0.236       0.044
+submission_to_134J       -0.173       0.205       0.086      -0.031       0.305
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0021
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.2852
+
+
+======================================================================
+PCs SWEEP SUMMARY — full_profile, AMG, 100-400ms
+======================================================================
+
+ PCs  Group                   R²    Perm p   PCA var
+--------------------------------------------------
+   2  Zombies             0.0002   0.7488n.s.     0.506
+   2  Best Frans          0.0024   0.5622n.s.     0.747
+   2  Instigators         0.0003   0.7120n.s.     0.475
+   3  Zombies             0.0017   0.0284*     0.649
+   3  Best Frans          0.0028   0.8076n.s.     0.911
+   3  Instigators         0.0003   0.8826n.s.     0.590
+   4  Zombies             0.0017   0.0792n.s.     0.759
+   4  Best Frans          0.0055   0.8440n.s.     1.000
+   4  Instigators         0.0009   0.7370n.s.     0.692
+   5  Zombies             0.0019   0.0770n.s.     0.856
+   5  Best Frans          0.0055   0.8440n.s.     1.000
+   5  Instigators         0.0021   0.2852n.s.     0.778
+
+Results saved to social_encoding_pcs_sweep/AMG/100-400ms/

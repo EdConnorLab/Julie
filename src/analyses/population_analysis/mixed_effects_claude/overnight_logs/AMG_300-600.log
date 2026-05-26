@@ -1,0 +1,503 @@
+
+======================================================================
+PCs Sweep — full_profile, AMG, 300-600ms
+  PCs: 2 to 5
+  Permutations: 5000
+======================================================================
+
+Loaded 55 files -> 120484 total trials
+Loaded 44161 rows, 19 sessions, 6710 trials, 123 neurons
+Computing trial-level firing rates ...
+
+──────────────────────────────────────────────────
+  n_pcs=2, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 2 PCs ([0.293 0.213] var explained)
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0012
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.2836
+
+──────────────────────────────────────────────────
+  n_pcs=2, group=Best Frans
+──────────────────────────────────────────────────
+    PCA: 15 features → 2 PCs ([0.442 0.306] var explained)
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0010
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.7420
+
+──────────────────────────────────────────────────
+  n_pcs=2, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 2 PCs ([0.267 0.208] var explained)
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0005
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.6422
+
+──────────────────────────────────────────────────
+  n_pcs=3, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 3 PCs ([0.293 0.213 0.143] var explained)
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0020
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.1662
+
+──────────────────────────────────────────────────
+  n_pcs=3, group=Best Frans
+──────────────────────────────────────────────────
+    PCA: 15 features → 3 PCs ([0.442 0.306 0.164] var explained)
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0014
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.9096
+
+──────────────────────────────────────────────────
+  n_pcs=3, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 3 PCs ([0.267 0.208 0.115] var explained)
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0007
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.7898
+
+──────────────────────────────────────────────────
+  n_pcs=4, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 4 PCs ([0.293 0.213 0.143 0.11 ] var explained)
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0025
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.1660
+
+──────────────────────────────────────────────────
+  n_pcs=4, group=Best Frans
+──────────────────────────────────────────────────
+    PCA: 15 features → 4 PCs ([0.442 0.306 0.164 0.089] var explained)
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0040
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.4104
+
+──────────────────────────────────────────────────
+  n_pcs=4, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 4 PCs ([0.267 0.208 0.115 0.103] var explained)
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0012
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.7898
+
+──────────────────────────────────────────────────
+  n_pcs=5, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 5 PCs ([0.293 0.213 0.143 0.11  0.098] var explained)
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0028
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.2168
+
+──────────────────────────────────────────────────
+  n_pcs=5, group=Best Frans
+──────────────────────────────────────────────────
+    Capped to 4 PCs (only 5 monkeys)
+    PCA: 15 features → 4 PCs ([0.442 0.306 0.164 0.089] var explained)
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0040
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.4104
+
+──────────────────────────────────────────────────
+  n_pcs=5, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 5 PCs ([0.267 0.208 0.115 0.103 0.085] var explained)
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0026
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.4566
+
+
+======================================================================
+PCs SWEEP SUMMARY — full_profile, AMG, 300-600ms
+======================================================================
+
+ PCs  Group                   R²    Perm p   PCA var
+--------------------------------------------------
+   2  Zombies             0.0012   0.2836n.s.     0.506
+   2  Best Frans          0.0010   0.7420n.s.     0.747
+   2  Instigators         0.0005   0.6422n.s.     0.475
+   3  Zombies             0.0020   0.1662n.s.     0.649
+   3  Best Frans          0.0014   0.9096n.s.     0.911
+   3  Instigators         0.0007   0.7898n.s.     0.590
+   4  Zombies             0.0025   0.1660n.s.     0.759
+   4  Best Frans          0.0040   0.4104n.s.     1.000
+   4  Instigators         0.0012   0.7898n.s.     0.692
+   5  Zombies             0.0028   0.2168n.s.     0.856
+   5  Best Frans          0.0040   0.4104n.s.     1.000
+   5  Instigators         0.0026   0.4566n.s.     0.778
+
+Results saved to social_encoding_pcs_sweep/AMG/300-600ms/
+ns         0.0001  0.9836n.s.     0.4802      123        5     6046      6    2
+summary          Instigators        0.0002  0.8400n.s.     0.1737      123       13    15494      6    2
+================================================================================================
+
+Results saved to social_encoding_sweep/AMG/300-600ms/
+
+======================================================================
+PCs Sweep — full_profile, AMG, 300-600ms
+  PCs: 2 to 5
+  Permutations: 5000
+======================================================================
+
+Loaded 55 files -> 120484 total trials
+Loaded 44161 rows, 19 sessions, 6710 trials, 123 neurons
+Computing trial-level firing rates ...
+
+──────────────────────────────────────────────────
+  n_pcs=2, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 2 PCs ([0.293 0.213] var explained)
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0012
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.2836
+
+──────────────────────────────────────────────────
+  n_pcs=2, group=Best Frans
+──────────────────────────────────────────────────
+    PCA: 15 features → 2 PCs ([0.442 0.306] var explained)
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0010
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.7420
+
+──────────────────────────────────────────────────
+  n_pcs=2, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 2 PCs ([0.267 0.208] var explained)
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0005
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.6422
+
+──────────────────────────────────────────────────
+  n_pcs=3, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 3 PCs ([0.293 0.213 0.143] var explained)
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0020
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.1662
+
+──────────────────────────────────────────────────
+  n_pcs=3, group=Best Frans
+──────────────────────────────────────────────────
+    PCA: 15 features → 3 PCs ([0.442 0.306 0.164] var explained)
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0014
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.9096
+
+──────────────────────────────────────────────────
+  n_pcs=3, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 3 PCs ([0.267 0.208 0.115] var explained)
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0007
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.7898
+
+──────────────────────────────────────────────────
+  n_pcs=4, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 4 PCs ([0.293 0.213 0.143 0.11 ] var explained)
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0025
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.1660
+
+──────────────────────────────────────────────────
+  n_pcs=4, group=Best Frans
+──────────────────────────────────────────────────
+    PCA: 15 features → 4 PCs ([0.442 0.306 0.164 0.089] var explained)
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0040
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.4104
+
+──────────────────────────────────────────────────
+  n_pcs=4, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 4 PCs ([0.267 0.208 0.115 0.103] var explained)
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0012
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.7898
+
+──────────────────────────────────────────────────
+  n_pcs=5, group=Zombies
+──────────────────────────────────────────────────
+    PCA: 30 features → 5 PCs ([0.293 0.213 0.143 0.11  0.098] var explained)
+    Zombies: 10725 trials, 123 neurons, 9 monkeys
+    Marginal R²: 0.0028
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.2168
+
+──────────────────────────────────────────────────
+  n_pcs=5, group=Best Frans
+──────────────────────────────────────────────────
+    Capped to 4 PCs (only 5 monkeys)
+    PCA: 15 features → 4 PCs ([0.442 0.306 0.164 0.089] var explained)
+    Best Frans: 6046 trials, 123 neurons, 5 monkeys
+    Marginal R²: 0.0040
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.4104
+
+──────────────────────────────────────────────────
+  n_pcs=5, group=Instigators
+──────────────────────────────────────────────────
+    PCA: 42 features → 5 PCs ([0.267 0.208 0.115 0.103 0.085] var explained)
+    Instigators: 15494 trials, 123 neurons, 13 monkeys
+    Marginal R²: 0.0026
+      permutation 500/5000
+      permutation 1000/5000
+      permutation 1500/5000
+      permutation 2000/5000
+      permutation 2500/5000
+      permutation 3000/5000
+      permutation 3500/5000
+      permutation 4000/5000
+      permutation 4500/5000
+      permutation 5000/5000
+    Permutation p: 0.4566
+
+
+======================================================================
+PCs SWEEP SUMMARY — full_profile, AMG, 300-600ms
+======================================================================
+
+ PCs  Group                   R²    Perm p   PCA var
+--------------------------------------------------
+   2  Zombies             0.0012   0.2836n.s.     0.506
+   2  Best Frans          0.0010   0.7420n.s.     0.747
+   2  Instigators         0.0005   0.6422n.s.     0.475
+   3  Zombies             0.0020   0.1662n.s.     0.649
+   3  Best Frans          0.0014   0.9096n.s.     0.911
+   3  Instigators         0.0007   0.7898n.s.     0.590
+   4  Zombies             0.0025   0.1660n.s.     0.759
+   4  Best Frans          0.0040   0.4104n.s.     1.000
+   4  Instigators         0.0012   0.7898n.s.     0.692
+   5  Zombies             0.0028   0.2168n.s.     0.856
+   5  Best Frans          0.0040   0.4104n.s.     1.000
+   5  Instigators         0.0026   0.4566n.s.     0.778
+
+Results saved to social_encoding_pcs_sweep/AMG/300-600ms/
