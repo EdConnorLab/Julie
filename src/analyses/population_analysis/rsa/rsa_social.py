@@ -31,6 +31,13 @@ from scipy.stats import spearmanr, rankdata
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
+from rsa_utils import (
+    upper_triangle as _upper_triangle,
+    partial_spearman as _partial_spearman,
+    finite_mask,
+)
+from rsa_core import compare_rdms
+
 
 # ──────────────────────────────────────────────────────────
 # Loading interaction matrices
@@ -134,13 +141,6 @@ def _build_monkey_lookup(interactions, behavior_type, symmetrize=False,
     return monkey_to_group, group_matrices
 
 
-def _upper_triangle(mat):
-    """Extract upper triangle as flat vector."""
-    n = mat.shape[0]
-    idx = np.triu_indices(n, k=1)
-    return mat[idx]
-
-
 def _compute_pairwise_distance(profile_i, profile_j, metric):
     """Compute distance between two profile vectors."""
     if metric == 'correlation':
@@ -215,32 +215,6 @@ def build_rank_distance_matrix(identities, info_df):
                 rank_dist[i, j] = rank_dist[j, i] = d
 
     return rank_dist
-
-
-def _partial_spearman(v_x, v_y, v_confound, mask):
-    """
-    Partial Spearman correlation between v_x and v_y, controlling for v_confound.
-
-    Rank-transforms masked values, OLS-regresses out confound from both,
-    then Pearson-correlates residuals.
-    """
-    r_x = rankdata(v_x[mask])
-    r_y = rankdata(v_y[mask])
-    r_c = rankdata(v_confound[mask])
-
-    C = np.column_stack([np.ones(mask.sum()), r_c])
-
-    betas_x = np.linalg.lstsq(C, r_x, rcond=None)[0]
-    resid_x = r_x - C @ betas_x
-
-    betas_y = np.linalg.lstsq(C, r_y, rcond=None)[0]
-    resid_y = r_y - C @ betas_y
-
-    std_x = np.std(resid_x)
-    std_y = np.std(resid_y)
-    if std_x < 1e-12 or std_y < 1e-12:
-        return 0.0
-    return np.corrcoef(resid_x, resid_y)[0, 1]
 
 
 # ══════════════════════════════════════════════════════════
@@ -331,7 +305,6 @@ def build_combined_interaction_similarity_matrix(identities, interactions,
     """
     n = len(identities)
     combined = np.full((n, n), np.nan)
-    count_matrix = np.zeros((n, n))  # track how many behavior types contributed
 
     for btype in behavior_types:
         sim = build_interaction_similarity_matrix(
@@ -339,16 +312,10 @@ def build_combined_interaction_similarity_matrix(identities, interactions,
             symmetrize=symmetrize, log_transform=log_transform)
 
         valid = ~np.isnan(sim)
-        # Initialize combined entries on first valid behavior type
-        for i in range(n):
-            for j in range(i + 1, n):
-                if valid[i, j]:
-                    if np.isnan(combined[i, j]):
-                        combined[i, j] = combined[j, i] = 0.0
-                    combined[i, j] += sim[i, j]
-                    combined[j, i] += sim[j, i]
-                    count_matrix[i, j] += 1
-                    count_matrix[j, i] += 1
+        # Symmetric add: initialize NaN→0 on first contribution, then sum.
+        new_entries = valid & np.isnan(combined)
+        combined[new_entries] = 0.0
+        combined[valid] = combined[valid] + sim[valid]
 
     return combined
 
@@ -430,12 +397,12 @@ def compare_similarity_matrices(neural_sim, social_sims, n_permutations=0,
         v_neural = _upper_triangle(neural_sim)
         v_social = _upper_triangle(social_sim)
 
-        mask = ~(np.isnan(v_neural) | np.isnan(v_social))
+        mask = finite_mask(v_neural, v_social)
         n_valid = int(mask.sum())
         n_total = len(v_neural)
 
         if n_valid < 3:
-            comparisons[name] = dict(rho=np.nan, p_val=np.nan, n_pairs=n_valid,
+            comparisons[name] = dict(rho=np.nan, p_val=None, n_pairs=n_valid,
                                      n_total_pairs=n_total, null_distribution=None)
             continue
 
@@ -450,11 +417,14 @@ def compare_similarity_matrices(neural_sim, social_sims, n_permutations=0,
 
             for perm_i in range(n_permutations):
                 perm = rng.permutation(n)
-                shuffled = neural_sim[np.ix_(perm, perm)]
-                v_shuf = _upper_triangle(shuffled)
-                null_dist[perm_i], _ = spearmanr(v_shuf[mask], v_social[mask])
+                v_shuf = _upper_triangle(neural_sim[np.ix_(perm, perm)])
+                m = finite_mask(v_shuf, v_social)
+                if m.sum() < 3:
+                    null_dist[perm_i] = np.nan
+                    continue
+                null_dist[perm_i], _ = spearmanr(v_shuf[m], v_social[m])
 
-            p_val = np.mean(np.abs(null_dist) >= np.abs(rho))
+            p_val = float(np.nanmean(np.abs(null_dist) >= np.abs(rho)))
 
         comparisons[name] = dict(rho=rho, p_val=p_val, n_pairs=n_valid,
                                   n_total_pairs=n_total, null_distribution=null_dist)
@@ -466,60 +436,54 @@ def compare_similarity_matrices(neural_sim, social_sims, n_permutations=0,
     return comparisons
 
 
-def compare_similarity_by_group(neural_sim, social_sims, identities,
-                                 info_df, n_permutations=0, n_bootstrap=0,
-                                 rng_seed=42, confound_matrix=None):
-    """
-    Compare similarity matrices per group.
+def _empty_group_result(n_pairs=0):
+    return {'rho': np.nan, 'p_val': None, 'n_pairs': int(n_pairs),
+            'ci_low': np.nan, 'ci_high': np.nan, 'null_distribution': None}
 
-    Parameters
-    ----------
-    confound_matrix : ndarray (n, n) or None
-        If provided, partial out this matrix (e.g. rank distance) from
-        the neural–social correlation within each group.
+
+def _per_group_correlate(neural_mat, social_mats, identities, info_df,
+                          n_permutations=0, n_bootstrap=0, rng_seed=42,
+                          confound_matrix=None):
+    """
+    Spearman ρ between `neural_mat` and each `social_mats[name]`, computed
+    within each group. Handles permutation tests (recomputing the NaN mask
+    on every shuffle) and bootstrap CIs. Supports a single confound matrix
+    for partial Spearman.
 
     Returns
     -------
-    group_comparisons : dict {name: {group: {rho, p_val, n_pairs, ...}}}
+    {name: {group: {rho, p_val, n_pairs, ci_low, ci_high, null_distribution}}}
     """
     group_indices = _get_group_indices(identities, info_df)
-    group_comparisons = {}
+    out = {}
 
-    for name, social_sim in social_sims.items():
-        group_comparisons[name] = {}
+    for name, social_mat in social_mats.items():
+        out[name] = {}
 
         for group_name, indices in group_indices.items():
             if len(indices) < 3:
-                group_comparisons[name][group_name] = {
-                    'rho': np.nan, 'p_val': np.nan, 'n_pairs': 0,
-                    'ci_low': np.nan, 'ci_high': np.nan,
-                    'null_distribution': None
-                }
+                out[name][group_name] = _empty_group_result()
                 continue
 
             idx = np.array(indices)
-            neural_sub = neural_sim[np.ix_(idx, idx)]
-            social_sub = social_sim[np.ix_(idx, idx)]
+            neural_sub = neural_mat[np.ix_(idx, idx)]
+            social_sub = social_mat[np.ix_(idx, idx)]
 
             v_neural = _upper_triangle(neural_sub)
             v_social = _upper_triangle(social_sub)
 
-            mask = ~(np.isnan(v_neural) | np.isnan(v_social))
             v_confound = None
             if confound_matrix is not None:
-                confound_sub = confound_matrix[np.ix_(idx, idx)]
-                v_confound = _upper_triangle(confound_sub)
-                mask &= ~np.isnan(v_confound)
+                v_confound = _upper_triangle(confound_matrix[np.ix_(idx, idx)])
+
+            mask = (finite_mask(v_neural, v_social, v_confound)
+                    if v_confound is not None
+                    else finite_mask(v_neural, v_social))
 
             n_valid = int(mask.sum())
-            min_required = 4 if confound_matrix is not None else 3
-
+            min_required = 4 if v_confound is not None else 3
             if n_valid < min_required:
-                group_comparisons[name][group_name] = {
-                    'rho': np.nan, 'p_val': np.nan, 'n_pairs': n_valid,
-                    'ci_low': np.nan, 'ci_high': np.nan,
-                    'null_distribution': None
-                }
+                out[name][group_name] = _empty_group_result(n_valid)
                 continue
 
             if v_confound is not None:
@@ -533,18 +497,21 @@ def compare_similarity_by_group(neural_sim, social_sims, identities,
                 rng = np.random.default_rng(rng_seed)
                 n_sub = neural_sub.shape[0]
                 null_dist = np.zeros(n_permutations)
-
                 for perm_i in range(n_permutations):
                     perm = rng.permutation(n_sub)
-                    shuffled = neural_sub[np.ix_(perm, perm)]
-                    v_shuf = _upper_triangle(shuffled)
+                    v_shuf = _upper_triangle(neural_sub[np.ix_(perm, perm)])
+                    m = (finite_mask(v_shuf, v_social, v_confound)
+                         if v_confound is not None
+                         else finite_mask(v_shuf, v_social))
+                    if m.sum() < min_required:
+                        null_dist[perm_i] = np.nan
+                        continue
                     if v_confound is not None:
                         null_dist[perm_i] = _partial_spearman(
-                            v_shuf, v_social, v_confound, mask)
+                            v_shuf, v_social, v_confound, m)
                     else:
-                        null_dist[perm_i], _ = spearmanr(v_shuf[mask], v_social[mask])
-
-                p_val = np.mean(np.abs(null_dist) >= np.abs(rho))
+                        null_dist[perm_i], _ = spearmanr(v_shuf[m], v_social[m])
+                p_val = float(np.nanmean(np.abs(null_dist) >= np.abs(rho)))
 
             ci_low, ci_high = np.nan, np.nan
             if n_bootstrap > 0 and v_confound is None:
@@ -552,13 +519,31 @@ def compare_similarity_by_group(neural_sim, social_sims, identities,
                     v_neural[mask], v_social[mask],
                     n_bootstrap, rng_seed=rng_seed)
 
-            group_comparisons[name][group_name] = {
+            out[name][group_name] = {
                 'rho': rho, 'p_val': p_val, 'n_pairs': n_valid,
                 'ci_low': ci_low, 'ci_high': ci_high,
-                'null_distribution': null_dist
+                'null_distribution': null_dist,
             }
 
-    return group_comparisons
+    return out
+
+
+def compare_similarity_by_group(neural_sim, social_sims, identities,
+                                 info_df, n_permutations=0, n_bootstrap=0,
+                                 rng_seed=42, confound_matrix=None):
+    """
+    Compare similarity matrices per group. See _per_group_correlate.
+
+    Parameters
+    ----------
+    confound_matrix : ndarray (n, n) or None
+        If provided, partial out this matrix (e.g. rank distance) from
+        the neural–social correlation within each group.
+    """
+    return _per_group_correlate(
+        neural_sim, social_sims, identities, info_df,
+        n_permutations=n_permutations, n_bootstrap=n_bootstrap,
+        rng_seed=rng_seed, confound_matrix=confound_matrix)
 
 
 # ══════════════════════════════════════════════════════════
@@ -834,8 +819,6 @@ def build_social_rdms(identities, interactions, behavior_types=None,
 def compare_neural_to_social(neural_rdm, social_rdms, n_permutations=0,
                               rng_seed=42):
     """Compare neural RDM to each social RDM (both dissimilarity)."""
-    from rsa_core import compare_rdms
-
     comparisons = {}
     for name, social_rdm in social_rdms.items():
         result = compare_rdms(neural_rdm, social_rdm,
@@ -866,83 +849,10 @@ def compare_neural_to_social_by_group(neural_rdm, social_rdms, identities,
     confound_matrix : ndarray (n, n) or None
         If provided, partial out this matrix (e.g. rank distance).
     """
-    group_indices = _get_group_indices(identities, info_df)
-    group_comparisons = {}
-
-    for rdm_name, social_rdm in social_rdms.items():
-        group_comparisons[rdm_name] = {}
-
-        for group_name, indices in group_indices.items():
-            if len(indices) < 3:
-                group_comparisons[rdm_name][group_name] = {
-                    'rho': np.nan, 'p_val': np.nan, 'n_pairs': 0,
-                    'ci_low': np.nan, 'ci_high': np.nan,
-                    'null_distribution': None
-                }
-                continue
-
-            idx = np.array(indices)
-            neural_sub = neural_rdm[np.ix_(idx, idx)]
-            social_sub = social_rdm[np.ix_(idx, idx)]
-
-            v_neural = _upper_triangle(neural_sub)
-            v_social = _upper_triangle(social_sub)
-
-            mask = ~(np.isnan(v_neural) | np.isnan(v_social))
-            v_confound = None
-            if confound_matrix is not None:
-                confound_sub = confound_matrix[np.ix_(idx, idx)]
-                v_confound = _upper_triangle(confound_sub)
-                mask &= ~np.isnan(v_confound)
-
-            n_valid = int(mask.sum())
-            min_required = 4 if confound_matrix is not None else 3
-
-            if n_valid < min_required:
-                group_comparisons[rdm_name][group_name] = {
-                    'rho': np.nan, 'p_val': np.nan, 'n_pairs': n_valid,
-                    'ci_low': np.nan, 'ci_high': np.nan,
-                    'null_distribution': None
-                }
-                continue
-
-            if v_confound is not None:
-                rho = _partial_spearman(v_neural, v_social, v_confound, mask)
-            else:
-                rho, _ = spearmanr(v_neural[mask], v_social[mask])
-
-            p_val = None
-            null_dist = None
-            if n_permutations > 0:
-                rng = np.random.default_rng(rng_seed)
-                n_sub = neural_sub.shape[0]
-                null_dist = np.zeros(n_permutations)
-
-                for perm_i in range(n_permutations):
-                    perm = rng.permutation(n_sub)
-                    shuffled = neural_sub[np.ix_(perm, perm)]
-                    v_shuf = _upper_triangle(shuffled)
-                    if v_confound is not None:
-                        null_dist[perm_i] = _partial_spearman(
-                            v_shuf, v_social, v_confound, mask)
-                    else:
-                        null_dist[perm_i], _ = spearmanr(v_shuf[mask], v_social[mask])
-
-                p_val = np.mean(np.abs(null_dist) >= np.abs(rho))
-
-            ci_low, ci_high = np.nan, np.nan
-            if n_bootstrap > 0 and v_confound is None:
-                ci_low, ci_high, _ = _bootstrap_rho_ci(
-                    v_neural[mask], v_social[mask],
-                    n_bootstrap, rng_seed=rng_seed)
-
-            group_comparisons[rdm_name][group_name] = {
-                'rho': rho, 'p_val': p_val, 'n_pairs': n_valid,
-                'ci_low': ci_low, 'ci_high': ci_high,
-                'null_distribution': null_dist
-            }
-
-    return group_comparisons
+    return _per_group_correlate(
+        neural_rdm, social_rdms, identities, info_df,
+        n_permutations=n_permutations, n_bootstrap=n_bootstrap,
+        rng_seed=rng_seed, confound_matrix=confound_matrix)
 
 
 # ──────────────────────────────────────────────────────────

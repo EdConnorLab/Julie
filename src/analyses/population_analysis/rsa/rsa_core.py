@@ -11,8 +11,9 @@ Core RSA functions:
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import squareform, pdist
-from scipy.stats import spearmanr, rankdata
-from itertools import combinations
+from scipy.stats import spearmanr
+
+from rsa_utils import upper_triangle as _upper_triangle, partial_spearman, finite_mask
 
 
 # ──────────────────────────────────────────────────────────
@@ -60,6 +61,11 @@ def compute_firing_rates(df, identities, window, min_reps):
     Compute trial-averaged mean firing rate per neuron per stimulus identity
     within a time window.
 
+    Each neuron is averaged over the trials on which IT was recorded
+    (so neurons missing from some trials are not biased toward zero).
+    Identities are filtered by the number of *trials shown for that identity*
+    (regardless of which neurons recorded them).
+
     Parameters
     ----------
     df : DataFrame
@@ -70,12 +76,13 @@ def compute_firing_rates(df, identities, window, min_reps):
     window : tuple (start_s, end_s)
         Time window relative to epoch start.
     min_reps : int
-        Minimum repetitions per identity; identities with fewer are dropped.
+        Minimum trials per identity; identities with fewer are dropped.
 
     Returns
     -------
     rate_matrix : ndarray, shape (n_identities, n_neurons)
-        Trial-averaged firing rate (spikes/s).
+        Trial-averaged firing rate (spikes/s). NaN where a neuron was
+        not recorded on any kept trial for that identity.
     valid_identities : list of str
         Identities that survived the min_reps filter (same order as rows).
     neuron_ids : list
@@ -88,38 +95,63 @@ def compute_firing_rates(df, identities, window, min_reps):
     neuron_to_idx = {nid: i for i, nid in enumerate(neuron_ids)}
     n_neurons = len(neuron_ids)
 
-    # Get trial-level metadata (one row per trial)
-    trial_meta = (df.groupby('TaskField')
-                    .first()[['MonkeyName']]
+    # Per-trial spike count for every (TaskField, NeuronID) row in df
+    # Vectorized over rows; avoids the previous double iterrows loop.
+    epoch_starts = df['EpochStartStop'].map(lambda x: x[0]).to_numpy()
+    spike_arrays = df['SpikeTimes'].to_numpy(dtype=object)
+    counts = np.empty(len(df), dtype=np.int64)
+    for i, (spk, t0) in enumerate(zip(spike_arrays, epoch_starts)):
+        s = np.asarray(spk) - t0
+        counts[i] = np.count_nonzero((s >= win_start) & (s < win_end))
+
+    counts_df = pd.DataFrame({
+        'TaskField': df['TaskField'].to_numpy(),
+        'NeuronID':  df['NeuronID'].to_numpy(),
+        'Count':     counts,
+    })
+
+    # Identity → list of TaskFields (trials)
+    trial_meta = (df.groupby('TaskField')['MonkeyName'].first()
                     .reset_index())
 
     valid_identities = []
     rate_rows = []
 
     for monkey in identities:
-        trials = trial_meta[trial_meta['MonkeyName'] == monkey]['TaskField'].values
+        trials = trial_meta.loc[trial_meta['MonkeyName'] == monkey,
+                                'TaskField'].to_numpy()
         if len(trials) < min_reps:
             continue
 
-        # Accumulate spike counts across trials for this identity
-        sum_counts = np.zeros(n_neurons, dtype=float)
-        n_trials = 0
+        sub = counts_df[counts_df['TaskField'].isin(trials)]
+        # sum counts and trial counts per neuron (handles missing-neuron trials)
+        sum_counts   = np.zeros(n_neurons, dtype=float)
+        trial_counts = np.zeros(n_neurons, dtype=float)
+        if len(sub):
+            agg = sub.groupby('NeuronID')['Count'].agg(['sum', 'count'])
+            for nid, row in agg.iterrows():
+                j = neuron_to_idx[nid]
+                sum_counts[j]   = row['sum']
+                trial_counts[j] = row['count']
 
-        for tf in trials:
-            trial_rows = df[df['TaskField'] == tf]
-            for _, row in trial_rows.iterrows():
-                n_idx = neuron_to_idx[row['NeuronID']]
-                epoch_start = row['EpochStartStop'][0]
-                spk = row['SpikeTimes'] - epoch_start
-                count = np.sum((spk >= win_start) & (spk < win_end))
-                sum_counts[n_idx] += count
-            n_trials += 1
-
-        avg_rate = (sum_counts / n_trials) / win_dur  # spikes per second
+        with np.errstate(invalid='ignore', divide='ignore'):
+            avg_rate = np.where(trial_counts > 0,
+                                sum_counts / trial_counts / win_dur,
+                                np.nan)
         rate_rows.append(avg_rate)
         valid_identities.append(monkey)
 
-    rate_matrix = np.array(rate_rows)  # (n_identities, n_neurons)
+    rate_matrix = np.asarray(rate_rows)  # (n_identities, n_neurons)
+
+    # If a neuron was not recorded on ANY kept trial for some identity, its
+    # rate is NaN. Fill with 0 to keep the downstream RDM well-defined and
+    # warn so the user knows.
+    if rate_matrix.size and np.isnan(rate_matrix).any():
+        n_nan = int(np.isnan(rate_matrix).sum())
+        print(f"  compute_firing_rates: {n_nan} (identity, neuron) cells "
+              f"had no recorded trials — filling with 0")
+        rate_matrix = np.nan_to_num(rate_matrix, nan=0.0)
+
     return rate_matrix, valid_identities, neuron_ids
 
 
@@ -179,26 +211,27 @@ def _categorical_rdm(labels):
     return rdm
 
 
-def _ordinal_distance_rdm(values):
+def _absdiff_rdm(values):
     """
-    |rank_i - rank_j| distance RDM from ordinal values.
-    NaN entries are masked by setting their distances to NaN.
+    |value_i - value_j| distance RDM. NaN entries propagate (those pairs
+    end up NaN). Used for both ordinal ranks and continuous values
+    (math is identical; when `values` are integer ranks this is rank distance).
     """
-    n = len(values)
-    rdm = np.full((n, n), np.nan, dtype=float)
-    for i in range(n):
-        rdm[i, i] = 0.0
-        for j in range(i + 1, n):
-            if np.isnan(values[i]) or np.isnan(values[j]):
-                continue
-            d = abs(values[i] - values[j])
-            rdm[i, j] = rdm[j, i] = d
+    v = np.asarray(values, dtype=float)
+    rdm = np.abs(v[:, None] - v[None, :])
+    # Wherever either operand was NaN, np.abs already returns NaN; ensure
+    # the diagonal is 0 even if a value is NaN.
+    diag = np.diag_indices_from(rdm)
+    rdm[diag] = np.where(np.isnan(v), np.nan, 0.0)
+    # Replace diagonal NaNs with 0 (a monkey is identical to itself
+    # whether or not its metadata is known)
+    rdm[diag] = 0.0
     return rdm
 
 
-def _continuous_distance_rdm(values):
-    """Absolute difference RDM from continuous values."""
-    return _ordinal_distance_rdm(values)  # same math
+# Backwards-compat aliases
+_ordinal_distance_rdm    = _absdiff_rdm
+_continuous_distance_rdm = _absdiff_rdm
 
 
 def build_model_rdms(identities, info_df, factors):
@@ -293,13 +326,6 @@ def build_model_rdms(identities, info_df, factors):
 # 4. RDM comparison
 # ──────────────────────────────────────────────────────────
 
-def _upper_triangle(rdm):
-    """Extract upper triangle as a flat vector (excluding diagonal)."""
-    n = rdm.shape[0]
-    idx = np.triu_indices(n, k=1)
-    return rdm[idx]
-
-
 def compare_rdms(neural_rdm, model_rdm, n_permutations=0, rng_seed=42):
     """
     Spearman correlation between vectorized upper triangles of two RDMs.
@@ -324,10 +350,9 @@ def compare_rdms(neural_rdm, model_rdm, n_permutations=0, rng_seed=42):
     v_neural = _upper_triangle(neural_rdm)
     v_model = _upper_triangle(model_rdm)
 
-    # Mask NaNs (from missing rank/age data)
-    mask = ~(np.isnan(v_neural) | np.isnan(v_model))
+    mask = finite_mask(v_neural, v_model)
     if mask.sum() < 3:
-        return dict(rho=np.nan, p_val=np.nan, null_distribution=None)
+        return dict(rho=np.nan, p_val=None, null_distribution=None)
 
     rho, _ = spearmanr(v_neural[mask], v_model[mask])
 
@@ -338,15 +363,20 @@ def compare_rdms(neural_rdm, model_rdm, n_permutations=0, rng_seed=42):
         rng = np.random.default_rng(rng_seed)
         n = neural_rdm.shape[0]
         null_dist = np.zeros(n_permutations)
+        v_model_obs = v_model  # alias
 
         for perm_i in range(n_permutations):
             perm = rng.permutation(n)
-            shuffled = neural_rdm[np.ix_(perm, perm)]
-            v_shuf = _upper_triangle(shuffled)
-            null_dist[perm_i], _ = spearmanr(v_shuf[mask], v_model[mask])
+            v_shuf = _upper_triangle(neural_rdm[np.ix_(perm, perm)])
+            # Re-mask each permutation in case the shuffled neural triangle
+            # has different NaN positions than the original.
+            m = finite_mask(v_shuf, v_model_obs)
+            if m.sum() < 3:
+                null_dist[perm_i] = np.nan
+                continue
+            null_dist[perm_i], _ = spearmanr(v_shuf[m], v_model_obs[m])
 
-        # Two-tailed p-value
-        p_val = np.mean(np.abs(null_dist) >= np.abs(rho))
+        p_val = float(np.nanmean(np.abs(null_dist) >= np.abs(rho)))
 
     return dict(rho=rho, p_val=p_val, null_distribution=null_dist)
 
@@ -384,40 +414,11 @@ def compare_rdms_partial(neural_rdm, target_rdm, confound_rdms,
     v_target = _upper_triangle(target_rdm)
     v_confounds = [_upper_triangle(c) for c in confound_rdms]
 
-    # Build combined NaN mask across neural, target, and all confounds
-    mask = ~(np.isnan(v_neural) | np.isnan(v_target))
-    for vc in v_confounds:
-        mask &= ~np.isnan(vc)
-
+    mask = finite_mask(v_neural, v_target, *v_confounds)
     if mask.sum() < 3 + len(confound_rdms):
-        return dict(rho=np.nan, p_val=np.nan, null_distribution=None)
+        return dict(rho=np.nan, p_val=None, null_distribution=None)
 
-    def _partial_rho(v_n, v_t, v_cs, m):
-        """Compute partial Spearman rho on masked data."""
-        # Rank transform (Spearman = Pearson on ranks)
-        r_n = rankdata(v_n[m])
-        r_t = rankdata(v_t[m])
-
-        # Build confound design matrix with intercept
-        C = np.column_stack([rankdata(vc[m]) for vc in v_cs])
-        C = np.column_stack([np.ones(m.sum()), C])
-
-        # Regress confounds out of neural ranks
-        betas_n = np.linalg.lstsq(C, r_n, rcond=None)[0]
-        resid_n = r_n - C @ betas_n
-
-        # Regress confounds out of target ranks
-        betas_t = np.linalg.lstsq(C, r_t, rcond=None)[0]
-        resid_t = r_t - C @ betas_t
-
-        # Pearson on residuals = partial Spearman
-        std_n = np.std(resid_n)
-        std_t = np.std(resid_t)
-        if std_n < 1e-12 or std_t < 1e-12:
-            return 0.0
-        return np.corrcoef(resid_n, resid_t)[0, 1]
-
-    rho = _partial_rho(v_neural, v_target, v_confounds, mask)
+    rho = partial_spearman(v_neural, v_target, v_confounds, mask)
 
     p_val = None
     null_dist = None
@@ -429,11 +430,14 @@ def compare_rdms_partial(neural_rdm, target_rdm, confound_rdms,
 
         for perm_i in range(n_permutations):
             perm = rng.permutation(n)
-            shuffled = neural_rdm[np.ix_(perm, perm)]
-            v_shuf = _upper_triangle(shuffled)
-            null_dist[perm_i] = _partial_rho(v_shuf, v_target, v_confounds, mask)
+            v_shuf = _upper_triangle(neural_rdm[np.ix_(perm, perm)])
+            m = finite_mask(v_shuf, v_target, *v_confounds)
+            if m.sum() < 3 + len(confound_rdms):
+                null_dist[perm_i] = np.nan
+                continue
+            null_dist[perm_i] = partial_spearman(v_shuf, v_target, v_confounds, m)
 
-        p_val = np.mean(np.abs(null_dist) >= np.abs(rho))
+        p_val = float(np.nanmean(np.abs(null_dist) >= np.abs(rho)))
 
     return dict(rho=rho, p_val=p_val, null_distribution=null_dist)
 
@@ -476,7 +480,7 @@ def run_rsa_session(df, session, info_df, cfg):
         return None
 
     # Optional normalization
-    if cfg.normalization != None:
+    if cfg.normalization is not None:
         rate_matrix = normalize_rates(rate_matrix, method=cfg.normalization,
                                       soft_const=cfg.soft_normalize_const)
 
@@ -577,7 +581,7 @@ def run_rsa_pseudopop(df, info_df, cfg):
     print(f"Pseudo-population matrix: {combined_matrix.shape}")
 
     # Optional normalization
-    if cfg.normalization != None:
+    if cfg.normalization is not None:
         combined_matrix = normalize_rates(combined_matrix, method=cfg.normalization,
                                           soft_const=cfg.soft_normalize_const)
 

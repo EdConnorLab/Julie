@@ -40,6 +40,7 @@ from rsa_core import (
     build_neural_rdm,
     normalize_rates,
 )
+from rsa_utils import upper_triangle as _upper_triangle, stars as _stars
 
 
 # ──────────────────────────────────────────────────────────
@@ -192,13 +193,6 @@ def _build_sign_corrected_rdms(rate_matrix, signs, metric, mode):
 # Corrected permutation test
 # ──────────────────────────────────────────────────────────
 
-def _upper_triangle(rdm):
-    """Extract upper triangle of a square matrix as 1-D vector."""
-    n = rdm.shape[0]
-    idx = np.triu_indices(n, k=1)
-    return rdm[idx]
-
-
 def compare_with_corrected_permutation(rate_matrix, scores, social_rdms,
                                         identities, info_df, metric,
                                         mode, n_permutations, rng_seed):
@@ -255,29 +249,37 @@ def compare_with_corrected_permutation(rate_matrix, scores, social_rdms,
     observed_rdms = _build_sign_corrected_rdms(rate_matrix, signs, metric, mode)
 
     # Compute observed ρ for each variant × social matrix × group
-    def _compute_rho(neural_rdm, social_rdm, pairs):
-        """Spearman ρ on within-group pairs only."""
+    def _compute_rho_and_n(neural_rdm, social_rdm, pairs):
+        """Spearman ρ on within-group pairs only; also returns n_valid."""
         if neural_rdm is None or len(pairs) < 3:
-            return np.nan
+            return np.nan, 0
         n_vec = np.array([neural_rdm[i, j] for i, j in pairs])
         s_vec = np.array([social_rdm[i, j] for i, j in pairs])
-        # Drop NaN pairs (cross-group in social RDM)
         valid = ~(np.isnan(n_vec) | np.isnan(s_vec))
-        if valid.sum() < 3:
-            return np.nan
+        n_valid = int(valid.sum())
+        if n_valid < 3:
+            return np.nan, n_valid
         rho, _ = spearmanr(n_vec[valid], s_vec[valid])
-        return rho
+        return rho, n_valid
 
-    # Structure: {variant: {social_name: {group: observed_rho}}}
+    def _compute_rho(neural_rdm, social_rdm, pairs):
+        return _compute_rho_and_n(neural_rdm, social_rdm, pairs)[0]
+
+    # Structure: {variant: {social_name: {group: (observed_rho, n_valid)}}}
     obs = {}
+    obs_n = {}
     variants = list(observed_rdms.keys())
     for var in variants:
         obs[var] = {}
+        obs_n[var] = {}
         for soc_name, soc_rdm in social_rdms.items():
             obs[var][soc_name] = {}
+            obs_n[var][soc_name] = {}
             for group, pairs in group_pairs.items():
-                obs[var][soc_name][group] = _compute_rho(
+                rho_g, n_g = _compute_rho_and_n(
                     observed_rdms[var], soc_rdm, pairs)
+                obs[var][soc_name][group] = rho_g
+                obs_n[var][soc_name][group] = n_g
 
     # ── Permutation: shuffle scores → re-estimate signs → rebuild RDMs ──
     null_dist = {var: {sn: {g: [] for g in group_pairs}
@@ -319,15 +321,15 @@ def compare_with_corrected_permutation(rate_matrix, scores, social_rdms,
                 null_arr = np.array(null_dist[var][soc_name][group])
 
                 if np.isnan(obs_rho):
-                    p_val = np.nan
+                    p_val = None
                 else:
                     # Two-tailed
-                    p_val = float(np.mean(np.abs(null_arr) >= np.abs(obs_rho)))
+                    p_val = float(np.nanmean(np.abs(null_arr) >= np.abs(obs_rho)))
 
                 results[var][soc_name][group] = {
                     'rho': obs_rho,
                     'p_val': p_val,
-                    'n_pairs': len(pairs),
+                    'n_pairs': obs_n[var][soc_name][group],
                 }
 
     return results, observed_rdms, signs, slopes
@@ -489,15 +491,6 @@ def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
 # Pretty-print results
 # ──────────────────────────────────────────────────────────
 
-def _stars(p):
-    if p is None or (isinstance(p, float) and np.isnan(p)):
-        return ''
-    if p < 0.001: return '***'
-    if p < 0.01:  return '**'
-    if p < 0.05:  return '*'
-    return ''
-
-
 def print_sign_corrected_results(comparisons):
     """Print results in a readable table, one section per RDM variant."""
     for variant, by_social in comparisons.items():
@@ -524,5 +517,6 @@ def print_sign_corrected_results(comparisons):
                 if np.isnan(rho):
                     row += f"{'—':>25s}"
                 else:
-                    row += f"{rho:+.4f} (n={n}) p={p:.3f}{star:3s}".rjust(25)
+                    p_str = f"p={p:.3f}" if p is not None else "p=  -  "
+                    row += f"{rho:+.4f} (n={n}) {p_str}{star:3s}".rjust(25)
             print(row)

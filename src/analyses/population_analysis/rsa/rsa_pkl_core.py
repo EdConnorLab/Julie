@@ -157,40 +157,56 @@ def compute_firing_rates_pkl(df, identities, neuron_windows, min_reps,
 
     win_durs = win_lookup[:, 1] - win_lookup[:, 0]   # seconds, per column
 
-    # Trial metadata (one row per trial)
-    trial_meta = (df.groupby('TaskField')
-                    .first()[['MonkeyName']]
-                    .reset_index())
+    # Vectorized per-row spike count using each row's neuron-specific window.
+    nid_arr = df['NeuronID'].to_numpy()
+    row_neuron_idx = np.array([neuron_to_idx[n] for n in nid_arr])
+    epoch_starts = df['EpochStartStop'].map(lambda x: x[0]).to_numpy()
+    spike_arrays = df['SpikeTimes'].to_numpy(dtype=object)
+    counts = np.empty(len(df), dtype=np.int64)
+    for i, (spk, t0, j) in enumerate(zip(spike_arrays, epoch_starts, row_neuron_idx)):
+        s = np.asarray(spk) - t0
+        counts[i] = np.count_nonzero((s >= win_lookup[j, 0]) & (s < win_lookup[j, 1]))
+
+    counts_df = pd.DataFrame({
+        'TaskField': df['TaskField'].to_numpy(),
+        'NeuronID':  nid_arr,
+        'Count':     counts,
+    })
+
+    trial_meta = (df.groupby('TaskField')['MonkeyName'].first().reset_index())
 
     valid_identities = []
     rate_rows = []
 
     for monkey in identities:
-        trials = trial_meta[trial_meta['MonkeyName'] == monkey]['TaskField'].values
+        trials = trial_meta.loc[trial_meta['MonkeyName'] == monkey,
+                                'TaskField'].to_numpy()
         if len(trials) < min_reps:
             continue
 
-        sum_counts = np.zeros(n_neurons, dtype=float)
-        n_trials = 0
+        sub = counts_df[counts_df['TaskField'].isin(trials)]
+        sum_counts   = np.zeros(n_neurons, dtype=float)
+        trial_counts = np.zeros(n_neurons, dtype=float)
+        if len(sub):
+            agg = sub.groupby('NeuronID')['Count'].agg(['sum', 'count'])
+            for nid, row in agg.iterrows():
+                j = neuron_to_idx[nid]
+                sum_counts[j]   = row['sum']
+                trial_counts[j] = row['count']
 
-        for tf in trials:
-            trial_rows = df[df['TaskField'] == tf]
-            for _, row in trial_rows.iterrows():
-                n_idx = neuron_to_idx[row['NeuronID']]
-                w_start = win_lookup[n_idx, 0]
-                w_end   = win_lookup[n_idx, 1]
-                epoch_start = row['EpochStartStop'][0]
-                spk = row['SpikeTimes'] - epoch_start
-                count = np.sum((spk >= w_start) & (spk < w_end))
-                sum_counts[n_idx] += count
-            n_trials += 1
-
-        avg_counts = sum_counts / n_trials              # mean spike count per trial, per neuron
-        avg_rate   = avg_counts / win_durs              # spikes/s, neuron-specific dur
+        with np.errstate(invalid='ignore', divide='ignore'):
+            avg_rate = np.where(trial_counts > 0,
+                                sum_counts / trial_counts / win_durs,
+                                np.nan)
         rate_rows.append(avg_rate)
         valid_identities.append(monkey)
 
     rate_matrix = np.array(rate_rows)   # (n_identities, n_neurons)
+    if rate_matrix.size and np.isnan(rate_matrix).any():
+        n_nan = int(np.isnan(rate_matrix).sum())
+        print(f"  compute_firing_rates_pkl: {n_nan} (identity, neuron) cells "
+              f"had no recorded trials — filling with 0")
+        rate_matrix = np.nan_to_num(rate_matrix, nan=0.0)
     return rate_matrix, valid_identities, neuron_ids
 
 

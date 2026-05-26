@@ -33,11 +33,12 @@ from itertools import combinations
 from scipy.stats import spearmanr
 
 from rsa_core import build_neural_rdm
-from rsa_social import (
-    build_social_rdms,
-    _get_group_indices,
-    _upper_triangle,
-    _partial_spearman,
+from rsa_social import build_social_rdms, _get_group_indices
+from rsa_utils import (
+    upper_triangle as _upper_triangle,
+    partial_spearman as _partial_spearman,
+    finite_mask,
+    stars as _stars,
 )
 
 
@@ -70,6 +71,8 @@ def _subset_result(result, sub_idx, cfg):
 # ──────────────────────────────────────────────────────────
 
 def _rho_or_partial(v_neural, v_social, v_confound, mask):
+    if mask.sum() < (4 if v_confound is not None else 3):
+        return np.nan
     if v_confound is not None:
         return _partial_spearman(v_neural, v_social, v_confound, mask)
     r, _ = spearmanr(v_neural[mask], v_social[mask])
@@ -124,11 +127,10 @@ def _draw_stats(neural_rdm, social_rdms, identities, info_df,
             s_sub = social[np.ix_(idx, idx)]
             v_n = _upper_triangle(n_sub)
             v_s = _upper_triangle(s_sub)
-            mask = ~(np.isnan(v_n) | np.isnan(v_s))
-            v_c = None
-            if confound_matrix is not None:
-                v_c = _upper_triangle(confound_matrix[np.ix_(idx, idx)])
-                mask &= ~np.isnan(v_c)
+            v_c = (_upper_triangle(confound_matrix[np.ix_(idx, idx)])
+                   if confound_matrix is not None else None)
+            mask = (finite_mask(v_n, v_s, v_c) if v_c is not None
+                    else finite_mask(v_n, v_s))
 
             min_required = 4 if v_c is not None else 3
             if mask.sum() < min_required:
@@ -143,7 +145,9 @@ def _draw_stats(neural_rdm, social_rdms, identities, info_df,
             null = np.full(n_permutations, np.nan)
             for m_i, p_rdm in enumerate(perm_rdms):
                 v_np = _upper_triangle(p_rdm[np.ix_(idx, idx)])
-                null[m_i] = _rho_or_partial(v_np, v_s, v_c, mask)
+                m_perm = (finite_mask(v_np, v_s, v_c) if v_c is not None
+                          else finite_mask(v_np, v_s))
+                null[m_i] = _rho_or_partial(v_np, v_s, v_c, m_perm)
 
             group_obs[g] = rho
             group_null[g] = null
@@ -175,34 +179,65 @@ def _draw_stats(neural_rdm, social_rdms, identities, info_df,
 # ──────────────────────────────────────────────────────────
 # Aggregation across draws
 # ──────────────────────────────────────────────────────────
-def _aggregate(per_draw, key_path, n_permutations, ci_level=0.95):
-    obs_vals = []
-    p_per_draw = []
+def _collect_nodes(per_draw, key_path):
+    """Walk each draw's nested dict via key_path; return list of {obs, null} dicts."""
+    out = []
     for d in per_draw:
         node = d
         for k in key_path:
-            node = node.get(k, None)
-            if node is None: break
-        if node is None: continue
-        obs = node['obs']
-        null = node['null']
-        if np.isnan(obs): continue
-        obs_vals.append(obs)
-        # p-value for THIS draw
-        valid_null = null[~np.isnan(null)]
-        if len(valid_null) > 0:
-            p_per_draw.append(np.mean(np.abs(valid_null) >= np.abs(obs)))
+            node = node.get(k, None) if node is not None else None
+            if node is None:
+                break
+        if node is not None:
+            out.append(node)
+    return out
 
-    obs_vals = np.array(obs_vals)
+
+def _aggregate(per_draw, key_path, n_permutations, ci_level=0.95):
+    """
+    Aggregate one statistic across draws using the *pooled-null* approach:
+
+        ρ_mean    = mean_d obs_d           (the reported statistic)
+        null_mean[m] = mean_d null_{d,m}   (built once, valid null for ρ_mean)
+        p_val (two-tailed) = mean( |null_mean| ≥ |ρ_mean| )
+
+    Each draw's permutations are independent (different random subsamples +
+    different perms), so the per-perm-index mean is itself a draw from the
+    null distribution of ρ_mean.
+    """
+    nodes = _collect_nodes(per_draw, key_path)
+    obs_vals = np.array([n['obs'] for n in nodes if not np.isnan(n['obs'])],
+                        dtype=float)
+    null_arrays = [n['null'] for n in nodes
+                   if not np.isnan(n['obs']) and n['null'] is not None]
+
+    if len(obs_vals) == 0:
+        return {'mean': np.nan, 'std': np.nan,
+                'ci_low': np.nan, 'ci_high': np.nan,
+                'p_val': None, 'n_valid': 0,
+                'n_draws_total': len(per_draw)}
+
+    rho_mean = float(np.mean(obs_vals))
     alpha = 1.0 - ci_level
+
+    # Pooled null: average across draws at each permutation index.
+    p_val = None
+    if null_arrays:
+        null_stack = np.vstack(null_arrays)            # (n_draws, n_perms)
+        # nanmean down columns: each col is a permutation index across draws
+        null_mean = np.nanmean(null_stack, axis=0)
+        valid = ~np.isnan(null_mean)
+        if valid.any():
+            p_val = float(np.mean(np.abs(null_mean[valid]) >= np.abs(rho_mean)))
+
     return {
-        'mean': float(np.mean(obs_vals)),
-        'std': float(np.std(obs_vals)),
-        'ci_low': float(np.percentile(obs_vals, 100 * alpha / 2)),
-        'ci_high': float(np.percentile(obs_vals, 100 * (1 - alpha / 2))),
-        'p_val': float(np.median(p_per_draw)),  # median p across draws
-        'n_valid': len(obs_vals),
-        'n_draws_total': len(obs_vals),
+        'mean':           rho_mean,
+        'std':            float(np.std(obs_vals)),
+        'ci_low':         float(np.percentile(obs_vals, 100 * alpha / 2)),
+        'ci_high':        float(np.percentile(obs_vals, 100 * (1 - alpha / 2))),
+        'p_val':          p_val,
+        'n_valid':        int(len(obs_vals)),
+        'n_draws_total':  int(len(per_draw)),
     }
 
 
@@ -333,15 +368,6 @@ def run_subsampled_dissimilarity_rsa(result, info_df, interactions, cfg,
 # Pretty printing
 # ──────────────────────────────────────────────────────────
 
-def _stars(p):
-    if p is None or np.isnan(p):
-        return ''
-    if p < 0.001: return '***'
-    if p < 0.01:  return '**'
-    if p < 0.05:  return '*'
-    return ''
-
-
 def print_subsample_summary(summary, title='Subsampled RSA — per-group'):
     pg = summary['per_group']
     meta = summary['meta']
@@ -370,8 +396,10 @@ def print_subsample_summary(summary, title='Subsampled RSA — per-group'):
             if e.get('mean') is None or np.isnan(e.get('mean', np.nan)):
                 row += f"{'--':>26s}"
             else:
-                star = _stars(e.get('p_val'))
-                row += f"  {e['mean']:>+.3f}±{e['std']:.3f} p={e['p_val']:.3f}{star:<3s}"
+                p = e.get('p_val')
+                star = _stars(p)
+                p_str = f"p={p:.3f}" if p is not None else "p=  -  "
+                row += f"  {e['mean']:>+.3f}±{e['std']:.3f} {p_str}{star:<3s}"
         print(row)
     print()
 
@@ -399,14 +427,16 @@ def print_subsample_between_groups(summary,
             if np.isnan(e.get('mean', np.nan)):
                 print(f"    {mat_name:<28s}{'--':>56s}")
                 continue
-            star = _stars(e.get('p_val'))
+            p = e.get('p_val')
+            star = _stars(p)
             ci = f"[{e['ci_low']:+.3f},{e['ci_high']:+.3f}]"
+            p_str = f"{p:.3f}" if p is not None else "  -  "
             print(f"    {mat_name:<28s}"
                   f"{e['mean_rho_a']:>+12.3f}"
                   f"{e['mean_rho_b']:>+12.3f}"
                   f"{e['mean']:>+10.3f}"
                   f"{ci:>22s}"
-                  f"   {e['p_val']:.3f}{star}")
+                  f"   {p_str}{star}")
     print()
 
 
