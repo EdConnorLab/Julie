@@ -13,7 +13,7 @@ import pandas as pd
 from scipy.spatial.distance import squareform, pdist
 from scipy.stats import spearmanr
 
-from rsa_utils import upper_triangle as _upper_triangle, partial_spearman, finite_mask
+from analyses.population_analysis.rsa.rsa_utils import upper_triangle as _upper_triangle, partial_spearman, finite_mask
 
 
 # ──────────────────────────────────────────────────────────
@@ -40,6 +40,15 @@ def normalize_rates(rate_matrix, method='none', soft_const=5.0):
     if method == 'none':
         return rate_matrix
 
+    if method == 'zscore':
+        mu = rate_matrix.mean(axis=0)
+        sd = rate_matrix.std(axis=0, ddof=0)
+        n_flat = np.sum(sd < 1e-6)
+        if n_flat > 0:
+            print(f"  Z-score: {n_flat}/{rate_matrix.shape[1]} neurons had near-zero std (left as-is)")
+        safe_sd = np.where(sd < 1e-6, 1.0, sd)   # avoid division by zero; flat neurons become 0s after mean-sub
+        return (rate_matrix - mu) / safe_sd
+
     if method == 'soft':
         rng = rate_matrix.max(axis=0) - rate_matrix.min(axis=0)
         denom = rng + soft_const
@@ -52,6 +61,253 @@ def normalize_rates(rate_matrix, method='none', soft_const=5.0):
     raise ValueError(f"Unknown normalization method: {method}")
 
 
+def variance_quartile_diagnostic(rate_matrix, info_df, identities, cfg,
+                                 quartiles=(0.25, 0.50, 0.75, 1.0)):
+    """
+    Diagnostic: rebuild the neural RDM using only the top-Q% of neurons
+    ranked by pre-normalization std, and re-run RSA comparisons for each
+    quartile cutoff.
+
+    Use this to check whether RSA structure is driven by a small subset of
+    high-variance neurons (pattern reappears with top 25%) or is distributed
+    (only emerges at 75–100%).
+
+    Parameters
+    ----------
+    rate_matrix : ndarray, shape (n_identities, n_neurons)
+        **Raw** (pre-normalization) firing-rate matrix.
+    info_df : DataFrame
+    identities : list of str
+    cfg : RSAConfig
+    quartiles : tuple of float
+        Cumulative fractions of neurons to include, sorted by descending std.
+        E.g. (0.25, 0.50, 0.75, 1.0) → top 25%, top 50%, top 75%, all.
+
+    Returns
+    -------
+    diag_results : list of dict
+        One entry per quartile with keys:
+        'quantile', 'n_neurons', 'comparisons'
+    """
+    n_neurons = rate_matrix.shape[1]
+    neuron_std = rate_matrix.std(axis=0, ddof=0)
+    # Rank neurons: highest std first
+    ranked_idx = np.argsort(neuron_std)[::-1]
+
+    # Build model RDMs once (shared across quartiles)
+    all_factors = list(cfg.model_factors)
+    for pf in getattr(cfg, 'partial_out', []):
+        if pf not in all_factors:
+            all_factors.append(pf)
+    model_rdms, model_labels = build_model_rdms(identities, info_df, all_factors)
+
+    partial_out = getattr(cfg, 'partial_out', [])
+    diag_results = []
+
+    for q in quartiles:
+        k = max(1, int(np.ceil(n_neurons * q)))
+        sel = ranked_idx[:k]
+        sub_matrix = rate_matrix[:, sel]
+
+        # Apply the same normalization the main pipeline uses
+        if cfg.normalization is not None:
+            sub_matrix = normalize_rates(sub_matrix, method=cfg.normalization,
+                                         soft_const=cfg.soft_normalize_const)
+
+        rdm = build_neural_rdm(sub_matrix, metric=cfg.neural_metric)
+
+        comparisons = {}
+        for factor in cfg.model_factors:
+            confound_factors = [p for p in partial_out if p != factor]
+            if confound_factors:
+                confound_rdm_list = [model_rdms[p] for p in confound_factors]
+                comparisons[factor] = compare_rdms_partial(
+                    rdm, model_rdms[factor], confound_rdm_list,
+                    n_permutations=0, rng_seed=cfg.rng_seed)
+            else:
+                comparisons[factor] = compare_rdms(
+                    rdm, model_rdms[factor],
+                    n_permutations=0, rng_seed=cfg.rng_seed)
+
+        diag_results.append(dict(
+            quantile=q,
+            n_neurons=k,
+            neuron_indices=sel,
+            neural_rdm=rdm,
+            identities=identities,
+            model_rdms=model_rdms,
+            model_labels=model_labels,
+            comparisons=comparisons,
+        ))
+
+    return diag_results
+
+
+def random_subset_diagnostic(rate_matrix, info_df, identities, cfg,
+                             fraction=0.25, n_draws=4, rng_seed=None):
+    """
+    Diagnostic: rebuild the neural RDM using randomly-chosen subsets of
+    neurons, to compare against the top-X% by variance subset.
+
+    If the top-X%-by-variance RDM looks structurally different from random
+    subsets of the same size, the high-variance neurons are privileged
+    signal carriers (sparse / sparse-distributed code).  If random subsets
+    look comparable to the top-variance subset, the code is more distributed.
+
+    Parameters
+    ----------
+    rate_matrix : ndarray, shape (n_identities, n_neurons)
+        **Raw** (pre-normalization) firing-rate matrix.
+    info_df : DataFrame
+    identities : list of str
+    cfg : RSAConfig
+    fraction : float
+        Fraction of neurons in each random subset (default 0.25 to match
+        the top-25% quartile of variance_quartile_diagnostic).
+    n_draws : int
+        Number of independent random subsets (default 4 → 4 exemplar panels).
+    rng_seed : int or None
+        Seed for reproducibility.  None → use cfg.rng_seed.
+
+    Returns
+    -------
+    random_results : list of dict
+        One entry per random draw with keys compatible with the existing
+        plotting helpers (same shape as variance_quartile_diagnostic entries):
+        'draw_index', 'fraction', 'n_neurons', 'neuron_indices',
+        'neural_rdm', 'identities', 'model_rdms', 'model_labels', 'comparisons'.
+    """
+    n_neurons = rate_matrix.shape[1]
+    k = max(1, int(np.ceil(n_neurons * fraction)))
+
+    if rng_seed is None:
+        rng_seed = cfg.rng_seed
+    rng = np.random.default_rng(rng_seed)
+
+    # Build model RDMs once (shared across draws)
+    all_factors = list(cfg.model_factors)
+    for pf in getattr(cfg, 'partial_out', []):
+        if pf not in all_factors:
+            all_factors.append(pf)
+    model_rdms, model_labels = build_model_rdms(identities, info_df, all_factors)
+
+    partial_out = getattr(cfg, 'partial_out', [])
+    random_results = []
+
+    for draw_i in range(n_draws):
+        sel = rng.choice(n_neurons, size=k, replace=False)
+        sub_matrix = rate_matrix[:, sel]
+
+        # Apply same normalization the main pipeline uses
+        if cfg.normalization is not None:
+            sub_matrix = normalize_rates(sub_matrix, method=cfg.normalization,
+                                         soft_const=cfg.soft_normalize_const)
+
+        rdm = build_neural_rdm(sub_matrix, metric=cfg.neural_metric)
+
+        comparisons = {}
+        for factor in cfg.model_factors:
+            confound_factors = [p for p in partial_out if p != factor]
+            if confound_factors:
+                confound_rdm_list = [model_rdms[p] for p in confound_factors]
+                comparisons[factor] = compare_rdms_partial(
+                    rdm, model_rdms[factor], confound_rdm_list,
+                    n_permutations=0, rng_seed=cfg.rng_seed)
+            else:
+                comparisons[factor] = compare_rdms(
+                    rdm, model_rdms[factor],
+                    n_permutations=0, rng_seed=cfg.rng_seed)
+
+        random_results.append(dict(
+            draw_index=draw_i,
+            fraction=fraction,
+            n_neurons=k,
+            neuron_indices=sel,
+            neural_rdm=rdm,
+            identities=identities,
+            model_rdms=model_rdms,
+            model_labels=model_labels,
+            comparisons=comparisons,
+        ))
+
+    return random_results
+
+def print_variance_diagnostic(diag_results, cfg):
+    """Pretty-print the variance-quartile diagnostic table."""
+    factors = cfg.model_factors
+    header = f"{'Top %':>8s}  {'n_neur':>6s}" + "".join(f"  {f:>16s}" for f in factors)
+    print(f"\n  Variance-quartile diagnostic")
+    print(f"  {header}")
+    print(f"  {'-' * len(header)}")
+    for entry in diag_results:
+        pct = f"{entry['quantile']*100:.0f}%"
+        row = f"  {pct:>8s}  {entry['n_neurons']:>6d}"
+        for f in factors:
+            rho = entry['comparisons'][f]['rho']
+            row += f"  {rho:>+16.4f}"
+        print(row)
+    print()
+
+
+def compute_containment_metric(diag_results, info_df):
+    """
+    For each variance quartile and each social group, compute:
+
+        containment = mean(within-group 1-r) - mean(between-group 1-r)
+
+    Positive  → high dissimilarity *contained* within that group's block
+    Near zero → dissimilarity spread equally within and between (no block)
+    Negative  → within-group more similar than between-group
+
+    Parameters
+    ----------
+    diag_results : list of dict
+        Output of variance_quartile_diagnostic (or random_subset_diagnostic).
+    info_df : DataFrame
+        Must have 'Name' and 'Group Name' columns.
+
+    Returns
+    -------
+    list of dict, one per quartile entry.
+    """
+    name_to_group = dict(zip(info_df['Name'].astype(str),
+                             info_df['Group Name']))
+
+    results = []
+    for entry in diag_results:
+        rdm = entry['neural_rdm']
+        identities = entry['identities']
+        groups = [name_to_group.get(mid, 'Unknown') for mid in identities]
+        unique_groups = sorted(set(g for g in groups if g != 'Unknown'))
+
+        quartile_result = dict(
+            quantile=entry.get('quantile', entry.get('fraction')),
+            n_neurons=entry['n_neurons'],
+            groups={},
+        )
+
+        for g in unique_groups:
+            g_idx = [i for i, grp in enumerate(groups) if grp == g]
+            o_idx = [i for i, grp in enumerate(groups) if grp != g]
+
+            within_vals = [rdm[g_idx[i], g_idx[j]]
+                           for i in range(len(g_idx))
+                           for j in range(i + 1, len(g_idx))]
+            between_vals = [rdm[i, j] for i in g_idx for j in o_idx]
+
+            w = np.mean(within_vals) if within_vals else np.nan
+            b = np.mean(between_vals) if between_vals else np.nan
+
+            quartile_result['groups'][g] = dict(
+                within_mean=w,
+                between_mean=b,
+                containment=w - b,
+                n_within_pairs=len(within_vals),
+                n_between_pairs=len(between_vals),
+            )
+
+        results.append(quartile_result)
+    return results
 # ──────────────────────────────────────────────────────────
 # 1. Firing-rate computation
 # ──────────────────────────────────────────────────────────
@@ -480,6 +736,7 @@ def run_rsa_session(df, session, info_df, cfg):
         return None
 
     # Optional normalization
+    raw_rate_matrix = rate_matrix.copy()
     if cfg.normalization is not None:
         rate_matrix = normalize_rates(rate_matrix, method=cfg.normalization,
                                       soft_const=cfg.soft_normalize_const)
@@ -517,6 +774,7 @@ def run_rsa_session(df, session, info_df, cfg):
         identities=valid_ids,
         neuron_ids=neuron_ids,
         rate_matrix=rate_matrix,
+        raw_rate_matrix=raw_rate_matrix,
         neural_rdm=neural_rdm,
         model_rdms=model_rdms,
         model_labels=model_labels,
@@ -581,6 +839,7 @@ def run_rsa_pseudopop(df, info_df, cfg):
     print(f"Pseudo-population matrix: {combined_matrix.shape}")
 
     # Optional normalization
+    raw_combined_matrix = combined_matrix.copy()
     if cfg.normalization is not None:
         combined_matrix = normalize_rates(combined_matrix, method=cfg.normalization,
                                           soft_const=cfg.soft_normalize_const)
@@ -618,6 +877,7 @@ def run_rsa_pseudopop(df, info_df, cfg):
         identities=common_ids,
         neuron_ids=all_neuron_ids,
         rate_matrix=combined_matrix,
+        raw_rate_matrix=raw_combined_matrix,
         neural_rdm=neural_rdm,
         model_rdms=model_rdms,
         model_labels=model_labels,
