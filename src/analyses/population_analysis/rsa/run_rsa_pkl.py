@@ -30,7 +30,7 @@ def main():
         # ── Pkl options ──
         pkl_path='/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/'
                  'si_sorted_Zombies_significant_windows_pKW_passed.pkl',
-        pkl_window_mode='per_neuron',          # 'per_neuron' | 'common'
+        pkl_window_mode='common',          # 'per_neuron' | 'common'
         pkl_filter_significant=False,          # True → keep only p < pkl_p_threshold
         pkl_p_threshold=0.05,
 

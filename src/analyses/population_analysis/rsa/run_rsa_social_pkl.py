@@ -44,7 +44,7 @@ def main():
                  # 'si_sorted_Zombies_significant_windows_pKW_passed.pkl',
                     'si_sorted_Zombies_all_windows_pKW_tested.pkl',
         pkl_window_mode='common',          # 'per_neuron' | 'common'
-        pkl_filter_significant=False,          # True → keep only p < pkl_p_threshold
+        pkl_filter_significant=True,          # True → keep only p < pkl_p_threshold
         pkl_p_threshold=0.05,
 
         # ── Social-RSA options ──
