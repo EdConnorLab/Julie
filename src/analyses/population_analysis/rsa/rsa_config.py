@@ -25,14 +25,16 @@ class RSAConfig:
     # ── Trial filtering ──
     min_epoch_duration: float = 2.0   # drop trials shorter than this
     min_reps_per_monkey: int = 3      # need at least this many reps per identity
+    exclude_identities: List[str] = field(default_factory=list)
     exclude_groups: List[str] = field(default_factory=list)  # e.g. ['Stranger Things']
 
     # ── Neural RDM ──
-    neural_metric: str = 'correlation'   # 'correlation' (1-r) or 'euclidean' or 'cosine' or 'mahalanobis'
+    neural_metric: str = 'correlation'   # 'correlation' (1-pearson_r) or 'euclidean' or 'cosine' or 'mahalanobis'
 
     # ── Normalization (applied per neuron before building RDM) ──
     normalization: str = None            # None   = raw firing rates
                                          # 'soft' = divide by (range + const); conservative equalization
+                                         # 'zscore' = zscore firing rates
     soft_normalize_const: float = 5.0    # only used when normalization='soft'
 
     # ── Visual responsiveness filter ──

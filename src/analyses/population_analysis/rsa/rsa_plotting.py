@@ -514,7 +514,7 @@ def plot_neural_rdm_multi_sort(result, cfg, factors=None,
 
         ax.set_title(f"sorted by {factor}", fontsize=11)
 
-    fig.suptitle(f"Neural RDM ({metric_label}) | {result['session']} | {win_str}",
+    fig.suptitle(f"Neural RDM for {cfg.region} ({metric_label}) | {result['session']} | {win_str} | nor={cfg.normalization}",
                  fontsize=13, y=1.02)
 
     fig.tight_layout()
@@ -542,3 +542,391 @@ def _p_to_stars(p):
     if p < 0.05:
         return '*'
     return 'n.s.'
+
+
+def plot_variance_quartile_rdms(diag_results, cfg, sort_factors=None,
+                                 save=True, save_dir=None):
+    """
+    Grid of neural RDM heatmaps: columns = variance quartiles,
+    rows = sort factors.  Lets you visually inspect whether structural
+    patterns (e.g. one group with high 1-r, age gradient) persist or
+    vanish as you include lower-variance neurons.
+
+    Parameters
+    ----------
+    diag_results : list of dict
+        Output of variance_quartile_diagnostic.  Each entry must contain
+        'quantile', 'n_neurons', 'neural_rdm', 'identities',
+        'model_labels', 'model_rdms', 'comparisons'.
+    cfg : RSAConfig
+    sort_factors : list of str or None
+        Which factors to sort by (one row each).  None → cfg.model_factors.
+    """
+    if sort_factors is None:
+        sort_factors = cfg.model_factors
+
+    n_cols = len(diag_results)
+    n_rows = len(sort_factors)
+
+    fig, axes = plt.subplots(n_rows, n_cols,
+                             figsize=(5 * n_cols + 1.5, 5 * n_rows + 1),
+                             squeeze=False)
+
+    metric_label = _metric_label(cfg.neural_metric)
+    win_str = f"{int(cfg.window[0]*1000)}-{int(cfg.window[1]*1000)}ms"
+
+    # Shared color scale across all panels
+    all_rdms = [e['neural_rdm'] for e in diag_results]
+    vmin = min(np.nanmin(r[np.triu_indices_from(r, k=1)]) for r in all_rdms)
+    vmax = max(np.nanmax(r[np.triu_indices_from(r, k=1)]) for r in all_rdms)
+
+    # Predefined color maps for known categorical factors
+    categorical_color_maps = {
+        'group': cfg.group_colors,
+        'sex': {'F': '#e377c2', 'M': '#17becf'},
+        'age_bin': {'adult': '#ff7f0e', 'juvenile': '#2ca02c'},
+        'familiarity': {'familiar': '#d62728', 'unfamiliar': '#1f77b4'},
+    }
+
+    im = None  # will hold last imshow for shared colorbar
+
+    for col_i, entry in enumerate(diag_results):
+        q_pct = f"Top {entry['quantile']*100:.0f}%"
+        n_neur = entry['n_neurons']
+        rdm = entry['neural_rdm']
+
+        for row_i, factor in enumerate(sort_factors):
+            ax = axes[row_i, col_i]
+
+            if factor not in entry['model_labels']:
+                ax.set_title(f"{factor} (n/a)")
+                ax.axis('off')
+                continue
+
+            # Reuse existing sort logic — entry has the same keys as a result dict
+            sort_idx, sorted_labels, sorted_ids, groups_sorted = \
+                _get_sort_for_factor(entry, factor, cfg)
+            rdm_sorted = rdm[np.ix_(sort_idx, sort_idx)]
+            continuous = _is_continuous_factor(sorted_labels)
+
+            im = ax.imshow(rdm_sorted, cmap='RdYlBu_r', aspect='equal',
+                           vmin=vmin, vmax=vmax)
+
+            ax.set_xticks(range(len(sorted_ids)))
+            ax.set_yticks(range(len(sorted_ids)))
+            ax.set_xticklabels(sorted_ids, rotation=90, fontsize=5)
+            ax.set_yticklabels(sorted_ids, fontsize=5)
+
+            # ── Tick coloring & boundaries (same logic as plot_neural_rdm_multi_sort) ──
+            if groups_sorted is not None:
+                # by_group mode
+                for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(),
+                                                  ax.get_yticklabels())):
+                    g = groups_sorted[i]
+                    if g in cfg.group_colors:
+                        tx.set_color(cfg.group_colors[g])
+                        ty.set_color(cfg.group_colors[g])
+                boundaries = []
+                prev = groups_sorted[0]
+                for i, g in enumerate(groups_sorted):
+                    if g != prev:
+                        boundaries.append(i - 0.5)
+                        prev = g
+                for b in boundaries:
+                    ax.axhline(b, color='k', lw=1, alpha=0.7)
+                    ax.axvline(b, color='k', lw=1, alpha=0.7)
+
+            elif continuous:
+                valid_vals = [l for l in sorted_labels
+                              if l is not None and not (isinstance(l, float) and np.isnan(l))]
+                lo, hi = min(valid_vals), max(valid_vals)
+                gradient_cmap = plt.cm.viridis
+                for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(),
+                                                  ax.get_yticklabels())):
+                    val = sorted_labels[i]
+                    if val is not None and not (isinstance(val, float) and np.isnan(val)):
+                        normed = (val - lo) / (hi - lo) if hi > lo else 0.5
+                        c = gradient_cmap(normed)
+                    else:
+                        c = 'gray'
+                    tx.set_color(c)
+                    ty.set_color(c)
+
+            else:
+                # Categorical
+                cmap_cat = categorical_color_maps.get(factor, {})
+                if not cmap_cat:
+                    unique = sorted(set(str(l) for l in sorted_labels if l is not None))
+                    colors = plt.cm.tab10.colors
+                    cmap_cat = {l: colors[i % 10] for i, l in enumerate(unique)}
+                for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(),
+                                                  ax.get_yticklabels())):
+                    lab = sorted_labels[i]
+                    c = cmap_cat.get(lab, cmap_cat.get(str(lab), 'k'))
+                    tx.set_color(c)
+                    ty.set_color(c)
+                boundaries = []
+                prev = sorted_labels[0]
+                for i, lab in enumerate(sorted_labels):
+                    if lab != prev:
+                        boundaries.append(i - 0.5)
+                        prev = lab
+                for b in boundaries:
+                    ax.axhline(b, color='k', lw=1, alpha=0.7)
+                    ax.axvline(b, color='k', lw=1, alpha=0.7)
+
+            # ── Annotate rho for this factor in the corner ──
+            rho = entry['comparisons'].get(factor, {}).get('rho', np.nan)
+            ax.text(0.02, 0.98, f"ρ={rho:+.3f}", transform=ax.transAxes,
+                    fontsize=7, va='top', ha='left',
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7))
+
+            # Column header (top row only)
+            if row_i == 0:
+                ax.set_title(f"{q_pct}  (n={n_neur})", fontsize=10)
+
+            # Row label (left column only)
+            if col_i == 0:
+                ax.set_ylabel(f"sorted by {factor}", fontsize=10)
+
+    fig.suptitle(f"Variance-quartile diagnostic ({metric_label}) | {win_str}",
+                 fontsize=13, y=1.01)
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.92, bottom=0.08)
+
+    # Shared colorbar
+    if im is not None:
+        cbar_ax = fig.add_axes([0.94, 0.25, 0.015, 0.5])
+        cbar = fig.colorbar(im, cax=cbar_ax)
+        cbar.set_label(metric_label)
+
+    if save and save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        fname = f"variance_quartile_rdms_{win_str}.png"
+        fig.savefig(os.path.join(save_dir, fname), dpi=150, bbox_inches='tight')
+    return fig
+
+def plot_random_subset_rdms(random_results, cfg, reference_entry=None,
+                            sort_factors=None, save=True, save_dir=None):
+    """
+    Grid of neural RDM heatmaps for random neuron subsets, with an
+    optional reference column (typically top-X% by variance from
+    variance_quartile_diagnostic) shown leftmost for direct comparison.
+
+    Columns: [reference] (optional) + random_draw_1 ... random_draw_N
+    Rows:    sort factors (group, familiarity, sex, age_continuous, ...)
+
+    Parameters
+    ----------
+    random_results : list of dict
+        Output of random_subset_diagnostic.
+    cfg : RSAConfig
+    reference_entry : dict or None
+        A single entry from variance_quartile_diagnostic (typically the
+        top-25% quartile = diag[0]) shown as the leftmost column.
+    sort_factors : list of str or None
+        None → cfg.model_factors.
+    """
+    if sort_factors is None:
+        sort_factors = cfg.model_factors
+
+    panels = []
+    if reference_entry is not None:
+        panels.append(('reference', reference_entry))
+    for r in random_results:
+        panels.append(('random', r))
+
+    n_cols = len(panels)
+    n_rows = len(sort_factors)
+
+    fig, axes = plt.subplots(n_rows, n_cols,
+                             figsize=(5 * n_cols + 1.5, 5 * n_rows + 1),
+                             squeeze=False)
+
+    metric_label = _metric_label(cfg.neural_metric)
+    win_str = f"{int(cfg.window[0]*1000)}-{int(cfg.window[1]*1000)}ms"
+
+    # Shared color scale across all panels
+    all_rdms = [p[1]['neural_rdm'] for p in panels]
+    vmin = min(np.nanmin(r[np.triu_indices_from(r, k=1)]) for r in all_rdms)
+    vmax = max(np.nanmax(r[np.triu_indices_from(r, k=1)]) for r in all_rdms)
+
+    categorical_color_maps = {
+        'group': cfg.group_colors,
+        'sex': {'F': '#e377c2', 'M': '#17becf'},
+        'age_bin': {'adult': '#ff7f0e', 'juvenile': '#2ca02c'},
+        'familiarity': {'familiar': '#d62728', 'unfamiliar': '#1f77b4'},
+    }
+
+    im = None
+
+    for col_i, (panel_type, entry) in enumerate(panels):
+        rdm = entry['neural_rdm']
+        n_neur = entry['n_neurons']
+
+        if panel_type == 'reference':
+            q = entry.get('quantile', None)
+            header = (f"Top {q*100:.0f}% by variance  (n={n_neur})"
+                      if q is not None else f"Reference  (n={n_neur})")
+        else:
+            header = f"Random draw {entry['draw_index']+1}  (n={n_neur})"
+
+        for row_i, factor in enumerate(sort_factors):
+            ax = axes[row_i, col_i]
+
+            if factor not in entry['model_labels']:
+                ax.set_title(f"{factor} (n/a)")
+                ax.axis('off')
+                continue
+
+            sort_idx, sorted_labels, sorted_ids, groups_sorted = \
+                _get_sort_for_factor(entry, factor, cfg)
+            rdm_sorted = rdm[np.ix_(sort_idx, sort_idx)]
+            continuous = _is_continuous_factor(sorted_labels)
+
+            im = ax.imshow(rdm_sorted, cmap='RdYlBu_r', aspect='equal',
+                           vmin=vmin, vmax=vmax)
+
+            ax.set_xticks(range(len(sorted_ids)))
+            ax.set_yticks(range(len(sorted_ids)))
+            ax.set_xticklabels(sorted_ids, rotation=90, fontsize=5)
+            ax.set_yticklabels(sorted_ids, fontsize=5)
+
+            # Tick coloring + boundary lines (mirrors plot_variance_quartile_rdms)
+            if groups_sorted is not None:
+                for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(),
+                                                 ax.get_yticklabels())):
+                    g = groups_sorted[i]
+                    if g in cfg.group_colors:
+                        tx.set_color(cfg.group_colors[g])
+                        ty.set_color(cfg.group_colors[g])
+                boundaries = []
+                prev = groups_sorted[0]
+                for i, g in enumerate(groups_sorted):
+                    if g != prev:
+                        boundaries.append(i - 0.5)
+                        prev = g
+                for b in boundaries:
+                    ax.axhline(b, color='k', lw=1, alpha=0.7)
+                    ax.axvline(b, color='k', lw=1, alpha=0.7)
+
+            elif continuous:
+                valid_vals = [l for l in sorted_labels
+                              if l is not None and not (isinstance(l, float) and np.isnan(l))]
+                lo, hi = min(valid_vals), max(valid_vals)
+                gradient_cmap = plt.cm.viridis
+                for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(),
+                                                 ax.get_yticklabels())):
+                    val = sorted_labels[i]
+                    if val is not None and not (isinstance(val, float) and np.isnan(val)):
+                        normed = (val - lo) / (hi - lo) if hi > lo else 0.5
+                        c = gradient_cmap(normed)
+                    else:
+                        c = 'gray'
+                    tx.set_color(c)
+                    ty.set_color(c)
+
+            else:
+                cmap_cat = categorical_color_maps.get(factor, {})
+                if not cmap_cat:
+                    unique = sorted(set(str(l) for l in sorted_labels if l is not None))
+                    colors = plt.cm.tab10.colors
+                    cmap_cat = {l: colors[i % 10] for i, l in enumerate(unique)}
+                for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(),
+                                                 ax.get_yticklabels())):
+                    lab = sorted_labels[i]
+                    c = cmap_cat.get(lab, cmap_cat.get(str(lab), 'k'))
+                    tx.set_color(c)
+                    ty.set_color(c)
+                boundaries = []
+                prev = sorted_labels[0]
+                for i, lab in enumerate(sorted_labels):
+                    if lab != prev:
+                        boundaries.append(i - 0.5)
+                        prev = lab
+                for b in boundaries:
+                    ax.axhline(b, color='k', lw=1, alpha=0.7)
+                    ax.axvline(b, color='k', lw=1, alpha=0.7)
+
+            # rho annotation
+            rho = entry['comparisons'].get(factor, {}).get('rho', np.nan)
+            ax.text(0.02, 0.98, f"ρ={rho:+.3f}", transform=ax.transAxes,
+                    fontsize=7, va='top', ha='left',
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7))
+
+            if row_i == 0:
+                ax.set_title(header, fontsize=10)
+            if col_i == 0:
+                ax.set_ylabel(f"sorted by {factor}", fontsize=10)
+
+    fig.suptitle(f"Random-subset diagnostic ({metric_label}) | {win_str}",
+                 fontsize=13, y=1.01)
+    fig.tight_layout()
+    fig.subplots_adjust(right=0.92, bottom=0.08)
+
+    if im is not None:
+        cbar_ax = fig.add_axes([0.94, 0.25, 0.015, 0.5])
+        cbar = fig.colorbar(im, cax=cbar_ax)
+        cbar.set_label(metric_label)
+
+    if save and save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        fname = f"random_subset_rdms_{win_str}.png"
+        fig.savefig(os.path.join(save_dir, fname), dpi=150, bbox_inches='tight')
+    return fig
+
+
+def plot_containment_metric(containment_results, cfg, save=True, save_dir=None):
+    """
+    Line plot: containment metric across variance quartiles, one line per group.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
+
+    groups = list(containment_results[0]['groups'].keys())
+    quartiles = [r['quantile'] for r in containment_results]
+    x_labels = [f"Top {q*100:.0f}%" for q in quartiles]
+
+    # Panel 1: containment (within - between)
+    ax = axes[0]
+    for g in groups:
+        vals = [r['groups'][g]['containment'] for r in containment_results]
+        ax.plot(quartiles, vals, 'o-', color=cfg.group_colors.get(g, 'gray'),
+                label=g, lw=2, markersize=8)
+    ax.axhline(0, color='gray', ls='--', alpha=0.5)
+    ax.set_ylabel('within mean − between mean  (1-r)')
+    ax.set_title('Containment')
+    ax.legend(fontsize=8)
+    ax.set_xticks(quartiles)
+    ax.set_xticklabels(x_labels)
+
+    # Panel 2: within-group mean
+    ax = axes[1]
+    for g in groups:
+        vals = [r['groups'][g]['within_mean'] for r in containment_results]
+        ax.plot(quartiles, vals, 'o-', color=cfg.group_colors.get(g, 'gray'),
+                label=g, lw=2, markersize=8)
+    ax.set_title('Within-group mean 1-r')
+    ax.set_xticks(quartiles)
+    ax.set_xticklabels(x_labels)
+
+    # Panel 3: between-group mean
+    ax = axes[2]
+    for g in groups:
+        vals = [r['groups'][g]['between_mean'] for r in containment_results]
+        ax.plot(quartiles, vals, 'o-', color=cfg.group_colors.get(g, 'gray'),
+                label=g, lw=2, markersize=8)
+    ax.set_title('Between-group mean 1-r')
+    ax.set_xticks(quartiles)
+    ax.set_xticklabels(x_labels)
+
+    win_str = f"{int(cfg.window[0]*1000)}-{int(cfg.window[1]*1000)}ms"
+    norm_str = cfg.normalization or 'no_normalization'
+    fig.suptitle(f'Containment metric | {cfg.region} | {norm_str} | {win_str}',
+                 fontsize=13)
+    fig.tight_layout()
+
+    if save and save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        fname = f"containment_metric_{norm_str}_{win_str}.png"
+        fig.savefig(os.path.join(save_dir, fname), dpi=150, bbox_inches='tight')
+    return fig
