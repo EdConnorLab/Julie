@@ -361,7 +361,8 @@ def permutation_test_geometry(pop_matrix, social_pc,
     if n_neural_pcs_rsa is None:
         neural_for_rsa = X_sc                # full neural space
         n_used_rsa = X_sc.shape[1]
-        rsa_label = f'full neural space ({n_used_rsa} dims)'
+        rsa_label = ' '
+        # rsa_label = f'full neural space ({n_used_rsa} dims)'
     else:
         n_comp_rsa = min(n_neural_pcs_rsa, X_sc.shape[0] - 1, X_sc.shape[1])
         pca_rsa = PCA(n_components=n_comp_rsa)
@@ -560,6 +561,7 @@ def plot_decoded_vs_actual_overlay(actual_pc, predicted_pc, monkey_names,
 # ═════════════════════════════════════════════════════════════════════
 # 6. PROCRUSTES / RSA FIGURE
 # ═════════════════════════════════════════════════════════════════════
+from adjustText import adjust_text
 
 def plot_procrustes(social_pc, geo_result, monkey_names,
                     pca, group_name, cfg, label_mapping=None, save_path=None):
@@ -578,20 +580,29 @@ def plot_procrustes(social_pc, geo_result, monkey_names,
                facecolors='none', edgecolors=color, s=120, lw=2.0,
                zorder=5, label='Neural (aligned)')
 
+    texts = []
     for i in range(len(monkey_names)):
-        display_name = monkey_names[i]
-        if label_mapping is not None:
-            display_name = label_mapping.get(monkey_names[i], monkey_names[i])
+        display_name = label_mapping.get(monkey_names[i], monkey_names[i]) \
+            if label_mapping else monkey_names[i]
         arrow = FancyArrowPatch(
             (aligned[i, 0], aligned[i, 1]),
             (social_pc[i, 0], social_pc[i, 1]),
             arrowstyle='->', mutation_scale=12,
             color='gray', lw=1.0, alpha=0.6, zorder=2)
         ax.add_patch(arrow)
-        ax.annotate(display_name,
-                    (social_pc[i, 0], social_pc[i, 1]),
-                    textcoords='offset points', xytext=(7, 7),
-                    fontsize=8, fontweight='bold')
+        texts.append(ax.text(
+            social_pc[i, 0] + 0.1, social_pc[i, 1] + 0.1,
+            display_name, fontsize=8, fontweight='bold'
+        ))
+
+    adjust_text(
+        texts,
+        x=social_pc[:, 0],
+        y=social_pc[:, 1],
+        ax=ax,
+        arrowprops=dict(arrowstyle='-', color='gray', lw=0.5),
+        expand=(1.2, 1.4),
+    )
 
     var1 = pca.explained_variance_ratio_[0] * 100
     var2 = pca.explained_variance_ratio_[1] * 100
@@ -610,21 +621,17 @@ def plot_procrustes(social_pc, geo_result, monkey_names,
     d_social = geo_result['d_social_rsa']
     ax.scatter(d_social, d_neural, c=color, s=50, edgecolors='k',
                lw=0.5, alpha=0.7)
-    # Fit line
     m, b = np.polyfit(d_social, d_neural, 1)
     x_line = np.array([d_social.min(), d_social.max()])
     ax.plot(x_line, m * x_line + b, 'k--', lw=1, alpha=0.6)
-
     ax.set_xlabel("Social PC pairwise distance", fontsize=10)
-    ax.set_ylabel(f"Neural pairwise distance\n({geo_result['rsa_label']})",
-                  fontsize=9)
-    ax.set_title(f"RSA  [{geo_result['rsa_label']}]\n"
+    ax.set_ylabel("Neural pairwise distance", fontsize=9)
+    ax.set_title(f"RSA\n {geo_result['n_used_rsa']} neurons"
                  f"ρ = {geo_result['rsa_rho']:.3f}  "
                  f"(p = {geo_result['p_rho']:.4f})", fontsize=10)
 
     # ── Panel C: Null distributions ──────────────────────────────────
     ax = axes[2]
-    # Procrustes null (top half of panel via twin)
     null_d = geo_result['null_disparity']
     ax.hist(null_d[~np.isnan(null_d)], bins=50, color='steelblue',
             alpha=0.5, edgecolor='k', lw=0.3, label='Null (disparity)')
@@ -634,7 +641,6 @@ def plot_procrustes(social_pc, geo_result, monkey_names,
     ax.set_ylabel("Count", fontsize=10, color='steelblue')
     ax.tick_params(axis='y', labelcolor='steelblue')
 
-    # RSA null on twin axis
     ax2 = ax.twiny()
     null_r = geo_result['null_rho']
     ax2.hist(null_r[~np.isnan(null_r)], bins=50, color='coral',
@@ -643,13 +649,12 @@ def plot_procrustes(social_pc, geo_result, monkey_names,
                 ls='--', label=f"Obs ρ={geo_result['rsa_rho']:.3f}")
     ax2.set_xlabel("RSA ρ", fontsize=10, color='coral')
 
-    # Combined legend
     lines1, labels1 = ax.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax.legend(lines1 + lines2, labels1 + labels2, fontsize=7, loc='upper left')
     ax.set_title("Permutation Null Distributions", fontsize=10)
 
-    fig.suptitle(f"{group_name}: Geometry Comparison (Procrustes + RSA)",
+    fig.suptitle(f"Unfamiliar Group (Group I): Geometry Comparison (Procrustes and RSA)",
                  fontsize=13, y=1.02)
     fig.tight_layout()
 
@@ -658,7 +663,6 @@ def plot_procrustes(social_pc, geo_result, monkey_names,
         fig.savefig(save_path, dpi=200, bbox_inches='tight')
         print(f"  Saved → {save_path}")
     return fig
-
 
 # ═════════════════════════════════════════════════════════════════════
 # 7. RATE SURFACE (unchanged)
@@ -732,20 +736,21 @@ def plot_rate_surface(features_pc, model_result, pca, group_name, cfg,
 
 def main():
     cfg = SocialEncodingConfig(
-        region='ALL',
+        region='AMG',
         session=None,
         window=(0.300, 0.600),
         min_epoch_duration=2.0,
         min_reps_per_monkey=5,
         exclude_groups=['Stranger Things'],
+        exclude_individuals=['70G', '79G', '144H'],
         feature_mode='summary',
         n_feature_pcs=2,
         normalization=None,
         pseudo_population=True,
         n_permutations=0,
         save_plots=True,
-        save_dir='social_pc_predictions',
-        groups=['Zombies', 'Instigators'],
+        save_dir='social_pc_predictions_grant_figures',
+        groups=['Instigators'],
     )
     cfg.validate()
 
@@ -772,6 +777,8 @@ def main():
     df = load_and_filter(cfg)
     if cfg.exclude_groups:
         df = df[~df['MonkeyGroup'].isin(cfg.exclude_groups)].reset_index(drop=True)
+    if cfg.exclude_individuals:
+        df = df[~df['MonkeyName'].isin(cfg.exclude_individuals)].reset_index(drop=True)
     df = compute_trial_rates(df, cfg.window)
 
     save_base = (f"{cfg.save_dir}/{cfg.region}_{cfg.feature_mode}/"
@@ -884,9 +891,36 @@ def main():
               f"(p = {geo_result['p_disparity']:.4f})")
         print(f"    RSA Spearman ρ:       {geo_result['rsa_rho']:.4f}  "
               f"(p = {geo_result['p_rho']:.4f})")
+
+        # label_for_r01 = {
+        #     '7124': 'Z0',
+        #     '69X': 'Z1',
+        #     '72X': 'Z2',
+        #     '94B': 'Z3',
+        #     '110E': 'Z4',
+        #     '67G': 'Z5',
+        #     '81G': 'Z6',
+        #     '143H': 'Z7',
+        #     '87J': 'Z8',
+        #     '151J': 'Z9',
+        # }
+
+        # label_for_r01 = {
+        #     'G942': '0',
+        #     '35Y': '1',
+        #     '49Y': '2',
+        #     '42Z': '3',
+        #     '48Z': '4',
+        #     '59E': '5',
+        #     '68E': '6',
+        #     '86I': '7',
+        #     '167I': '8',
+        #     '114J': '9',
+        # }
+
         plot_procrustes(
             actual_pc, geo_result, monkey_names, pca, group, cfg, label_mapping=None,
-            save_path=f"{save_base}/procrustes_rsa_{group}.png")
+            save_path=f"{save_base}/procrustes_rsa_{group}_R01.png")
 
         # ── RATE SURFACE ────────────────────────────────────────────
         print(f"\n  --- Rate surface ---")

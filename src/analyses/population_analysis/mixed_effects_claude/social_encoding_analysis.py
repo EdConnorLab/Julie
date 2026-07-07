@@ -9,6 +9,9 @@ features of the viewed monkey.  Compares model fit across groups
 Pseudo-population: neurons pooled across sessions; NeuronID treated
 as a random effect in the LMM.
 
+This version computes THREE R² measures for the LMM (see fit_mixed_model)
+and runs permutation tests against all three in parallel.
+
 Usage:
     python social_encoding_analysis.py
 """
@@ -26,7 +29,6 @@ import statsmodels.formula.api as smf
 from analyses.population_analysis.state_space.data_loading import load_and_filter
 from social_encoding_config import SocialEncodingConfig
 from analyses.population_analysis.rsa.rsa_social import load_interaction_matrix
-from neuron_filters import apply_neuron_filters
 
 
 # ──────────────────────────────────────────────────────────
@@ -57,17 +59,7 @@ BEHAVIOR_FILES = {
 # ═══════════════════════════════════════════════════════════════════════
 
 def compute_trial_rates(df, window):
-    """Compute per-trial firing rate within [epoch_start + win_start, epoch_start + win_end].
-
-    Parameters
-    ----------
-    df : DataFrame with SpikeTimes, EpochStartStop columns
-    window : tuple (start_s, end_s) relative to epoch start
-
-    Returns
-    -------
-    df : copy with added 'rate' column (spikes/s)
-    """
+    """Compute per-trial firing rate within [epoch_start + win_start, epoch_start + win_end]."""
     win_start, win_end = window
     win_dur = win_end - win_start
 
@@ -91,19 +83,7 @@ def compute_trial_rates(df, window):
 # ═══════════════════════════════════════════════════════════════════════
 
 def load_social_features(group_name, cfg):
-    """Build a feature matrix: one row per monkey, columns = behavioral profile.
-
-    Uses load_interaction_matrix from rsa_social.py for consistency.
-
-    Modes:
-      'full_profile'  – concatenate full row from each behavior matrix
-      'to_subject'    – only the column for the subject monkey
-      'summary'       – row-sum (given) and col-sum (received) per behavior type
-
-    Returns
-    -------
-    features : DataFrame (index = monkey name, columns = feature names)
-    """
+    """Build a feature matrix: one row per monkey, columns = behavioral profile."""
     if group_name not in BEHAVIOR_FILES:
         raise FileNotFoundError(f"No behavior files defined for group '{group_name}'")
 
@@ -144,12 +124,11 @@ def load_social_features(group_name, cfg):
         features = pd.concat(pieces, axis=1)
 
     elif cfg.feature_mode == 'from_subject':
-        # Row for 81G: how the subject behaves toward each group member
         pieces = []
         for btype, (matrix, mids) in matrices.items():
             if cfg.subject_name in mids:
                 subj_idx = mids.index(cfg.subject_name)
-                row_vals = matrix[subj_idx, :]  # subject's row
+                row_vals = matrix[subj_idx, :]
                 pieces.append(pd.DataFrame(
                     {f"{btype}_from_subject": row_vals}, index=mids))
             else:
@@ -177,14 +156,7 @@ def load_social_features(group_name, cfg):
 
 
 def reduce_features(features, n_components=2):
-    """PCA on social feature matrix.
-
-    Returns
-    -------
-    pc_df : DataFrame (index = monkey name, columns = social_PC1, ...)
-    pca : fitted PCA object
-    scaler : fitted StandardScaler
-    """
+    """PCA on social feature matrix."""
     scaler = StandardScaler()
     X = scaler.fit_transform(features.values)
 
@@ -198,9 +170,8 @@ def reduce_features(features, n_components=2):
     print(f"    PCA: {features.shape[1]} features → {n_components} PCs "
           f"({pca.explained_variance_ratio_.round(3)} var explained)")
 
-    # PCA loadings (features × PCs)
     loadings = pd.DataFrame(
-        pca.components_.T,  # transpose: rows = features
+        pca.components_.T,
         index=features.columns,
         columns=pc_cols
     )
@@ -211,10 +182,7 @@ def reduce_features(features, n_components=2):
 
 
 def plot_social_pca(features_pc, pca, group_name, cfg, save_path=None):
-    """Scatter plot of monkeys in social PC space (PC1 vs PC2).
-
-    Each dot = one monkey, labeled with its name.
-    """
+    """Scatter plot of monkeys in social PC space (PC1 vs PC2)."""
     if features_pc.shape[1] < 2:
         warnings.warn(f"Need ≥2 PCs for scatter plot, got {features_pc.shape[1]}")
         return None
@@ -228,7 +196,6 @@ def plot_social_pca(features_pc, pca, group_name, cfg, save_path=None):
 
     ax.scatter(pc1, pc2, c=color, s=100, edgecolors='k', lw=0.8, zorder=5)
 
-    # Label each monkey
     for i, name in enumerate(names):
         ax.annotate(name, (pc1[i], pc2[i]),
                     textcoords='offset points', xytext=(6, 6),
@@ -255,18 +222,10 @@ def plot_social_pca(features_pc, pca, group_name, cfg, save_path=None):
 # ═══════════════════════════════════════════════════════════════════════
 
 def build_trial_table(df, features_pc, group_name, cfg):
-    """Filter to one group, merge with social-feature PCs.
-
-    Returns
-    -------
-    trial_df : DataFrame with columns: rate, social_PC1, ..., NeuronID, MonkeyName
-    """
+    """Filter to one group, merge with social-feature PCs."""
     gdf = df[df['MonkeyGroup'] == group_name].copy()
-
-    # Exclude subject from stimulus set
     gdf = gdf[gdf['MonkeyName'] != cfg.subject_name]
 
-    # Only monkeys in the feature matrix
     valid_monkeys = set(features_pc.index)
     gdf = gdf[gdf['MonkeyName'].isin(valid_monkeys)]
 
@@ -274,13 +233,11 @@ def build_trial_table(df, features_pc, group_name, cfg):
         warnings.warn(f"No trials for group '{group_name}' after filtering")
         return None
 
-    # Require minimum reps per monkey per neuron
     trial_counts = gdf.groupby(['NeuronID', 'MonkeyName']).size()
     valid_pairs = trial_counts[trial_counts >= cfg.min_reps_per_monkey].index
     gdf = gdf.set_index(['NeuronID', 'MonkeyName'])
     gdf = gdf.loc[gdf.index.isin(valid_pairs)].reset_index()
 
-    # Merge social PCs
     gdf = gdf.merge(features_pc, left_on='MonkeyName', right_index=True, how='left')
 
     n_neurons = gdf['NeuronID'].nunique()
@@ -293,20 +250,71 @@ def build_trial_table(df, features_pc, group_name, cfg):
 # 4. Mixed-effects model
 # ═══════════════════════════════════════════════════════════════════════
 
-def fit_mixed_model(trial_df, n_pcs):
-    """Fit LMM:  rate ~ social_PC1 + social_PC2 + ... + (1 | NeuronID)
-
-    Social PCs are monkey-level (level-2) predictors.
-    NeuronID random intercept absorbs baseline firing-rate differences
-    across the pseudo-population.
-
-    Note: we do NOT include (1 | MonkeyName) because the social PCs are
-    the monkey-level predictors — a monkey random intercept would absorb
-    exactly the variance we are trying to explain.
+def _compute_r2_flavors(result_full, result_null):
+    """Compute three R² measures from a fitted LMM.
 
     Returns
     -------
-    result : dict
+    dict with keys:
+      marginal_r2_resid       — 1 - (sigma²_eps_full / sigma²_eps_null)
+                                 Proportional reduction in *residual* variance
+                                 after the neuron random intercept absorbs
+                                 baseline differences. This was the original
+                                 metric used in earlier versions of this code.
+      marginal_r2_nakagawa    — sigma²_f / (sigma²_f + sigma²_alpha + sigma²_eps)
+                                 Nakagawa & Schielzeth (2013). Fixed-effect
+                                 variance over total variance.
+      conditional_r2_nakagawa — (sigma²_f + sigma²_alpha) /
+                                 (sigma²_f + sigma²_alpha + sigma²_eps)
+                                 Fixed + random over total.
+      var_fixed, var_random, var_residual — variance components.
+    """
+    # Variance components from the FULL model
+    fe_params = result_full.fe_params
+    X = result_full.model.exog
+    fitted_fe = X @ fe_params.values
+    sigma2_f = float(np.var(fitted_fe, ddof=0))
+
+    # cov_re is a 1x1 DataFrame for a single random intercept
+    try:
+        sigma2_alpha = float(result_full.cov_re.iloc[0, 0])
+    except AttributeError:
+        # cov_re is sometimes a numpy array depending on statsmodels version
+        sigma2_alpha = float(np.asarray(result_full.cov_re).flatten()[0])
+
+    sigma2_eps = float(result_full.scale)
+    total_var = sigma2_f + sigma2_alpha + sigma2_eps
+
+    marginal_r2_resid = 1 - (result_full.scale / result_null.scale)
+    marginal_r2_nakagawa = sigma2_f / total_var if total_var > 0 else np.nan
+    conditional_r2_nakagawa = (
+        (sigma2_f + sigma2_alpha) / total_var if total_var > 0 else np.nan
+    )
+
+    return {
+        'marginal_r2_resid': marginal_r2_resid,
+        'marginal_r2_nakagawa': marginal_r2_nakagawa,
+        'conditional_r2_nakagawa': conditional_r2_nakagawa,
+        'var_fixed': sigma2_f,
+        'var_random': sigma2_alpha,
+        'var_residual': sigma2_eps,
+    }
+
+
+def fit_mixed_model(trial_df, n_pcs):
+    """Fit LMM:  rate ~ social_PC1 + social_PC2 + ... + (1 | NeuronID)
+
+    Social PCs are monkey-level (level-2) predictors. NeuronID random
+    intercept absorbs baseline firing-rate differences across the
+    pseudo-population.
+
+    Returns THREE R² measures (see _compute_r2_flavors for definitions):
+      - marginal_r2_resid     (original metric, residual-variance reduction)
+      - marginal_r2_nakagawa  (Nakagawa & Schielzeth 2013, fixed/total)
+      - conditional_r2_nakagawa (fixed+random/total)
+
+    `marginal_r2` is kept as an alias for `marginal_r2_resid` for
+    backward compatibility with existing code that reads that key.
     """
     pc_cols = [f"social_PC{i+1}" for i in range(n_pcs)]
     formula = "rate ~ " + " + ".join(pc_cols)
@@ -317,45 +325,62 @@ def fit_mixed_model(trial_df, n_pcs):
     model_null = smf.mixedlm("rate ~ 1", data=trial_df, groups=trial_df['NeuronID'])
     result_null = model_null.fit(reml=False)
 
-    # Marginal R² approximation (variance reduction in residuals)
-    marginal_r2 = 1 - (result_full.scale / result_null.scale)
+    r2 = _compute_r2_flavors(result_full, result_null)
 
     return {
         'model_full': result_full,
         'model_null': result_null,
-        'marginal_r2': marginal_r2,
+        # back-compat key + explicit aliases
+        'marginal_r2':              r2['marginal_r2_resid'],
+        'marginal_r2_resid':        r2['marginal_r2_resid'],
+        'marginal_r2_nakagawa':     r2['marginal_r2_nakagawa'],
+        'conditional_r2_nakagawa':  r2['conditional_r2_nakagawa'],
+        # variance components
+        'var_fixed':    r2['var_fixed'],
+        'var_random':   r2['var_random'],
+        'var_residual': r2['var_residual'],
+        # coefficients
         'coefficients': result_full.fe_params,
-        'pvalues': result_full.pvalues,
+        'pvalues':      result_full.pvalues,
     }
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# 5. Permutation test
+# 5. Permutation test (against all three R² metrics in parallel)
 # ═══════════════════════════════════════════════════════════════════════
 
 def permutation_test(trial_df, features_pc, n_pcs, cfg):
     """Shuffle monkey → social-feature mapping and refit.
 
-    Null hypothesis: social features are unrelated to neural responses.
-    Permute which feature vector is assigned to which monkey identity,
-    keeping trial structure and neuron assignments intact.
-
-    With 9 monkeys there are 362,880 possible permutations.
+    Permutes which feature vector is assigned to which monkey identity,
+    keeping trial structure and neuron assignments intact. Computes
+    permutation p-values for all three R² flavors in parallel (free —
+    same model fits, just store three null arrays).
 
     Returns
     -------
-    dict with observed_r2, null_r2 array, p_value
+    dict with:
+      observed_r2_resid / null_r2_resid / p_value_resid
+      observed_r2_nakagawa / null_r2_nakagawa / p_value_nakagawa
+      observed_r2_conditional / null_r2_conditional / p_value_conditional
+
+      Back-compat keys: observed_r2, null_r2, p_value
+        → point to the residual-reduction flavor (original behavior).
     """
     rng = np.random.default_rng(cfg.rng_seed)
     pc_cols = [f"social_PC{i+1}" for i in range(n_pcs)]
 
     obs_result = fit_mixed_model(trial_df, n_pcs)
-    obs_r2 = obs_result['marginal_r2']
+    obs_resid = obs_result['marginal_r2_resid']
+    obs_nakagawa = obs_result['marginal_r2_nakagawa']
+    obs_conditional = obs_result['conditional_r2_nakagawa']
 
     monkey_names = features_pc.index.values.copy()
     n_monkeys = len(monkey_names)
 
-    null_r2 = np.zeros(cfg.n_permutations)
+    null_resid = np.full(cfg.n_permutations, np.nan)
+    null_nakagawa = np.full(cfg.n_permutations, np.nan)
+    null_conditional = np.full(cfg.n_permutations, np.nan)
 
     for i in range(cfg.n_permutations):
         shuffled_idx = rng.permutation(n_monkeys)
@@ -369,19 +394,36 @@ def permutation_test(trial_df, features_pc, n_pcs, cfg):
 
         try:
             perm_result = fit_mixed_model(perm_df, n_pcs)
-            null_r2[i] = perm_result['marginal_r2']
+            null_resid[i] = perm_result['marginal_r2_resid']
+            null_nakagawa[i] = perm_result['marginal_r2_nakagawa']
+            null_conditional[i] = perm_result['conditional_r2_nakagawa']
         except Exception:
-            null_r2[i] = np.nan
+            pass  # leave as nan
 
         if (i + 1) % 500 == 0:
             print(f"      permutation {i+1}/{cfg.n_permutations}")
 
-    p_value = np.nanmean(null_r2 >= obs_r2)
+    p_resid = np.nanmean(null_resid >= obs_resid)
+    p_nakagawa = np.nanmean(null_nakagawa >= obs_nakagawa)
+    p_conditional = np.nanmean(null_conditional >= obs_conditional)
 
     return {
-        'observed_r2': obs_r2,
-        'null_r2': null_r2,
-        'p_value': p_value,
+        # --- residual-reduction (original) ---
+        'observed_r2_resid':       obs_resid,
+        'null_r2_resid':           null_resid,
+        'p_value_resid':           p_resid,
+        # --- Nakagawa marginal ---
+        'observed_r2_nakagawa':    obs_nakagawa,
+        'null_r2_nakagawa':        null_nakagawa,
+        'p_value_nakagawa':        p_nakagawa,
+        # --- Nakagawa conditional ---
+        'observed_r2_conditional': obs_conditional,
+        'null_r2_conditional':     null_conditional,
+        'p_value_conditional':     p_conditional,
+        # --- back-compat aliases (point to residual-reduction) ---
+        'observed_r2': obs_resid,
+        'null_r2':     null_resid,
+        'p_value':     p_resid,
     }
 
 
@@ -390,11 +432,7 @@ def permutation_test(trial_df, features_pc, n_pcs, cfg):
 # ═══════════════════════════════════════════════════════════════════════
 
 def per_neuron_encoding(trial_df, n_pcs):
-    """For each neuron: trial-average rate per monkey, then OLS R² against social PCs.
-
-    Returns DataFrame with NeuronID, r2, n_monkeys.
-    Interpret with caution — only ~9 data points per neuron.
-    """
+    """For each neuron: trial-average rate per monkey, then OLS R² against social PCs."""
     pc_cols = [f"social_PC{i+1}" for i in range(n_pcs)]
 
     avg = trial_df.groupby(['NeuronID', 'MonkeyName']).agg(
@@ -436,23 +474,44 @@ def _p_to_stars(p):
     return 'n.s.'
 
 
-def plot_r2_comparison(all_results, cfg, save_path=None):
-    """Bar chart: marginal R² per group, with permutation p-value stars."""
+# Mapping from short metric name → (key in model dict, key in perm dict, label)
+R2_METRIC_KEYS = {
+    'resid':       ('marginal_r2_resid',       'p_value_resid',
+                    'Marginal R² (residual-reduction)'),
+    'nakagawa':    ('marginal_r2_nakagawa',    'p_value_nakagawa',
+                    'Marginal R² (Nakagawa)'),
+    'conditional': ('conditional_r2_nakagawa', 'p_value_conditional',
+                    'Conditional R² (Nakagawa)'),
+}
+
+
+def plot_r2_comparison(all_results, cfg, save_path=None, metric='nakagawa'):
+    """Bar chart: R² per group, with permutation p-value stars.
+
+    Parameters
+    ----------
+    metric : str in {'resid', 'nakagawa', 'conditional'}
+        Which R² flavor to plot. Default 'nakagawa' (standard for LMMs).
+    """
+    r2_key, p_key, ylabel = R2_METRIC_KEYS[metric]
+
     groups = list(all_results.keys())
-    r2_vals = [all_results[g]['model']['marginal_r2'] for g in groups]
-    p_vals = [all_results[g]['permutation']['p_value'] for g in groups]
+    r2_vals = [all_results[g]['model'][r2_key] for g in groups]
+    p_vals = [all_results[g]['permutation'][p_key] for g in groups]
     colors = [cfg.group_colors.get(g, 'gray') for g in groups]
 
     fig, ax = plt.subplots(figsize=(5, 4))
-    bars = ax.bar(range(len(groups)), r2_vals, color=colors, edgecolor='k', alpha=0.8)
+    ax.bar(range(len(groups)), r2_vals, color=colors, edgecolor='k', alpha=0.8)
 
+    ymax = max(r2_vals) if any(v > 0 for v in r2_vals) else 1
+    pad = 0.02 * abs(ymax) if ymax > 0 else 0.001
     for i, (r2, p) in enumerate(zip(r2_vals, p_vals)):
         star = _p_to_stars(p)
-        ax.text(i, r2 + 0.002, star, ha='center', fontsize=12)
+        ax.text(i, r2 + pad, star, ha='center', fontsize=12)
 
     ax.set_xticks(range(len(groups)))
     ax.set_xticklabels(groups, fontsize=11)
-    ax.set_ylabel('Marginal R² (social features)', fontsize=11)
+    ax.set_ylabel(ylabel, fontsize=11)
     ax.set_title(f"Social Encoding: {cfg.region}, "
                  f"{cfg.window[0]*1000:.0f}–{cfg.window[1]*1000:.0f} ms",
                  fontsize=12)
@@ -465,19 +524,63 @@ def plot_r2_comparison(all_results, cfg, save_path=None):
     return fig
 
 
-def plot_null_distribution(perm_result, group_name, cfg, save_path=None):
-    """Histogram of null R² distribution with observed value marked."""
+def plot_r2_comparison_all_flavors(all_results, cfg, save_path=None):
+    """Three-panel bar chart comparing all three R² metrics side-by-side."""
+    metrics = ['resid', 'nakagawa', 'conditional']
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+    for ax, metric in zip(axes, metrics):
+        r2_key, p_key, ylabel = R2_METRIC_KEYS[metric]
+        groups = list(all_results.keys())
+        r2_vals = [all_results[g]['model'][r2_key] for g in groups]
+        p_vals = [all_results[g]['permutation'][p_key] for g in groups]
+        colors = [cfg.group_colors.get(g, 'gray') for g in groups]
+
+        ax.bar(range(len(groups)), r2_vals, color=colors, edgecolor='k', alpha=0.8)
+        ymax = max(r2_vals) if any(v > 0 for v in r2_vals) else 1
+        pad = 0.02 * abs(ymax) if ymax > 0 else 0.001
+        for i, (r2, p) in enumerate(zip(r2_vals, p_vals)):
+            ax.text(i, r2 + pad, _p_to_stars(p), ha='center', fontsize=12)
+
+        ax.set_xticks(range(len(groups)))
+        ax.set_xticklabels(groups, fontsize=10)
+        ax.set_ylabel(ylabel, fontsize=10)
+        ax.axhline(0, color='k', lw=0.6, ls='--', alpha=0.4)
+
+    fig.suptitle(f"Social Encoding: {cfg.region}, "
+                 f"{cfg.window[0]*1000:.0f}–{cfg.window[1]*1000:.0f} ms",
+                 fontsize=13, y=1.02)
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+    return fig
+
+
+def plot_null_distribution(perm_result, group_name, cfg, save_path=None,
+                            metric='nakagawa'):
+    """Histogram of null R² distribution with observed value marked.
+
+    metric : 'resid' | 'nakagawa' | 'conditional'
+    """
+    null_key = f'null_r2_{metric}'
+    obs_key = f'observed_r2_{metric}'
+    p_key = f'p_value_{metric}'
+    _, _, label = R2_METRIC_KEYS[metric]
+
     fig, ax = plt.subplots(figsize=(6, 4))
 
-    null = perm_result['null_r2']
-    obs = perm_result['observed_r2']
-    p = perm_result['p_value']
+    null = perm_result[null_key]
+    obs = perm_result[obs_key]
+    p = perm_result[p_key]
 
     ax.hist(null[~np.isnan(null)], bins=50, color='gray', alpha=0.7,
             edgecolor='k', lw=0.3, label='Null distribution')
     ax.axvline(obs, color=cfg.group_colors.get(group_name, 'red'),
-               lw=2, ls='--', label=f'Observed (R²={obs:.4f})')
-    ax.set_xlabel('Marginal R²')
+               lw=2, ls='--', label=f'Observed (R²={obs:.4g})')
+    ax.set_xlabel(label)
     ax.set_ylabel('Count')
     ax.set_title(f"{group_name}: permutation test (p={p:.4f})")
     ax.legend(fontsize=9)
@@ -516,11 +619,7 @@ def plot_neuron_r2_distribution(all_results, cfg, save_path=None):
 # ═══════════════════════════════════════════════════════════════════════
 
 def run_group(df, group_name, cfg):
-    """Run social encoding analysis for one group.
-
-    Returns dict with model, permutation, per_neuron results,
-    or None if group cannot be analyzed.
-    """
+    """Run social encoding analysis for one group."""
     print(f"\n  --- Loading social features for {group_name} ---")
     try:
         features = load_social_features(group_name, cfg)
@@ -528,7 +627,6 @@ def run_group(df, group_name, cfg):
         print(f"  SKIP — {e}")
         return None
 
-    # Exclude subject from feature matrix
     if cfg.subject_name in features.index:
         features = features.drop(cfg.subject_name)
 
@@ -536,35 +634,38 @@ def run_group(df, group_name, cfg):
 
     features_pc, pca, scaler = reduce_features(features, n_components=cfg.n_feature_pcs)
 
-    # Build trial table
     trial_df = build_trial_table(df, features_pc, group_name, cfg)
     if trial_df is None or len(trial_df) == 0:
         print(f"  SKIP — no valid trials")
         return None
 
-    # Fit mixed-effects model
     print(f"\n    Fitting mixed-effects model ...")
     model_result = fit_mixed_model(trial_df, cfg.n_feature_pcs)
-    print(f"    Marginal R²:  {model_result['marginal_r2']:.4f}")
+    print(f"    R² (residual-reduction):  {model_result['marginal_r2_resid']:.6f}")
+    print(f"    R² (Nakagawa marginal):   {model_result['marginal_r2_nakagawa']:.6f}")
+    print(f"    R² (Nakagawa conditional):{model_result['conditional_r2_nakagawa']:.6f}")
+    print(f"    Variance components:")
+    print(f"      sigma²_fixed:    {model_result['var_fixed']:.6f}")
+    print(f"      sigma²_random:   {model_result['var_random']:.6f}")
+    print(f"      sigma²_residual: {model_result['var_residual']:.6f}")
     print(f"    Coefficients:")
     for name, val in model_result['coefficients'].items():
         pv = model_result['pvalues'].get(name, np.nan)
         print(f"      {name:>15s}: {val:+.6f}  (p={pv:.4e})")
 
-    # Per-neuron encoding (supplementary)
     print(f"\n    Per-neuron encoding (supplementary) ...")
     neuron_r2 = per_neuron_encoding(trial_df, cfg.n_feature_pcs)
     print(f"    Mean per-neuron R²: {neuron_r2['r2'].mean():.4f} "
           f"± {neuron_r2['r2'].std():.4f} (n={len(neuron_r2)} neurons)")
 
-    # Permutation test
     perm_result = None
     if cfg.n_permutations > 0:
         print(f"\n    Running permutation test ({cfg.n_permutations} perms) ...")
         perm_result = permutation_test(
             trial_df, features_pc, cfg.n_feature_pcs, cfg)
-        print(f"    Observed R²:      {perm_result['observed_r2']:.4f}")
-        print(f"    Permutation p:    {perm_result['p_value']:.4f}")
+        print(f"    Permutation p (residual-reduction): {perm_result['p_value_resid']:.4f}")
+        print(f"    Permutation p (Nakagawa marginal):  {perm_result['p_value_nakagawa']:.4f}")
+        print(f"    Permutation p (Nakagawa conditional):{perm_result['p_value_conditional']:.4f}")
 
     return {
         'model': model_result,
@@ -578,7 +679,7 @@ def run_group(df, group_name, cfg):
 
 def main():
     cfg = SocialEncodingConfig(
-        region='ALL',
+        region='ER',
         session=None,
         window=(0.300, 0.600),
         min_epoch_duration=2.0,
@@ -590,17 +691,11 @@ def main():
         pseudo_population=True,
         n_permutations=5000,
         save_plots=True,
-        save_dir='social_encoding_results_final',
-        groups=['Zombies', 'Instigators'], # 'Best Frans'
-        # ── Neuron filters (off by default) ──
-        peak_latency_filter=True,
-        peak_latency_range=(0.200, 0.500),
-        peak_latency_search_window=(0.0, 2.000),
-        # neuron_id_filter_pkl='/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
+        save_dir='social_encoding_results',
+        groups=['Zombies', 'Instigators'],
     )
     cfg.validate()
 
-    # ─── Load neural data ───
     print(f"\n{'='*60}")
     print(f"Social Encoding Model (Trial-Level Mixed Effects)")
     print(f"  Region: {cfg.region}")
@@ -618,14 +713,9 @@ def main():
         print(f"Excluded groups {cfg.exclude_groups}: "
               f"{df['MonkeyName'].nunique()} monkeys remaining")
 
-    # Optional neuron-level filters: pkl NeuronID whitelist and/or peak-latency filter
-    df = apply_neuron_filters(df, cfg)
-
-    # ─── Compute trial-level firing rates ───
     print("\nComputing trial-level firing rates ...")
     df = compute_trial_rates(df, cfg.window)
 
-    # ─── Run for each group ───
     all_results = {}
     for group in cfg.groups:
         print(f"\n{'='*60}")
@@ -636,35 +726,54 @@ def main():
             all_results[group] = result
 
     # ─── Summary ───
-    print(f"\n{'='*60}")
+    print(f"\n{'='*70}")
     print(f"SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'='*70}")
+    print(f"\n{'Group':<16s} {'R²_resid':>10s} {'p_resid':>10s} "
+          f"{'R²_Nakag':>10s} {'p_Nakag':>10s} {'R²_cond':>10s} {'p_cond':>10s}")
+    print('-' * 80)
     for group, res in all_results.items():
-        perm_p = res['permutation']['p_value'] if res['permutation'] else 'N/A'
-        print(f"\n  {group}:")
-        print(f"    Marginal R²:     {res['model']['marginal_r2']:.4f}")
-        print(f"    Permutation p:   {perm_p}")
-        print(f"    Per-neuron R²:   {res['per_neuron']['r2'].mean():.4f} "
-              f"± {res['per_neuron']['r2'].std():.4f}")
+        m = res['model']
+        p = res['permutation']
+        if p is not None:
+            print(f"{group:<16s} "
+                  f"{m['marginal_r2_resid']:>10.6f} {p['p_value_resid']:>10.4f} "
+                  f"{m['marginal_r2_nakagawa']:>10.6f} {p['p_value_nakagawa']:>10.4f} "
+                  f"{m['conditional_r2_nakagawa']:>10.6f} {p['p_value_conditional']:>10.4f}")
+        else:
+            print(f"{group:<16s} "
+                  f"{m['marginal_r2_resid']:>10.6f} {'—':>10s} "
+                  f"{m['marginal_r2_nakagawa']:>10.6f} {'—':>10s} "
+                  f"{m['conditional_r2_nakagawa']:>10.6f} {'—':>10s}")
 
     # ─── Plots ───
     if cfg.save_plots and len(all_results) > 0:
-        save_base = f"{cfg.save_dir}/{cfg.region}_{cfg.feature_mode}/{cfg.window[0]*1000:.0f}_{cfg.window[1]*1000:.0f}"
+        save_base = (f"{cfg.save_dir}/{cfg.region}_{cfg.feature_mode}/"
+                     f"{cfg.window[0]*1000:.0f}_{cfg.window[1]*1000:.0f}")
         os.makedirs(save_base, exist_ok=True)
 
+        # Default plot: Nakagawa marginal (the standard for LMMs)
         plot_r2_comparison(all_results, cfg,
-                           save_path=f"{save_base}/r2_comparison.png")
+                           save_path=f"{save_base}/r2_comparison.png",
+                           metric='nakagawa')
+
+        # Three-panel plot: all flavors side-by-side
+        plot_r2_comparison_all_flavors(
+            all_results, cfg,
+            save_path=f"{save_base}/r2_comparison_all_flavors.png")
 
         for group, res in all_results.items():
-            # Social PCA scatter
             plot_social_pca(
                 res['features_pc'], res['pca'], group, cfg,
                 save_path=f"{save_base}/social_pca_{group}.png")
 
             if res['permutation'] is not None:
-                plot_null_distribution(
-                    res['permutation'], group, cfg,
-                    save_path=f"{save_base}/null_dist_{group}.png")
+                # Null distributions for all three metrics
+                for metric in ('resid', 'nakagawa', 'conditional'):
+                    plot_null_distribution(
+                        res['permutation'], group, cfg,
+                        save_path=f"{save_base}/null_dist_{group}_{metric}.png",
+                        metric=metric)
 
         plot_neuron_r2_distribution(all_results, cfg,
                                      save_path=f"{save_base}/neuron_r2_dist.png")

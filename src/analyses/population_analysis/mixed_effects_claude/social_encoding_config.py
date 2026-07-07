@@ -18,6 +18,7 @@ class SocialEncodingConfig:
     # ── Trial filtering ─────────────────────────────────────────────────
     min_reps_per_monkey: int = 3
     exclude_groups: List[str] = field(default_factory=list)
+    exclude_individuals: List[str] = field(default_factory=list)
 
     # ── Subject ─────────────────────────────────────────────────────────
     subject_name: str = '81G'
