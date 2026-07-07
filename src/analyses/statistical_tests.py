@@ -50,21 +50,30 @@ def t_test(groups):
     return stat, p_val
 
 
-def permutation_anova_test(groups, num_permutations=1000):
+def permutation_anova_test(groups, num_permutations=1000, random_state=None):
     """Permutation-based one-way ANOVA."""
-    data = np.concatenate(groups)
-    original_group_sizes = [len(group) for group in groups]
+    rng = np.random.default_rng(random_state)
+    groups = [np.asarray(g) for g in groups if len(g) > 0]
+    if len(groups) < 2:
+        raise ValueError("At least two non-empty groups are required for ANOVA.")
+
     observed_f_stat, _ = anova_test(groups)
+
+    data = np.concatenate(groups)
+    group_sizes = [len(g) for g in groups]
+    cuts = np.cumsum(group_sizes)[:-1]
 
     permutation_f_stats = []
     for _ in range(num_permutations):
-        np.random.shuffle(data)
-        new_groups = np.split(data, np.cumsum(original_group_sizes)[:-1])
+        permuted = rng.permutation(data)
+        new_groups = np.split(permuted, cuts)
         f_stat, _ = anova_test(new_groups)
         permutation_f_stats.append(f_stat)
 
-    p_perm = np.mean([f_stat >= observed_f_stat for f_stat in permutation_f_stats])
-    return observed_f_stat, p_perm, permutation_f_stats
+    perm_f = np.asarray(permutation_f_stats)
+    p_perm = (np.sum(perm_f >= observed_f_stat) + 1) / (num_permutations + 1)
+
+    return observed_f_stat, p_perm, perm_f.tolist()
 
 def permutation_kruskal_test(groups, num_permutations=1000, random_state=None):
     """Permutation-based Kruskal–Wallis H-test."""

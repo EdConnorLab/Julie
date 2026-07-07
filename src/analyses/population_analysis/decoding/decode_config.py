@@ -56,14 +56,15 @@ class DecodeConfig:
     data_path: str = '/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered'
     region: str = 'ALL'
     session: Optional[str] = None
-    exclude_monkeys: list = field(default_factory=lambda: ['NewMonkey'])
+    exclude_monkeys: list = field(default_factory=lambda: ['NewMonkey', '70G', '79G', '42Z', '144H'])
+    exclude_monkey_groups: list = field(default_factory=lambda: [])
 
     # ── Response window ──────────────────────────────────────────────────
     response_window: Optional[Tuple[float, float]] = None  # (start_sec, end_sec)
 
     # ── Neuron / trial filtering ─────────────────────────────────────────
     min_trials: int = 0
-    min_epoch_duration: float = 2.2
+    min_epoch_duration: float = 1.0
 
     # ── Pseudo-population ────────────────────────────────────────────────
     n_pseudo_draws: int = 10

@@ -34,7 +34,9 @@ def iter_sessions_from_metadata(metadata: pd.DataFrame) -> Iterable[Tuple[str, i
       - 'Round No.' (int-like)
     """
     for _, r in metadata.iterrows():
-        date = str(r["Date"].strftime("%Y-%m-%d"))
+        date_val = r["Date"]
+        date_val = pd.to_datetime(date_val)
+        date = date_val.strftime("%Y-%m-%d")
         round_no = int(r["Round No."])
         yield date, round_no
 
@@ -276,9 +278,11 @@ if __name__ == "__main__":
 
     # # 1) significant neurons
     # all_neurons, sig_neurons = select_all_significant_neurons_using_pKW(metadata, cfg, source=source)
+    all_neurons, sig_neurons = select_all_significant_neurons_using_pANOVA(metadata, cfg, source=source)
 
     #2) detect windows
     windows = detect_all_response_windows_for_all_neurons(metadata, cfg, source=source)
 
     # 3) significant windows
     res_window_kw, sig_windows_kw = detect_significant_windows_using_pKW(windows, cfg, source=source)
+    sig_windows_panova = detect_significant_windows_using_pANOVA(windows, cfg, source=source)

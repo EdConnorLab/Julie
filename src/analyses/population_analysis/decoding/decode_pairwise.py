@@ -254,13 +254,15 @@ def plot_pairwise_comparison(all_group_results, output_dir):
 
 def main():
     cfg = DecodeConfig(
+        region='ER',
         min_trials=7,
         n_pseudo_draws=5,
         n_pca=50,
-        skip_perm=True,
-        n_permutations=1000,
-        response_window=(0.2, 0.5),       # e.g. (0.0, 0.5)
-        output_dir='./pairwise_decoding_output',
+        skip_perm=False,
+        n_permutations=100,
+        response_window=(0.3, 0.5),       # e.g. (0.0, 0.5)
+        output_dir='./pairwise_decoding_output_ER',
+        exclude_monkey_groups=['Stranger Things', 'Best Frans']
     )
     cfg.validate()
 
@@ -273,7 +275,7 @@ def main():
     print(f"\nGroups found: {', '.join(group_names)}")
 
     neuron_ids = sorted(df['NeuronID'].unique())
-    print(f"Using {len(neuron_ids)} neurons")
+    print(f"Using {len(neuron_ids)} neurons from {cfg.region}")
 
     # ── Run pairwise decoding per group ──
     all_group_results = {}

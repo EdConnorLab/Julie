@@ -361,7 +361,7 @@ if __name__ == "__main__":
     # ── Switch these as needed ───────────────────────────────────────────
     plot_psth_heatmap(
         df,
-        scope="group",          # "stimulus" | "group" | "grand"
+        scope="grand",          # "stimulus" | "group" | "grand"
         sort_by="peak_latency", # "peak_latency" | "firing_rate" | "region"
         normalize="zscore",     # "zscore" | "minmax" | "none"
         split_by_region=False,  # True = chunk by AMG/ER; False = all together

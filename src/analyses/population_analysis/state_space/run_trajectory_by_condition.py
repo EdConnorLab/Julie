@@ -13,16 +13,18 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from population_analysis.state_space.plotting import plot_per_group_2d_mpl, plot_all_shaded_2d_mpl, plot_all_shaded_3d_plotly
-from social_rank_analysis import load_group_matrices, davids_score
+from analyses.population_analysis.state_space.plotting import plot_per_group_2d_mpl, plot_all_shaded_2d_mpl, \
+    plot_all_shaded_3d_plotly, plot_group_mean_3d_mpl, plot_group_mean_2d_mpl, plot_per_group_3d_mpl, \
+    plot_all_shaded_3d_mpl
+from analyses.social_rank_analysis import load_group_matrices, davids_score
 from config import TrajectoryConfig
 from data_loading import load_and_filter
 from binning_by_condition import build_matrix_by_condition
-from population_analysis.state_space.preprocessing import preprocess
+from analyses.population_analysis.state_space.preprocessing import preprocess
 from pca_runner import run_pca, plot_scree
-from plotting import (compute_trajectories)
+from plotting import (compute_trajectories, plot_group_mean_3d_plotly)
 
-MONKEY_INFO_PATH = "/social_data/monkeyinfo.csv"
+MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv"
 
 
 def _compute_ds_combined(groups=('Zombies', 'Best Frans')):
@@ -79,6 +81,7 @@ def build_condition_map(analysis, info_df):
         m = dict(zip(sub['Name'].astype(str),
                      'rank' + sub['Rank'].astype(int).astype(str)))
         return m, ['Stranger Things', 'Instigators']
+        # return m, ['Stranger Things']
 
     if analysis == 'identity':
         m = dict(zip(names, info_df['Name']))
@@ -181,7 +184,7 @@ def main():
     cfg = TrajectoryConfig(
         region='ER', session=None, trial_averaged=True, peak_align=False,
         n_components=6, bin_width=0.050, min_epoch_duration=2.0,
-        analysis= 'identity' # 'adult_females' | 'identity' | 'group' | 'rank' |     cannot use 'familiarity' | 'sex'  because there are only 2 groups
+        analysis= 'group' # 'adult_females' | 'identity' | 'group' | 'rank' |     cannot use 'familiarity' | 'sex'  because there are only 2 groups
     )
     cfg.validate()
 
@@ -189,7 +192,7 @@ def main():
     MEAN_CENTER = True
     SOFT_NORMALIZE = True
     MIN_REPS_PER_COND = 5
-    PLOT_SAVE_DIR = f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/state_space_trajectory/{cfg.analysis}'
+    PLOT_SAVE_DIR = f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/state_space_trajectory/progress_report_Jun2026/{cfg.analysis}'
     SAVE = True
     # ----------------------------------
 
@@ -214,6 +217,15 @@ def main():
         condition_map, exclude_groups = build_condition_map(cfg.analysis, info_df)
         group_map = None  # each condition is its own group
 
+    # ## Just temporary -- testing for leave one identity out (loio) to see if outliers have a effect for driving the group level separation
+    # DROP_IDENTITIES = ['G942', '48Z']   # e.g., ['7124', '67G', '69X'] for AMG; ['G942'] for ER
+    # if DROP_IDENTITIES:
+    #     before = len(condition_map)
+    #     condition_map = {k: v for k, v in condition_map.items() if k not in DROP_IDENTITIES}
+    #     if group_map is not None:
+    #         group_map = {k: v for k, v in group_map.items() if k not in DROP_IDENTITIES}
+    #     print(f"LOIO: dropped {before - len(condition_map)} identities: {DROP_IDENTITIES}")
+
     if exclude_groups:
         df = df[~df['MonkeyGroup'].isin(exclude_groups)]
 
@@ -229,13 +241,32 @@ def main():
         pca_result, row_meta_df, info, cfg)
 
     var = pca_result['var']
-    suffix = f"[{cfg.region}] {cfg.analysis} MC {MEAN_CENTER} SN {SOFT_NORMALIZE}"
+    # suffix = f"[{cfg.region}] {cfg.analysis} MC {MEAN_CENTER} SN {SOFT_NORMALIZE}"
+    # suffix = f"[{cfg.region}] {cfg.analysis} LOIO excluding {DROP_IDENTITIES}"
+    suffix =  f"[{cfg.region}] {cfg.analysis}-level pooling"
 
+
+    # # ---- Grant figure: rename groups and strip % from axes ----
+    GRANT_LABELS = {
+        'Best Frans':      'Best Frans (Neighbor)',
+        'Zombies':         'Zombies (Home)',
+        'Stranger Things': 'Stranger Things (Unfamiliar)',
+        'Instigators':     'Instigators (Unfamiliar)',
+    }
+    group_trajs_grant = {GRANT_LABELS.get(g, g): traj for g, traj in group_trajs.items()}
+    # # Update cfg.group_colors so the renamed keys still get the right colors
+    cfg.group_colors = {GRANT_LABELS.get(k, k): v for k, v in cfg.group_colors.items()}
+    # plot_group_mean_3d_mpl({cfg.region}, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+    # plot_group_mean_2d_mpl(group_trajs_grant, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+    # plotly_fig = plot_group_mean_3d_plotly(group_trajs_grant, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+    # plotly_fig.show()  # opens in browser — rotate to find best view, then screenshot
+    # ---- Original calls (restore when not making grant figures) ----
     # plot_group_mean_3d_mpl(group_trajs, var, cfg, suffix, save=SAVE, save_dir = PLOT_SAVE_DIR)
-    # plot_group_mean_2d_mpl(group_trajs, var, cfg, suffix=suffix, save=SAVE, save_dir = PLOT_SAVE_DIR)
+    plot_group_mean_2d_mpl(group_trajs_grant, var, cfg, suffix=suffix, save=SAVE, save_dir = PLOT_SAVE_DIR)
+    # plot_group_mean_3d_plotly(group_trajs, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
     # plot_pc_vs_time_group_mean(group_trajs, var, cfg, row_meta_df, info,
     #                            pcs=range(1, cfg.n_components + 1),
-    #                            suffix=suffix, save=SAVE)
+    #                            suff0 as you said — confirming that's enough given there are very few unique identity→group reassignments possible with ~9 identitix=suffix, save=SAVE)
     # plot_pc_vs_time_per_group(group_trajs, c2g, var, cfg, row_meta_df, info, pcs=range(1, cfg.n_components + 1),
     #                            suffix=suffix+"_per_group", save=SAVE)
     # plot_pc_vs_time_all_shaded(group_trajs, c2g, var, cfg, row_meta_df, info, pcs=range(1, cfg.n_components + 1),
@@ -251,15 +282,15 @@ def main():
     #                          save=SAVE, save_dir=PLOT_SAVE_DIR)
 
     # Only meaningful when there's sub-grouping (identity mode)
-    if cfg.analysis == 'identity':
-        plot_all_shaded_3d_plotly(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
-        # plot_per_group_3d_mpl(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
-
-        # plot_all_shaded_3d_mpl(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
-        # plot_pc_vs_time_per_group(cond_trajs, c2g, var, cfg, row_meta_df, info,
-        #                                  pcs=range(1, cfg.n_components + 1), suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
-        plot_per_group_2d_mpl(cond_trajs, c2g, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
-        plot_all_shaded_2d_mpl(cond_trajs, c2g, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+    # if cfg.analysis == 'identity':
+    #     # plot_all_shaded_3d_plotly(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+    #     plot_per_group_3d_mpl(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+    #
+    #     plot_all_shaded_3d_mpl(cond_trajs, c2g, var, cfg, suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+    #     # plot_pc_vs_time_per_group(cond_trajs, c2g, var, cfg, row_meta_df, info,
+    #     #                                  pcs=range(1, cfg.n_components + 1), suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+    #     plot_per_group_2d_mpl(cond_trajs, c2g, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
+    #     plot_all_shaded_2d_mpl(cond_trajs, c2g, var, cfg, suffix=suffix, save=SAVE, save_dir=PLOT_SAVE_DIR)
 
     plt.show()
 

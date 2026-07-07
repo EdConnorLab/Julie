@@ -49,6 +49,18 @@ def _clean_scene(var):
     )
 
 
+def _clean_scene_grant(var):
+    """Grant-figure version: plain PC1/PC2/PC3 axis labels without variance %."""
+    axis = dict(showbackground=True, backgroundcolor='rgb(240,240,240)',
+                gridcolor='rgb(120,120,120)', gridwidth=1,
+                zerolinecolor='rgb(80,80,80)', showspikes=False)
+    return dict(
+        xaxis=dict(title='PC1', **axis),
+        yaxis=dict(title='PC2', **axis),
+        zaxis=dict(title='PC3', **axis),
+    )
+
+
 def _time_axis(row_meta_df, info):
     n_bins = info['n_bins']
     first = row_meta_df.iloc[:n_bins]
@@ -157,11 +169,22 @@ def plot_group_mean_3d_mpl(group_trajs, var, cfg, suffix='', save=False, save_di
         ax.plot(traj[:, 0], traj[:, 1], traj[:, 2], color=c, linewidth=2.5, label=str(g))
         ax.scatter(*traj[0, :3], color=c, s=100, marker='o', edgecolors='black')
         ax.scatter(*traj[-1, :3], color=c, s=100, marker='s', edgecolors='black')
-    ax.set_xlabel(f'PC1 ({var[0]:.1%})'); ax.set_ylabel(f'PC2 ({var[1]:.1%})')
-    ax.set_zlabel(f'PC3 ({var[2]:.1%})')
-    ax.set_title(f'Group-mean (3D) {suffix}'); ax.legend(); ax.view_init(25, 135)
+    # ax.set_xlabel(f'PC1 ({var[0]:.1%})'); ax.set_ylabel(f'PC2 ({var[1]:.1%})')  # original
+    # ax.set_zlabel(f'PC3 ({var[2]:.1%})')  # original
+    ax.set_xlabel('PC1'); ax.set_ylabel('PC2'); ax.set_zlabel('PC3')
+    # ax.set_title(f'Group-mean (3D) {suffix}'); ax.legend(); ax.view_init(25, 135)  # original
+    ax.set_title(f'Neural State-Space Trajectories by Social Group\n {cfg.region}')
+    start_handle = Line2D([0], [0], marker='o', color='gray', linestyle='None',
+                          markersize=8, markeredgecolor='black', label='Start')
+    end_handle   = Line2D([0], [0], marker='s', color='gray', linestyle='None',
+                          markersize=8, markeredgecolor='black', label='End')
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles=handles + [start_handle, end_handle],
+              labels=labels + ['Start', 'End'])
+    ax.view_init(25, 135)
     fig.tight_layout()
     _save_mpl(fig, f'group_mean_3d_{_safe(suffix)}', save, save_dir)
+    plt.show()
     return fig
 
 
@@ -172,26 +195,54 @@ def plot_group_mean_2d_mpl(group_trajs, var, cfg, suffix='', save=False, save_di
         ax.plot(traj[:, 0], traj[:, 1], color=c, linewidth=2.5, label=str(g))
         ax.scatter(traj[0, 0], traj[0, 1], color=c, s=100, marker='o', edgecolors='black')
         ax.scatter(traj[-1, 0], traj[-1, 1], color=c, s=100, marker='s', edgecolors='black')
-    ax.set_xlabel(f'PC1 ({var[0]:.1%})'); ax.set_ylabel(f'PC2 ({var[1]:.1%})')
-    ax.set_title(f'Group-mean (2D) {suffix}'); ax.legend()
+    # ax.set_xlabel(f'PC1 ({var[0]:.1%})'); ax.set_ylabel(f'PC2 ({var[1]:.1%})')  # original
+    ax.set_xlabel('PC1'); ax.set_ylabel('PC2')
+    # ax.set_title(f'Group-mean (2D) {suffix}'); ax.legend()  # original
+    ax.set_title(f'Neural State-Space Trajectories for {cfg.region} \n Group-level pooling')
+    start_handle = Line2D([0], [0], marker='o', color='gray', linestyle='None',
+                          markersize=8, markeredgecolor='black', label='Start')
+    end_handle   = Line2D([0], [0], marker='s', color='gray', linestyle='None',
+                          markersize=8, markeredgecolor='black', label='End')
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles=handles + [start_handle, end_handle],
+              labels=labels + ['Start', 'End'])
     fig.tight_layout()
     _save_mpl(fig, f'group_mean_2d_{_safe(suffix)}', save, save_dir)
+    plt.show()
     return fig
 
 
 def plot_group_mean_3d_plotly(group_trajs, var, cfg, suffix='', save=False, save_dir=PLOT_SAVE_DIR):
     import plotly.graph_objects as go
+    import matplotlib.colors as mcolors
     fig = go.Figure()
     for g, traj in group_trajs.items():
-        c = _group_color(cfg, g)
+        # c = _group_color(cfg, g)
+        c = mcolors.to_hex(_group_color(cfg, g))
         fig.add_trace(go.Scatter3d(
             x=traj[:, 0], y=traj[:, 1], z=traj[:, 2],
             mode='lines', line=dict(width=5, color=c),
             name=str(g), hoverinfo='name'))
         _add_plotly_endpoints(fig, traj, c, str(g), legendgroup=str(g))
-    fig.update_layout(title=f'Group-mean {suffix}', scene=_clean_scene(var),
-                      width=1100, height=800)
+    # Dummy traces for start/end legend entries
+    fig.add_trace(go.Scatter3d(
+        x=[None], y=[None], z=[None], mode='markers',
+        marker=dict(size=8, symbol='circle', color='gray',
+                    line=dict(width=1, color='black')),
+        name='Start', showlegend=True))
+    fig.add_trace(go.Scatter3d(
+        x=[None], y=[None], z=[None], mode='markers',
+        marker=dict(size=8, symbol='diamond', color='gray',
+                    line=dict(width=1, color='black')),
+        name='End', showlegend=True))
+    # fig.update_layout(title=f'Group-mean {suffix}', scene=_clean_scene(var),  # original
+    #                   width=1100, height=800)
+    fig.update_layout(
+        title=f'Neural State-Space Trajectories by Social Group<br>{cfg.region}',
+        scene=_clean_scene_grant(var),
+        width=1100, height=800)
     _save_plotly(fig, f'group_mean_3d_plotly_{_safe(suffix)}', save, save_dir)
+    plt.show()
     return fig
 
 def plot_pc_vs_time_group_mean(group_trajs, var, cfg, row_meta_df, info,
@@ -218,6 +269,7 @@ def plot_pc_vs_time_group_mean(group_trajs, var, cfg, row_meta_df, info,
     fig.suptitle(f'PC vs time — group-mean {suffix}')
     fig.tight_layout()
     _save_mpl(fig, f'pc_vs_time_group_mean_{_safe(suffix)}', save, save_dir)
+    plt.show()
     return fig
 
 
@@ -240,6 +292,7 @@ def plot_per_group_3d_mpl(cond_trajs, c2g, var, cfg, suffix='', save=False, save
         fig.tight_layout()
         _save_mpl(fig, f'per_group_3d_{_safe(g)}_{_safe(suffix)}', save, save_dir)
         figs[g] = fig
+        plt.show()
     return figs
 
 
@@ -272,6 +325,7 @@ def plot_pc_vs_time_per_group(cond_trajs, c2g, var, cfg, row_meta_df, info,
         fig.tight_layout()
         _save_mpl(fig, f'pc_vs_time_{_safe(g)}_{_safe(suffix)}', save, save_dir)
         figs[g] = fig
+        plt.show()
     return figs
 
 def plot_per_group_2d_mpl(cond_trajs, c2g, var, cfg, suffix='', save=False, save_dir=PLOT_SAVE_DIR):
@@ -289,6 +343,7 @@ def plot_per_group_2d_mpl(cond_trajs, c2g, var, cfg, suffix='', save=False, save
         fig.tight_layout()
         _save_mpl(fig, f'per_group_2d_{_safe(g)}_{_safe(suffix)}', save, save_dir)
         figs[g] = fig
+        plt.show()
     return figs
 
 
@@ -310,6 +365,7 @@ def plot_per_group_3d_plotly(cond_trajs, c2g, var, cfg, suffix='', save=False, s
                           scene=_clean_scene(var), width=1100, height=800)
         _save_plotly(fig, f'per_group_3d_plotly_{_safe(g)}_{_safe(suffix)}', save, save_dir)
         figs[g] = fig
+        plt.show()
     return figs
 
 
@@ -333,6 +389,7 @@ def plot_all_shaded_3d_mpl(cond_trajs, c2g, var, cfg, suffix='', save=False, sav
     ax.set_title(f'All conditions shaded by group (3D) {suffix}')
     ax.view_init(25, 135); fig.tight_layout()
     _save_mpl(fig, f'all_shaded_3d_{_safe(suffix)}', save, save_dir)
+    plt.show()
     return fig
 
 
@@ -352,6 +409,7 @@ def plot_all_shaded_2d_mpl(cond_trajs, c2g, var, cfg, suffix='', save=False, sav
     ax.set_title(f'All conditions shaded by group (2D) {suffix}')
     fig.tight_layout()
     _save_mpl(fig, f'all_shaded_2d_{_safe(suffix)}', save, save_dir)
+    plt.show()
     return fig
 
 
@@ -372,6 +430,7 @@ def plot_all_shaded_3d_plotly(cond_trajs, c2g, var, cfg, suffix='', save=False, 
     fig.update_layout(title=f'All conditions shaded by group {suffix}',
                       scene=_clean_scene(var), width=1200, height=900)
     _save_plotly(fig, f'all_shaded_3d_plotly_{_safe(suffix)}', save, save_dir)
+    plt.show()
     return fig
 
 
@@ -403,6 +462,7 @@ def plot_pc_vs_time_all_shaded(cond_trajs, c2g, var, cfg, row_meta_df, info,
     fig.suptitle(f'PC vs time — all conditions {suffix}')
     fig.tight_layout()
     _save_mpl(fig, f'pc_vs_time_all_shaded_{_safe(suffix)}', save, save_dir)
+    plt.show()
     return fig
 
 
@@ -495,4 +555,5 @@ def plot_psth_group_mean(raw_matrix, preproc_matrix, row_meta_df, info, cfg,
                  f'{smooth_txt}  {suffix}')
     fig.tight_layout()
     _save_mpl(fig, f'psth_group_mean_{_safe(suffix)}', save, save_dir)
+    plt.show()
     return fig

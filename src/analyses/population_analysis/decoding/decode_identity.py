@@ -86,14 +86,15 @@ def plot_results(mean_acc, std_acc, chance, cm, le, perm_accs, p_value,
 
 def main():
     cfg = DecodeConfig(
-        region='ER',
+        region='AMG',
         min_trials=7,
         n_pseudo_draws=10,
         n_pca=50,
         skip_perm=True,
         n_permutations=1000,
-        response_window=(0.200,0.500),       # e.g. (0.0, 0.5) for 0–500 ms
-        output_dir='./decode_identity_output',
+        response_window=(0.300,0.500),       # e.g. (0.0, 0.5) for 0–500 ms
+        output_dir='./decode_identity_output_AMG',
+
     )
     cfg.validate()
 

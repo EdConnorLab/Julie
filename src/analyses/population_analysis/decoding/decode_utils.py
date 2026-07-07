@@ -70,6 +70,13 @@ def load_and_prepare(cfg) -> pd.DataFrame:
         if dropped:
             print(f"  Excluded '{name}': {dropped} trials removed")
 
+    for group_name in cfg.exclude_monkey_groups:
+        before_dropping_group = len(df)
+        df = df[df['MonkeyGroup'] != group_name]
+        dropped = before_dropping_group - len(df)
+        if dropped:
+            print(f"  Excluded '{group_name}': {dropped} trials removed")
+
     # Region filter (if the column exists)
     if cfg.region != 'ALL' and 'Region' in df.columns:
         df = df[df['Region'] == cfg.region]

@@ -113,7 +113,7 @@ def run_permutation_anova_by_window(df,
     group_cols = [neuron_col, window_start_col, window_end_col]
     grouped_df = df.groupby(group_cols)
 
-    for (date_str, round_no, neuron, win_start, win_end), sub_df in tqdm(grouped_df, desc="Running Perm ANOVA per (Neuron, Window)"):
+    for (neuron, win_start, win_end), sub_df in tqdm(grouped_df, desc="Running Perm ANOVA per (Neuron, Window)"):
         grouped = sub_df.groupby(category_col)[count_col].apply(list)
 
         # Skip if not enough groups
