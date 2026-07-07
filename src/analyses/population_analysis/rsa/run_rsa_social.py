@@ -405,38 +405,61 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
 
     return group_comp, between_comp, social_rdms
 
+from datetime import datetime
+
+def save_config_summary(cfg, save_dir):
+    os.makedirs(save_dir, exist_ok=True)
+
+    config_dict = {
+        k: v
+        for k, v in vars(cfg).items()
+        if not callable(v) and not k.startswith("_")
+    }
+
+    with open(os.path.join(save_dir, "config_summary.txt"), "w") as f:
+        f.write("RSA ANALYSIS CONFIG\n")
+        f.write("=" * 60 + "\n\n")
+
+        f.write(f"Timestamp: {datetime.now()}\n")
+        f.write(f"Region: {cfg.region}\n")
+        f.write(f"Window: {cfg.window}\n")
+        f.write(f"Mode: {'pseudo-population' if cfg.session is None else cfg.session}\n")
+        f.write("\nFull config:\n")
+        for key, value in sorted(vars(cfg).items()):
+            f.write(f"{key}: {value}\n")
 
 # ──────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────
 
 def main():
-
     cfg = SocialRSAConfig(
-        region='ALL',
+        region='AMG',
         session=None,                          # None = pseudo-population; 'session_id' = single session
-        window=(0.300, 0.600),
+        window=(0.300, 0.500),
         min_epoch_duration=1.3,
         min_reps_per_monkey=7,
         neural_metric='correlation',
         model_factors=[],
-        exclude_groups=['Stranger Things', 'Best Frans'],
-        normalization=None,
+        exclude_groups=['Stranger Things', 'Best Frans', 'Instigators'],
+        normalization='soft',
         transform_social_behavior='log',        # None | 'rank' | 'log'
-        n_permutations=2000,
+        n_permutations=5000,
         between_group_permutations=2000,
         n_bootstrap=2000,
         save_plots=True,
-        save_dir='rsa_social_results',
+        save_dir='rsa_social_hypothesis_testing',
         visual_responsiveness_filter=False,
+        partial_out_rank=False,
         # exclude_identities=['7124','G942'],
         # ── Neuron filters (off by default) ──
         peak_latency_filter=False,
         peak_latency_range=(0.200, 0.700),
         peak_latency_search_window=(0.0, 1.00),
-        neuron_id_filter_pkl='/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
+        # neuron_id_filter_pkl='/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
         exclude_identities=[],
     )
+
     cfg.validate()
 
 
@@ -469,10 +492,14 @@ def main():
     print(f"  Bootstrap CI: {cfg.n_bootstrap}")
     print(f"  Partial out rank: {cfg.partial_out_rank}")
     print(f"  Social behavior transform: {cfg.transform_social_behavior or 'raw'}")
+    print(f"  Exclude groups: {cfg.exclude_groups}")
+    print(f"  Exclude identities: {cfg.exclude_identities}")
     print(f"{'='*60}\n")
 
     if cfg.session is None:
         result = run_rsa_pseudopop(df, info_df, cfg)
+        # pseudopop_raw_rate_matrix = result["raw_rate_matrix"]
+        # pd.DataFrame(pseudopop_raw_rate_matrix).to_csv(f'{cfg.region}_pseudopop_raw_rate_matrix.csv', index=False)
         results_list = [result]
     else:
         r = run_rsa_session(df, cfg.session, info_df, cfg)
@@ -506,7 +533,8 @@ def main():
         win_start = int(cfg.window[0] * 1000)
         win_end   = int(cfg.window[1] * 1000)
         tx_tag    = cfg.transform_social_behavior or 'raw'
-        save_dir_base = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{tx_tag}/filter"
+        save_dir_base = f"{cfg.save_dir}/H1_soft_normalization/{cfg.region}_{win_start}_{win_end}_{tx_tag}"
+        save_config_summary(cfg, save_dir_base)
 
         print(f"\n{'='*60}")
         print(f"  Identities ({len(identities)}): {identities}")
