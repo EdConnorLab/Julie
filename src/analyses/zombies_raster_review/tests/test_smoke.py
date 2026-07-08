@@ -17,12 +17,15 @@ from analyses.zombies_raster_review.unit_lists import (
     load_mixed_manual_requests, load_si_sorted_requests,
 )
 from analyses.zombies_raster_review.make_synthetic_zombies_session import (
-    make_synthetic_zombies_unit,
+    make_synthetic_zombies_unit, make_synthetic_overlay_pair,
 )
 from analyses.zombies_raster_review.zombies_raster import (
-    zombies_trials_by_monkey, plot_zombies_raster,
+    zombies_trials_by_monkey, plot_zombies_raster, plot_overlay_raster,
+    SUBJECT_MONKEY_ID,
 )
-from analyses.zombies_raster_review.run_zombies_rasters import _select_unit_rows
+from analyses.zombies_raster_review.run_zombies_rasters import (
+    _select_unit_rows, _units_on_channel, _channel_token,
+)
 
 _LISTS = os.path.join(os.path.dirname(__file__), "..", "unit_lists")
 
@@ -74,6 +77,16 @@ def test_select_unit_rows_mixed_and_si():
     assert not _select_unit_rows(df, mixed_req).empty
 
 
+def test_subject_monkey_excluded():
+    # subject (81G) is present in the data but must never appear in the raster
+    df = make_synthetic_zombies_unit(include_subject=True)
+    assert (df["MonkeyName"] == SUBJECT_MONKEY_ID).any(), "fixture should include 81G"
+    groups = zombies_trials_by_monkey(df)
+    assert all(g.monkey != SUBJECT_MONKEY_ID for g in groups), "81G leaked into raster"
+    # all remaining monkeys are ranked (81G was the only unranked one)
+    assert all(g.rank is not None for g in groups)
+
+
 def test_plot_writes_png():
     df = make_synthetic_zombies_unit()
     with tempfile.TemporaryDirectory() as tmp:
@@ -85,10 +98,31 @@ def test_plot_writes_png():
         assert os.path.exists(path) and os.path.getsize(path) > 0
 
 
+def test_channel_token_and_units_on_channel():
+    assert _channel_token("Channel.C_018_Unit 1") == "C_018"
+    assert _channel_token("C-018") == "C_018"
+    df = make_synthetic_zombies_unit()
+    units = _units_on_channel(df, "C_018")
+    assert len(units) >= 1
+
+
+def test_overlay_writes_png():
+    pair = make_synthetic_overlay_pair()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "overlay.png")
+        fig = plot_overlay_raster(pair, title="manual vs SI",
+                                  window_s=(0.1, 0.45), save_path=path)
+        assert fig is not None
+        assert os.path.exists(path) and os.path.getsize(path) > 0
+
+
 if __name__ == "__main__":
     test_parse_mixed_list()
     test_parse_si_list()
     test_trials_grouped_and_ranked()
     test_select_unit_rows_mixed_and_si()
+    test_subject_monkey_excluded()
     test_plot_writes_png()
+    test_channel_token_and_units_on_channel()
+    test_overlay_writes_png()
     print("All zombies_raster_review smoke tests passed.")

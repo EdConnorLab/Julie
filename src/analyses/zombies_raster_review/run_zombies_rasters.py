@@ -37,7 +37,7 @@ import pandas as pd
 from .unit_lists import (
     RasterRequest, load_mixed_manual_requests, load_si_sorted_requests,
 )
-from .zombies_raster import plot_zombies_raster
+from .zombies_raster import plot_zombies_raster, plot_overlay_raster
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_LISTS = {
@@ -130,17 +130,91 @@ def run_from_list(source_kind: str, list_path: str, out_dir: str, **kw) -> Dict[
     return run_from_requests(requests, out_dir, **kw)
 
 
-def _run_demo(out_dir: str):
-    from .make_synthetic_zombies_session import make_synthetic_zombies_unit
+# --------------------------------------------------------------------------- #
+# Overlay mode — compare the two sorts of one channel
+# --------------------------------------------------------------------------- #
+def _channel_token(channel: str) -> str:
+    """Normalise a channel string to a ``C_018``-style token for matching."""
+    tok = str(channel).replace("Channel.", "").replace("-", "_").strip()
+    return tok.split("_Unit")[0]
+
+
+def _units_on_channel(session_df, base_channel: str) -> Dict[str, "pd.DataFrame"]:
+    """Split a session DataFrame into per-unit frames on one base channel.
+
+    Keyed by a short unit label (the tail of NeuronID, or the Channel string).
+    """
+    token = _channel_token(base_channel)
+    if "BaseChannel" in session_df.columns:
+        mask = session_df["BaseChannel"].astype(str).apply(lambda c: _channel_token(c) == token)
+    else:
+        mask = session_df["Channel"].astype(str).apply(lambda c: _channel_token(c) == token)
+    sub = session_df[mask]
+    out: Dict[str, "pd.DataFrame"] = {}
+    id_col = "NeuronID" if "NeuronID" in sub.columns else "Channel"
+    for uid, udf in sub.groupby(sub[id_col].astype(str)):
+        label = str(uid).split("Channel.")[-1]  # trim location/date prefix
+        out[label] = udf
+    return out
+
+
+def run_overlay_for_channel(
+    date: str, round_no: int, base_channel: str, out_dir: str,
+    *, window_ms=None, xlim: float = 2.0, psth_bin_ms: float = 50.0,
+) -> Optional[str]:
+    """Overlay the manual (mixed) and SI sorts of one channel on a single raster."""
     os.makedirs(out_dir, exist_ok=True)
-    df = make_synthetic_zombies_unit()
+    unit_dfs: Dict[str, "pd.DataFrame"] = {}
+    for source_kind in ("mixed", "si"):
+        source = _make_source(source_kind)
+        try:
+            sdf = source.load(date, round_no)
+        except Exception as e:
+            print(f"[overlay] {source_kind} load failed for {date} r{round_no}: {e}")
+            continue
+        if sdf is None or sdf.empty:
+            continue
+        for label, udf in _units_on_channel(sdf, base_channel).items():
+            unit_dfs[f"{source_kind}: {label}"] = udf
+
+    if not unit_dfs:
+        print(f"[overlay] no units found on {base_channel} for {date} r{round_no}")
+        return None
+
+    window_s = (window_ms[0] / 1000.0, window_ms[1] / 1000.0) if window_ms else None
+    tok = _channel_token(base_channel)
+    save_path = os.path.join(out_dir, f"overlay_{date}_round{round_no}_{tok}.png")
+    plot_overlay_raster(
+        unit_dfs, title=f"Sort comparison — {tok} · {date} round {round_no}",
+        window_s=window_s, xlim=xlim, psth_bin_ms=psth_bin_ms, save_path=save_path,
+    )
+    return save_path
+
+
+# --------------------------------------------------------------------------- #
+# Demos (no DB / recordings)
+# --------------------------------------------------------------------------- #
+def _run_demo(out_dir: str):
+    from .make_synthetic_zombies_session import (
+        make_synthetic_zombies_unit, make_synthetic_overlay_pair,
+    )
+    os.makedirs(out_dir, exist_ok=True)
+    # single-unit raster (with a few subject 81G trials that must be excluded)
+    df = make_synthetic_zombies_unit(include_subject=True)
     plot_zombies_raster(
         df,
         neuron_label="DEMO — AMG_2023-09-26_2_Channel.C_018_Unit 1",
         window_s=(0.1, 0.45), p_value=0.004,
-        save_path=os.path.join(out_dir, "demo_zombies_raster.png"),
+        save_path=os.path.join(out_dir, "demo_single_unit.png"),
     )
-    print(f"Demo raster written to {out_dir}")
+    # overlay of two sorts of the same channel
+    pair = make_synthetic_overlay_pair()
+    plot_overlay_raster(
+        pair, title="DEMO overlay — manual vs SI sort of C-018",
+        window_s=(0.1, 0.45),
+        save_path=os.path.join(out_dir, "demo_overlay.png"),
+    )
+    print(f"Demo rasters written to {out_dir}")
 
 
 def main(argv=None):
@@ -166,4 +240,52 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    # ========================================================================
+    #  RUN CONFIG — edit these, then just press ▶ Run in PyCharm.
+    #  (No terminal or command-line arguments needed.)
+    #
+    #  MODE options:
+    #    "demo"     fabricated data — no DB / recordings needed. Writes a
+    #               single-unit raster and an overlay raster so you can see
+    #               both formats immediately.
+    #    "mixed"    one raster per unit in the mixed-manual Excel list
+    #               (MixedManualSpikeSource: manually sorted + unsorted).
+    #    "si"       one raster per unit in the SI-sorted CSV list
+    #               (SISortedSpikeSource).
+    #    "overlay"  overlay the two sorts (manual vs SI) of ONE channel in one
+    #               session, matched trial-for-trial — for cross-checking sorts.
+    # ========================================================================
+    MODE = "demo"
+
+    # Where figures are written (created if missing). Defaults to an `output/`
+    # folder next to this file so they show up right in the PyCharm project tree.
+    OUT_DIR = os.path.join(_HERE, "output")
+
+    # -- MODE == "mixed" / "si" --
+    LIST_PATH = None            # None → use the bundled list in unit_lists/
+
+    # -- MODE == "overlay" --
+    OVERLAY_DATE = "2023-09-26"
+    OVERLAY_ROUND = 2
+    OVERLAY_CHANNEL = "C_018"   # base channel; both sorts of it are overlaid
+    OVERLAY_WINDOW_MS = None    # e.g. (100, 450) to shade a response window
+
+    # -- plot tuning (applies to all modes) --
+    XLIM_S = 2.0
+    PSTH_BIN_MS = 50.0
+    # ========================================================================
+
+    if MODE == "demo":
+        _run_demo(os.path.join(OUT_DIR, "demo"))
+    elif MODE in ("mixed", "si"):
+        list_path = LIST_PATH or DEFAULT_LISTS[MODE]
+        run_from_list(MODE, list_path, os.path.join(OUT_DIR, MODE),
+                      xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
+    elif MODE == "overlay":
+        run_overlay_for_channel(
+            OVERLAY_DATE, OVERLAY_ROUND, OVERLAY_CHANNEL,
+            os.path.join(OUT_DIR, "overlay"),
+            window_ms=OVERLAY_WINDOW_MS, xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS,
+        )
+    else:
+        raise ValueError(f"unknown MODE '{MODE}'")
