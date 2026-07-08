@@ -152,9 +152,6 @@ def plot_zombies_raster(
         print(f"[skip] {neuron_label}: no Zombies trials")
         return None
 
-    n_ranks = max((m.rank for m in by_monkey if m.rank), default=1)
-    cmap = plt.cm.viridis
-
     fig = plt.figure(figsize=(8.5, 9))
     gs = GridSpec(2, 1, height_ratios=[3.2, 1.0], hspace=0.08, figure=fig)
     ax = fig.add_subplot(gs[0])
@@ -163,24 +160,22 @@ def plot_zombies_raster(
     # --- raster ---
     y = 0
     all_trials: List[np.ndarray] = []
-    tick_pos, tick_labels, tick_colors = [], [], []
+    tick_pos, tick_labels = [], []
     for i, m in enumerate(by_monkey):
         n = len(m.trials)
-        color = cmap((m.rank - 1) / max(1, n_ranks - 1)) if m.rank else "0.5"
         # alternating background band spanning this monkey's trials
         if i % 2 == 0:
             ax.axhspan(y - 0.5, y + n - 0.5, color="0.96", zorder=0)
-        # spikes
+        # spikes (black)
         ax.eventplot(m.trials, lineoffsets=np.arange(y, y + n),
-                     colors=[color], linewidths=0.9, linelengths=0.9)
+                     colors="black", linewidths=0.9, linelengths=0.9)
         center = y + n / 2 - 0.5
         tick_pos.append(center)
         tick_labels.append(str(m.monkey))
-        tick_colors.append(color)
         # rank number on the right edge (axes-fraction x, data-coord y)
         rank_txt = f"#{m.rank}" if m.rank else "unranked"
         ax.text(1.01, center, rank_txt, transform=ax.get_yaxis_transform(),
-                ha="left", va="center", fontsize=8, color=color, clip_on=False)
+                ha="left", va="center", fontsize=8, color="0.4", clip_on=False)
         all_trials.extend(m.trials)
         y += n
 
@@ -192,12 +187,8 @@ def plot_zombies_raster(
     ax.set_ylim(-0.5, total_trials - 0.5)
     ax.set_xlim(0, xlim)
     ax.invert_yaxis()  # most dominant monkey (rank 1) at the top
-    ax.set_ylabel("stimulus monkey  (dominant → subordinate)", fontsize=10)
     ax.set_yticks(tick_pos)
     ax.set_yticklabels(tick_labels, fontsize=9)
-    for tick_label, c in zip(ax.get_yticklabels(), tick_colors):
-        tick_label.set_color(c)
-        tick_label.set_fontweight("bold")
     ax.tick_params(axis="y", length=0)
     ax.tick_params(labelbottom=False)
     for s in ("top", "right", "left"):
@@ -221,15 +212,6 @@ def plot_zombies_raster(
     ax_psth.set_ylabel("rate (Hz)", fontsize=10)
     for s in ("top", "right"):
         ax_psth.spines[s].set_visible(False)
-
-    # rank colourbar legend
-    if n_ranks > 1:
-        sm = plt.cm.ScalarMappable(cmap=cmap,
-                                   norm=plt.Normalize(vmin=1, vmax=n_ranks))
-        cbar = fig.colorbar(sm, ax=ax, fraction=0.025, pad=0.08)
-        cbar.set_label("dominance rank", fontsize=8)
-        cbar.ax.invert_yaxis()
-        cbar.ax.tick_params(labelsize=7)
 
     _save_or_keep(fig, save_path)
     return fig
@@ -363,7 +345,6 @@ def plot_overlay_raster(
     ax.set_ylim(-0.5, total_rows - 0.5)
     ax.set_xlim(0, xlim)
     ax.invert_yaxis()
-    ax.set_ylabel("stimulus monkey  (dominant → subordinate)", fontsize=10)
     ax.set_yticks(tick_pos)
     ax.set_yticklabels(tick_labels, fontsize=9)
     ax.tick_params(axis="y", length=0)

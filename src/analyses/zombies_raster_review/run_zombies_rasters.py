@@ -34,10 +34,12 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from .unit_lists import (
+from analyses.zombies_raster_review.unit_lists import (
     RasterRequest, load_mixed_manual_requests, load_si_sorted_requests,
 )
-from .zombies_raster import plot_zombies_raster, plot_overlay_raster
+from analyses.zombies_raster_review.zombies_raster import (
+    plot_zombies_raster, plot_overlay_raster,
+)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_LISTS = {
@@ -195,7 +197,7 @@ def run_overlay_for_channel(
 # Demos (no DB / recordings)
 # --------------------------------------------------------------------------- #
 def _run_demo(out_dir: str):
-    from .make_synthetic_zombies_session import (
+    from analyses.zombies_raster_review.make_synthetic_zombies_session import (
         make_synthetic_zombies_unit, make_synthetic_overlay_pair,
     )
     os.makedirs(out_dir, exist_ok=True)
