@@ -42,10 +42,23 @@ For every pair of units on *different* channels:
    are probably different neurons.
 4. **Physical channel distance** — from the probe map (`probe_geometry.py`).
    Duplicates should be on nearby contacts.
-5. **Spatial footprint** *(optional, needs the raw recording)* — the mean
-   waveform across all contacts triggered on each unit's spikes. Same neuron ⇒
-   footprints peak at the same contact with near-identical shape (cosine
-   similarity ≈ 1).
+5. **Spatial footprint** *(sorted_spikes path only, needs the raw recording)* —
+   the mean waveform across all contacts triggered on each unit's spikes. Same
+   neuron ⇒ footprints peak at the same contact with near-identical shape.
+
+## Two input paths
+
+| path | source | units compared | evidence |
+|------|--------|----------------|----------|
+| **sorted_spikes** | one session's `sorted_spikes.pkl` (+ optional raw recording) | manually sorted only | all five (incl. waveform footprints) |
+| **exploded** | `Cortana/exploded_spike_cache/{date}_round_{round}.pkl` | **sorted *and* unsorted** whole-channels | coincidence, distance, refractory (no footprints — no raw voltages in the cache) |
+
+The **exploded** path is what lets you compare sorted-vs-unsorted and
+unsorted-vs-unsorted pairs. The exploded cache stores per-trial spike **times in
+seconds** for every channel; a channel that was manually sorted appears only as
+its sorted unit(s) (its raw trace is dropped), so sorted-vs-unsorted pairs are
+always cross-channel — exactly the duplicate question. Spikes are converted to
+integer sample ticks (30 kHz) so the same metrics apply.
 
 ## Layout
 
@@ -56,66 +69,89 @@ For every pair of units on *different* channels:
 | `spiketrain_metrics.py` | coincidence, CCG/ACG, refractory, pairwise sweep |
 | `waveforms.py` | cross-channel mean-waveform footprints (needs voltages) |
 | `plots.py` | coincidence matrix, distance-vs-coincidence, per-pair report |
-| `run_analysis.py` | CLI: session → figures + ranked CSV + summary |
+| `exploded_loader.py` | read an exploded-cache pkl → `Session` of sorted+unsorted units (integer ticks) |
+| `exploded_analysis.py` | all-units coincidence per session + batch; CSVs, matrix, pair-type scatter |
+| `run_analysis.py` | **PyCharm entry point** (edit the config block, press ▶ Run) |
 | `make_synthetic_session.py` | fabricate a session with a *known* duplicate |
-| `tests/test_smoke.py` | end-to-end test on the synthetic session |
+| `tests/` | `test_smoke.py` (sorted path), `test_exploded.py` (exploded path) |
 
-## Usage
+## Usage — just press ▶ Run in PyCharm
 
-Run from the repo's `src/` directory (so `spikesorting` is importable).
+Open `run_analysis.py`, edit the **RUN CONFIG** block at the bottom, then run the
+file directly (no terminal, no arguments):
 
-```bash
-# spike-train analysis only (no raw recording needed)
-python -m spikesorting.cross_channel_analysis.run_analysis /path/to/231030_round2
-
-# add the raw-recording spatial footprints (heavy: loads/filters the recording)
-python -m spikesorting.cross_channel_analysis.run_analysis /path/to/session --with-voltages
-
-# try it with no data — fabricated session with a planted duplicate
-python -m spikesorting.cross_channel_analysis.run_analysis --demo
+```python
+MODE = "demo"     # "demo" | "sorted_pkl" | "exploded_session" | "exploded_batch"
+OUT_DIR = ...     # defaults to results/ next to the file (gitignored)
 ```
 
-Outputs (written to `<session>/cross_channel_analysis/` by default):
+| `MODE` | what it does | needs |
+|--------|--------------|-------|
+| `"demo"` | fabricated session with a planted duplicate (sorted path, incl. footprints) | nothing |
+| `"sorted_pkl"` | one `sorted_spikes.pkl`; footprints if `WITH_RAW_VOLTAGES` | a session dir |
+| `"exploded_session"` | all sorted+unsorted units for ONE exploded pkl | `EXPLODED_PKL` |
+| `"exploded_batch"` | every session in the exploded cache dir | `EXPLODED_CACHE_DIR` |
 
-- `overview_coincidence_matrix.png` — units × units synchrony heatmap
-- `overview_distance_vs_coincidence.png` — duplicates cluster at close+synchronous
-- `pair_NN_<a>__<b>.png` — one diagnostic report per candidate duplicate
-- `candidate_duplicates.csv`, `all_pairs.csv`, `summary.txt`
+### Outputs
+
+*sorted_pkl / demo:* `coincidence_matrix.png`, `distance_vs_coincidence.png`,
+per-candidate `pair_*.png` reports, `candidate_duplicates.csv`, `all_pairs.csv`,
+`summary.txt`.
+
+*exploded_session:* per-session folder with `all_pairs.csv` (every cross-channel
+pair, with a `pair_type` column: sorted-sorted / sorted-unsorted /
+unsorted-unsorted), `candidate_duplicates.csv`, `coincidence_matrix.png`, and
+`distance_vs_coincidence.png` (coloured by pair type).
+
+*exploded_batch:* one folder **per session** as above, **plus** a top-level
+`all_candidates.csv` aggregating candidate pairs across every session (with
+`session` and `pair_type` columns) — the dataset-wide table for deciding which
+units to merge/drop.
 
 ### As a library
 
 ```python
-from spikesorting.cross_channel_analysis.loader import load_sorted_spikes
+from spikesorting.cross_channel_analysis.exploded_loader import load_exploded_session
 from spikesorting.cross_channel_analysis import spiketrain_metrics as stm
 
-session = load_sorted_spikes("/path/to/session/sorted_spikes.pkl")
-pairs = stm.all_pairs(session)                 # every cross-channel pair, ranked
-dups  = stm.candidate_duplicates(pairs)        # the ones that look like duplicates
+session = load_exploded_session(".../Cortana/exploded_spike_cache/2023-10-04_round_4.pkl")
+pairs = stm.all_pairs(session)              # every cross-channel pair, ranked
+dups  = stm.candidate_duplicates(pairs)     # high coincidence AND well above chance
 ```
 
 ## Tuning
 
-Defaults in `run_analysis.py` / `spiketrain_metrics.py`:
+Config-block / function defaults:
 
 - `window_ms = 0.4` — coincidence half-window (≈ propagation + a couple samples
   of jitter at 30 kHz).
-- `coincidence_threshold = 0.3`, `ratio_threshold = 5.0` — a pair is a candidate
-  only if coincidence ≥ 0.3 **and** ≥ 5× chance.
+- `coincidence_threshold = 0.3`, `ratio_threshold = 5.0` — a candidate needs
+  coincidence ≥ 0.3 **and** ≥ 5× chance.
+- `min_spikes = 50` *(exploded only)* — drop near-silent channels. A unit with a
+  few spikes coincides 1.0 with any dense partner and would masquerade as a
+  duplicate of everything, so it is excluded before pairing.
 - `refractory_ms = 1.5` — refractory period for the merged-train check.
 
 ## Tests
 
 ```bash
-python src/spikesorting/cross_channel_analysis/tests/test_smoke.py   # or: pytest
+python src/spikesorting/cross_channel_analysis/tests/test_smoke.py
+python src/spikesorting/cross_channel_analysis/tests/test_exploded.py   # or: pytest
 ```
 
 ## Notes / limitations
 
 - The probe map (`PROBE_CHANNEL_ORDER`, 65 µm pitch) is copied from
-  `spikesorting/sort_spikes/sort_spikes.py`. If a session used a different probe,
-  update `probe_geometry.py`; channel distances become `n/a` for off-map
-  channels but the spike-train metrics still work.
+  `spikesorting/sort_spikes/sort_spikes.py`. Off-map channels get `distance = n/a`
+  but spike-train metrics still work.
 - Coincidence assumes both channels share the same recording clock (they do —
-  same Intan file), so spike indices are directly comparable.
+  same Intan file).
+- Exploded-cache spikes are only the within-trial-epoch spikes, so CCG/ACG on
+  those trains have mild trial-boundary artifacts; the central coincidence peak
+  (what duplicate detection uses) is unaffected.
+- **A pair that is high-coincidence with *many* channels at once, including
+  distant ones, is usually a shared artifact (movement/stim transient), not a
+  duplicate.** Real duplicates are high-coincidence with their *near* neighbours
+  only — sort `all_pairs.csv` by `contacts_apart` to separate the two.
 - Footprint panels need `windowsort` + `clat` and the raw Intan files; the
-  spike-train analysis needs neither.
+  exploded path needs neither.
