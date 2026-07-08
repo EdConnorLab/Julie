@@ -250,9 +250,12 @@ def render_overlays_for_units(
             continue  # need at least one unit from each sort to overlay
 
         window_s = _group_window_s(g, mixed_anchor_windows, si_anchor_windows)
-        members = " · ".join(unit_dfs.keys())
-        title = (f"Sort match #{i} — {label}\n"
-                 f"{members}  ·  coincidence {g.best_coincidence:.2f}")
+        # units are named in the legend and the probe map, so keep the title
+        # short — some groups have >10 units and listing them all is unreadable.
+        n_mixed, n_si = len(g.mixed_ids), len(g.si_ids)
+        title = (f"Sort match #{i} — {label}   ·   "
+                 f"{n_mixed} manual + {n_si} SI units   ·   "
+                 f"coincidence {g.best_coincidence:.2f}")
         save_path = os.path.join(out_dir, f"overlay_{label}_group{i:02d}.png")
         fig = plot_overlay_raster(
             unit_dfs, title=title, window_s=window_s,

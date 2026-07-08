@@ -34,7 +34,19 @@ same neuron on a different channel, so `NeuronID … C_020` can be `Cell C_011` 
 the mixed list. Trials are matched across sorts by `TaskField`; each trial row is
 split into a thin lane per sort, coloured consistently, and the PSTHs are
 overlaid — so you can see spike-for-spike where the two sorts agree or differ.
-See **Overlay matching** below.
+The units are named in the **legend** (and probe map), so the title stays short
+(counts + coincidence) even for groups with many units. See **Overlay matching**
+below.
+
+- **Probe map (right panel)** — the 32-channel linear probe drawn to scale, with
+  each overlaid unit marked on its physical contact (colour matches its raster
+  lane). Units sharing a contact (e.g. manual `C_025` and SI `C_025_Unit 1`) are
+  offset side-by-side so they don't overlap. The title reports the **span** in µm
+  between the group's units. This answers a key question: units clustered on
+  nearby contacts are plausibly *one* neuron seen twice, whereas high-coincidence
+  units far apart on the probe are *distinct* neurons firing synchronously.
+  Contact geometry comes from `spikesorting.cross_channel_analysis.probe_geometry`
+  (65 µm pitch). Pass `show_probe=False` to omit the panel.
 
 The recording **subject (81G) is always excluded** — she is never a stimulus, so
 she never appears as a row even if she shows up in a session's trial table.

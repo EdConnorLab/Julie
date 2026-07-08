@@ -22,7 +22,7 @@ from analyses.zombies_raster_review.make_synthetic_zombies_session import (
 )
 from analyses.zombies_raster_review.zombies_raster import (
     zombies_trials_by_monkey, plot_zombies_raster, plot_overlay_raster,
-    _window_label_ms, SUBJECT_MONKEY_ID,
+    _window_label_ms, _unit_channel_token, SUBJECT_MONKEY_ID,
 )
 from analyses.zombies_raster_review.coincidence_match import (
     session_units, unit_spike_train, match_units_across_sources, group_matches,
@@ -170,6 +170,25 @@ def test_render_overlays_for_units_writes_png():
             assert os.path.exists(p) and os.path.getsize(p) > 0
 
 
+def test_unit_channel_token():
+    df = make_synthetic_zombies_unit(channel="Channel.C_011_Unit 1",
+                                     neuron_id="AMG_2023-09-26_2_Channel.C_020_Unit 1")
+    # Channel column wins; "_Unit" suffix and "Channel." prefix are stripped
+    assert _unit_channel_token(df) == "C_011"
+
+
+def test_overlay_probe_toggle_both_render():
+    # the probe-map panel (default on) and the plain layout both produce a figure
+    pair = make_synthetic_overlay_pair()
+    with tempfile.TemporaryDirectory() as tmp:
+        for flag, name in ((True, "with_probe.png"), (False, "no_probe.png")):
+            path = os.path.join(tmp, name)
+            fig = plot_overlay_raster(pair, title="probe toggle", window_s=(0.1, 0.45),
+                                      show_probe=flag, save_path=path)
+            assert fig is not None
+            assert os.path.exists(path) and os.path.getsize(path) > 0
+
+
 if __name__ == "__main__":
     test_parse_mixed_list()
     test_parse_si_list()
@@ -183,4 +202,6 @@ if __name__ == "__main__":
     test_cross_source_coincidence_matches_across_channels()
     test_group_matches_bundles_connected_units()
     test_render_overlays_for_units_writes_png()
+    test_unit_channel_token()
+    test_overlay_probe_toggle_both_render()
     print("All zombies_raster_review smoke tests passed.")

@@ -47,8 +47,13 @@ GROUP = "Zombies"
 # row in these rasters even if she shows up in a session's trial table.
 SUBJECT_MONKEY_ID = "81G"
 
-# palette for overlay mode (manual vs SI-sorted, etc.)
-_OVERLAY_COLORS = ["#4E79A7", "#E15759", "#59A14F", "#B07AA1", "#F28E2B"]
+# palette for overlay mode (manual vs SI-sorted, etc.). A 10-colour qualitative
+# set (Tableau 10) so groups with many units stay distinguishable in both the
+# raster lanes and the probe map; colours still cycle beyond 10.
+_OVERLAY_COLORS = [
+    "#4E79A7", "#E15759", "#59A14F", "#B07AA1", "#F28E2B",
+    "#76B7B2", "#EDC948", "#AF7AA1", "#FF9DA7", "#9C755F",
+]
 
 
 def zombies_monkey_order(present) -> Tuple[list, dict]:
@@ -249,6 +254,83 @@ def _save_or_keep(fig, save_path):
 
 
 # --------------------------------------------------------------------------- #
+# Probe map — where each overlaid unit sits on the 32-channel linear probe
+# --------------------------------------------------------------------------- #
+def _unit_channel_token(df) -> Optional[str]:
+    """Best-effort ``C_020``-style channel token for a unit's per-trial frame."""
+    for col in ("Channel", "NeuronID"):
+        if col in df.columns and len(df) > 0:
+            raw = str(df[col].iloc[0])
+            tok = raw.split("Channel.")[-1].split("_Unit")[0].strip()
+            if tok:
+                return tok
+    return None
+
+
+def _draw_probe_map(ax, unit_dfs, colors):
+    """Draw the 32-channel linear probe, marking each overlaid unit's contact.
+
+    Marker colour matches the raster lane; units sharing a contact (e.g. manual
+    ``C_025`` and SI ``C_025_Unit 1``) are offset horizontally so they don't
+    overlap. Vertical position is physical depth (contacts are ``Y_PITCH_UM``
+    apart), so units clustered on nearby contacts are plausibly one neuron, while
+    high-coincidence units far apart are distinct neurons firing synchronously —
+    which is exactly what this panel is here to reveal.
+    """
+    from collections import defaultdict
+    from spikesorting.cross_channel_analysis import probe_geometry as geom
+
+    n = len(geom.PROBE_CHANNEL_ORDER)
+    pitch = geom.Y_PITCH_UM
+
+    # backbone shank: a thin line down the probe with a short tick per contact
+    ax.plot([0, 0], [0, (n - 1) * pitch], color="0.75", lw=1.2, zorder=1)
+    for c in range(n):
+        ax.plot([-0.12, 0.12], [c * pitch, c * pitch], color="0.82", lw=0.8, zorder=1)
+
+    per_contact = defaultdict(list)   # contact index -> [(label, token)]
+    off_probe = []
+    for label, df in unit_dfs.items():
+        tok = _unit_channel_token(df)
+        ci = geom.contact_index_of(tok) if tok else None
+        (off_probe if ci is None else per_contact[ci]).append((label, tok))
+
+    marked_depths = []
+    x0, x_step = 0.22, 0.28
+    for ci, units in sorted(per_contact.items()):
+        depth = ci * pitch
+        marked_depths.append(depth)
+        for j, (label, tok) in enumerate(units):
+            x = x0 + x_step * j
+            ax.plot([0, x], [depth, depth], color="0.6", lw=0.7, zorder=2)  # connector
+            ax.scatter([x], [depth], s=58, color=colors.get(label, "0.3"),
+                       edgecolor="black", linewidth=0.4, zorder=3)
+        # channel id once, just past the last marker on this contact
+        ax.text(x0 + x_step * (len(units) - 1) + 0.22, depth, units[0][1],
+                va="center", ha="left", fontsize=7, color="0.25", clip_on=False)
+
+    ax.set_xlim(-0.25, 1.4)
+    ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
+    ax.invert_yaxis()  # contact 0 at the top, deeper contacts downward
+    ax.set_ylabel("depth on probe (µm)", fontsize=8)
+    ax.set_xticks([])
+    ax.tick_params(axis="y", labelsize=7)
+    for s in ("top", "right", "bottom"):
+        ax.spines[s].set_visible(False)
+
+    # headline: how far apart the marked units are (span in µm) — goes in the
+    # title so it never overlaps the markers
+    if len(marked_depths) >= 2:
+        span = max(marked_depths) - min(marked_depths)
+        ax.set_title(f"probe (32 ch)\nunit span {span:.0f} µm", fontsize=9)
+    else:
+        ax.set_title("probe (32 ch)", fontsize=9)
+    if off_probe:
+        ax.text(0.5, -0.02, f"{len(off_probe)} off-probe", transform=ax.transAxes,
+                ha="center", va="top", fontsize=7, color="0.6")
+
+
+# --------------------------------------------------------------------------- #
 # Overlay mode — compare two sorts of the same channel on one raster
 # --------------------------------------------------------------------------- #
 def _aligned_by_key(df, monkey, spike_col, key_col):
@@ -275,6 +357,7 @@ def plot_overlay_raster(
     window_s: Optional[Tuple[float, float]] = None,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
+    show_probe: bool = True,
     save_path: Optional[str] = None,
 ):
     """Overlay several sorts of the *same channel* on one raster for comparison.
@@ -298,10 +381,19 @@ def plot_overlay_raster(
         present.update(z["MonkeyName"].dropna().unique())
     ordered, rank_by_monkey = zombies_monkey_order(present)
 
-    fig = plt.figure(figsize=(9, 9))
-    gs = GridSpec(2, 1, height_ratios=[3.2, 1.0], hspace=0.08, figure=fig)
-    ax = fig.add_subplot(gs[0])
-    ax_psth = fig.add_subplot(gs[1], sharex=ax)
+    if show_probe:
+        fig = plt.figure(figsize=(11, 9))
+        gs = GridSpec(2, 2, width_ratios=[5.5, 1.15], height_ratios=[3.2, 1.0],
+                      hspace=0.08, wspace=0.14, figure=fig)
+        ax = fig.add_subplot(gs[0, 0])
+        ax_psth = fig.add_subplot(gs[1, 0], sharex=ax)
+        ax_probe = fig.add_subplot(gs[:, 1])
+    else:
+        fig = plt.figure(figsize=(9, 9))
+        gs = GridSpec(2, 1, height_ratios=[3.2, 1.0], hspace=0.08, figure=fig)
+        ax = fig.add_subplot(gs[0])
+        ax_psth = fig.add_subplot(gs[1], sharex=ax)
+        ax_probe = None
 
     lane_h = 0.8 / len(labels)
     y = 0
@@ -395,6 +487,10 @@ def plot_overlay_raster(
     ax_psth.set_ylabel("rate (Hz)", fontsize=10)
     for s in ("top", "right"):
         ax_psth.spines[s].set_visible(False)
+
+    # --- probe map: where these units sit on the linear probe ---
+    if ax_probe is not None:
+        _draw_probe_map(ax_probe, unit_dfs, colors)
 
     _save_or_keep(fig, save_path)
     return fig
