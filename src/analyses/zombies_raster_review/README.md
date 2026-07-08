@@ -76,6 +76,7 @@ OUT_DIR = ...     # defaults to output/ next to this file (gitignored)
 # for MODE == "overlay" (sweeps every (date, round) in the two lists by default):
 OVERLAY_DATE  = None     # e.g. "2023-09-26" to restrict to one date
 OVERLAY_ROUND = None     # e.g. 2 (only used when OVERLAY_DATE is set)
+LISTED_ONLY   = False    # True → only cells in the xlsx/csv lists (see below)
 COINCIDENCE_THRESHOLD = 0.2   # min coincidence fraction to call a match
 RATIO_THRESHOLD       = 5.0   # …and it must be this many × chance
 ```
@@ -118,6 +119,20 @@ Matching happens in `coincidence_match.py`; thresholds default to the values in
 `coincidence_match.DEFAULT_*` and are a little more permissive than the
 within-manual-sort defaults (a manual and an automated sort of one neuron agree
 less than two channels of a single manual sort do).
+
+### `LISTED_ONLY` — investigate just the two lists, or open it up
+
+By default (`LISTED_ONLY = False`), a listed cell is matched against **all**
+units in the other sort, so its cross-sort twin is drawn even when that twin
+isn't itself in a list — that is why an overlay can contain a unit you never
+listed. This is the fuller view for when you extend the investigation beyond the
+lists.
+
+Set **`LISTED_ONLY = True`** to restrict matching to the cells that appear in the
+xlsx/csv on **both** sides, so every unit in every overlay is from your lists.
+Use this while investigating the two lists on their own. (A listed cell with no
+listed cross-sort partner then produces no overlay, since an overlay needs a unit
+from each sort.) From the terminal: `--overlay --listed-only`.
 
 ### As a library
 

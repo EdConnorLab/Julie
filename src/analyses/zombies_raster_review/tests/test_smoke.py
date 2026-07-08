@@ -170,6 +170,31 @@ def test_render_overlays_for_units_writes_png():
             assert os.path.exists(p) and os.path.getsize(p) > 0
 
 
+def test_listed_only_toggle():
+    # listed_only restricts the overlay to cells that are in the lists (both
+    # sides); the default also brings in a listed cell's unlisted cross-sort twin
+    mixed_df, si_df = make_synthetic_cross_source_session()
+    um = session_units(mixed_df, "Channel")
+    us = session_units(si_df, "NeuronID")
+    si_anchor = {"AMG_2023-09-26_2_Channel.C_020_Unit 1": (0.1, 0.45)}
+    with tempfile.TemporaryDirectory() as tmp:
+        # default: C_020 (SI, listed) drags in its unlisted mixed twin C_011
+        w_all = render_overlays_for_units(um, us, tmp, label="all",
+                                          si_anchor_windows=si_anchor)
+        assert len(w_all) == 1
+        # listed_only: C_011 isn't listed, so there's no cross-sort pair to draw
+        w_listed = render_overlays_for_units(um, us, tmp, label="listed",
+                                             si_anchor_windows=si_anchor,
+                                             listed_only=True)
+        assert len(w_listed) == 0
+        # listed_only with BOTH sides listed: the pair overlays
+        w_both = render_overlays_for_units(
+            um, us, tmp, label="both", listed_only=True,
+            mixed_anchor_windows={"Channel.C_011_Unit 1": (0.1, 0.45)},
+            si_anchor_windows=si_anchor)
+        assert len(w_both) == 1
+
+
 def test_unit_channel_token():
     df = make_synthetic_zombies_unit(channel="Channel.C_011_Unit 1",
                                      neuron_id="AMG_2023-09-26_2_Channel.C_020_Unit 1")
@@ -202,6 +227,7 @@ if __name__ == "__main__":
     test_cross_source_coincidence_matches_across_channels()
     test_group_matches_bundles_connected_units()
     test_render_overlays_for_units_writes_png()
+    test_listed_only_toggle()
     test_unit_channel_token()
     test_overlay_probe_toggle_both_render()
     print("All zombies_raster_review smoke tests passed.")

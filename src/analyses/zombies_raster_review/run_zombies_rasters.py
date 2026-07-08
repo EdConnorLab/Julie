@@ -208,6 +208,7 @@ def render_overlays_for_units(
     label: str,
     mixed_anchor_windows: Optional[dict] = None,
     si_anchor_windows: Optional[dict] = None,
+    listed_only: bool = False,
     window_ms: float = DEFAULT_WINDOW_MS,
     coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
@@ -220,11 +221,21 @@ def render_overlays_for_units(
     an ANOVA-passed unit id → its significant window (s); when either is given,
     only groups containing at least one anchor are drawn, and the anchor's window
     is shaded. Returns the saved figure paths.
+
+    ``listed_only`` restricts matching to the *listed* cells on both sides (the
+    keys of the anchor-window dicts), so every unit shown is from your xlsx/csv.
+    With it off (default), a listed cell is matched against *all* units in the
+    other sort, so its cross-sort twin is found even if that twin isn't listed.
     """
     os.makedirs(out_dir, exist_ok=True)
     mixed_anchor_windows = mixed_anchor_windows or {}
     si_anchor_windows = si_anchor_windows or {}
     anchored_only = bool(mixed_anchor_windows or si_anchor_windows)
+
+    if listed_only:
+        # keep only cells that appear in the lists, on both sides
+        units_mixed = {k: v for k, v in units_mixed.items() if k in mixed_anchor_windows}
+        units_si = {k: v for k, v in units_si.items() if k in si_anchor_windows}
 
     matches = match_units_across_sources(
         units_mixed, units_si, window_ms=window_ms,
@@ -274,6 +285,7 @@ def run_overlay_by_coincidence(
     *,
     mixed_anchor_windows: Optional[dict] = None,
     si_anchor_windows: Optional[dict] = None,
+    listed_only: bool = False,
     window_ms: float = DEFAULT_WINDOW_MS,
     coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
@@ -301,6 +313,7 @@ def run_overlay_by_coincidence(
     return render_overlays_for_units(
         units_mixed, units_si, out_dir, label=f"{date}_round{round_no}",
         mixed_anchor_windows=mixed_anchor_windows, si_anchor_windows=si_anchor_windows,
+        listed_only=listed_only,
         window_ms=window_ms, coincidence_threshold=coincidence_threshold,
         ratio_threshold=ratio_threshold, xlim=xlim, psth_bin_ms=psth_bin_ms,
     )
@@ -311,6 +324,7 @@ def run_overlay_from_lists(
     *,
     only_date: Optional[str] = None,
     only_round: Optional[int] = None,
+    listed_only: bool = False,
     window_ms: float = DEFAULT_WINDOW_MS,
     coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
@@ -323,6 +337,11 @@ def run_overlay_from_lists(
     overlays are restricted to coincidence groups that contain at least one
     anchor, and the anchor's significant window is shaded. Pass ``only_date`` /
     ``only_round`` to restrict to a single session.
+
+    ``listed_only=True`` shows *only* cells that are in the xlsx/csv lists (both
+    sides), for investigating the two lists on their own. Left ``False`` (the
+    default) it also brings in each listed cell's cross-sort twin even when that
+    twin isn't listed — the fuller "all cells" view.
     """
     mixed_reqs = load_mixed_manual_requests(mixed_list_path)
     si_reqs = load_si_sorted_requests(si_list_path)
@@ -346,6 +365,7 @@ def run_overlay_from_lists(
             date, round_no, out_dir,
             mixed_anchor_windows=mixed_windows.get((date, round_no)),
             si_anchor_windows=si_windows.get((date, round_no)),
+            listed_only=listed_only,
             window_ms=window_ms, coincidence_threshold=coincidence_threshold,
             ratio_threshold=ratio_threshold, xlim=xlim, psth_bin_ms=psth_bin_ms,
         )
@@ -401,6 +421,8 @@ def main(argv=None):
     p.add_argument("--demo", action="store_true", help="render a fabricated unit")
     p.add_argument("--overlay", action="store_true",
                    help="coincidence-match the two sorts and overlay (uses both lists)")
+    p.add_argument("--listed-only", action="store_true",
+                   help="overlay only cells in the xlsx/csv lists (with --overlay)")
     args = p.parse_args(argv)
 
     if args.demo:
@@ -410,6 +432,7 @@ def main(argv=None):
     if args.overlay:
         out_dir = args.out or os.path.join(os.getcwd(), "zombies_rasters_overlay")
         run_overlay_from_lists(DEFAULT_LISTS["mixed"], DEFAULT_LISTS["si"], out_dir,
+                               listed_only=args.listed_only,
                                xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
         return
 
@@ -452,6 +475,12 @@ if __name__ == "__main__":
     #  OVERLAY_DATE (and optionally OVERLAY_ROUND) to restrict to one session.
     OVERLAY_DATE = None         # e.g. "2023-09-26" to do just one date
     OVERLAY_ROUND = None        # e.g. 2 (only used when OVERLAY_DATE is set)
+    #  LISTED_ONLY: True  → show ONLY cells that are in the xlsx/csv lists
+    #                       (for investigating the two lists on their own).
+    #               False → also bring in each listed cell's cross-sort twin even
+    #                       when that twin isn't listed (the fuller "all cells"
+    #                       view; useful once you extend beyond the lists).
+    LISTED_ONLY = False
     #  Coincidence tuning (cross-sort). A pair is matched when its coincidence is
     #  >= COINCIDENCE_THRESHOLD and >= RATIO_THRESHOLD × chance.
     COINCIDENCE_THRESHOLD = DEFAULT_COINCIDENCE_THRESHOLD
@@ -474,6 +503,7 @@ if __name__ == "__main__":
             DEFAULT_LISTS["mixed"], DEFAULT_LISTS["si"],
             os.path.join(OUT_DIR, "overlay"),
             only_date=OVERLAY_DATE, only_round=OVERLAY_ROUND,
+            listed_only=LISTED_ONLY,
             window_ms=COINCIDENCE_WINDOW_MS,
             coincidence_threshold=COINCIDENCE_THRESHOLD,
             ratio_threshold=RATIO_THRESHOLD,
