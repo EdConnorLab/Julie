@@ -1,0 +1,6 @@
+pair_type,uid_a,uid_b,channel_a,channel_b,n_a,n_b,coincidence,ratio_over_chance,distance_um,contacts_apart,refractory_a,refractory_b,refractory_merged,merged_refractory_ok
+unsorted-unsorted,C-020 / unsorted,C-011 / unsorted,C-020,C-011,31133,34404,0.9571,32.09,65.0,1,0.0217,0.0243,0.0213,True
+unsorted-unsorted,C-016 / unsorted,C-015 / unsorted,C-016,C-015,17736,22103,0.5454,28.47,65.0,1,0.012,0.0145,0.03,False
+unsorted-unsorted,C-011 / unsorted,C-004 / unsorted,C-011,C-004,34404,1814,0.3666,12.29,260.0,4,0.0243,0.0022,0.0218,True
+unsorted-unsorted,C-026 / unsorted,C-011 / unsorted,C-026,C-011,1119,34404,0.345,11.57,195.0,3,0.0,0.0243,0.0203,True
+unsorted-unsorted,C-026 / unsorted,C-020 / unsorted,C-026,C-020,1119,31133,0.3414,12.65,130.0,2,0.0,0.0217,0.0178,True

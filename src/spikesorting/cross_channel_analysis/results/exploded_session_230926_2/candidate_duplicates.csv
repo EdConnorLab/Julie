@@ -1,0 +1,30 @@
+pair_type,uid_a,uid_b,channel_a,channel_b,n_a,n_b,coincidence,ratio_over_chance,distance_um,contacts_apart,refractory_a,refractory_b,refractory_merged,merged_refractory_ok
+sorted-unsorted,C-011 / Unit 1,C-022 / unsorted,C-011,C-022,798,2260,0.9712,966.18,65.0,1,0.0213,0.0,0.0,True
+sorted-unsorted,C-029 / Unit 2,C-002 / unsorted,C-029,C-002,753,1203,0.9416,1758.84,65.0,1,0.0213,0.0,0.0008,True
+unsorted-unsorted,C-018 / unsorted,C-013 / unsorted,C-018,C-013,139,2942,0.9353,677.96,65.0,1,0.0,0.0,0.0003,True
+unsorted-unsorted,C-019 / unsorted,C-012 / unsorted,C-019,C-012,1008,297,0.9293,1966.07,65.0,1,0.0,0.0,0.0058,False
+unsorted-unsorted,C-006 / unsorted,C-021 / unsorted,C-006,C-021,465,171,0.8538,3915.68,65.0,1,0.0,0.0,0.0061,False
+unsorted-unsorted,C-024 / unsorted,C-007 / unsorted,C-024,C-007,590,932,0.7271,1663.84,65.0,1,0.0,0.0,0.0009,True
+unsorted-unsorted,C-017 / unsorted,C-014 / unsorted,C-017,C-014,608,18022,0.727,86.03,65.0,1,0.0,0.0001,0.0021,True
+unsorted-unsorted,C-005 / unsorted,C-020 / unsorted,C-005,C-020,774,4587,0.6408,297.91,65.0,1,0.0,0.0011,0.0019,True
+unsorted-unsorted,C-021 / unsorted,C-013 / unsorted,C-021,C-013,171,2942,0.6023,436.63,1105.0,17,0.0,0.0,0.0013,True
+unsorted-unsorted,C-021 / unsorted,C-005 / unsorted,C-021,C-005,171,774,0.5965,1643.49,195.0,3,0.0,0.0,0.0083,False
+unsorted-unsorted,C-021 / unsorted,C-017 / unsorted,C-021,C-017,171,608,0.5848,2051.18,1300.0,20,0.0,0.0,0.0059,False
+sorted-unsorted,C-013 / unsorted,C-029 / Unit 3,C-013,C-029,2942,188,0.5745,439.21,65.0,1,0.0,0.1604,0.0,True
+unsorted-unsorted,C-021 / unsorted,C-019 / unsorted,C-021,C-019,171,1008,0.5731,1212.49,650.0,10,0.0,0.0,0.0093,False
+unsorted-unsorted,C-021 / unsorted,C-014 / unsorted,C-021,C-014,171,18022,0.5731,67.82,1365.0,21,0.0,0.0001,0.0012,True
+unsorted-unsorted,C-019 / unsorted,C-028 / unsorted,C-019,C-028,1008,69,0.5072,1073.16,130.0,2,0.0,0.0,0.0019,True
+unsorted-unsorted,C-028 / unsorted,C-013 / unsorted,C-028,C-013,69,2942,0.5072,367.7,325.0,5,0.0,0.0,0.0,True
+unsorted-unsorted,C-006 / unsorted,C-028 / unsorted,C-006,C-028,465,69,0.4783,2193.39,845.0,13,0.0,0.0,0.002,True
+unsorted-unsorted,C-028 / unsorted,C-017 / unsorted,C-028,C-017,69,608,0.4783,1676.05,520.0,8,0.0,0.0,0.0016,True
+unsorted-unsorted,C-005 / unsorted,C-028 / unsorted,C-005,C-028,774,69,0.4493,1230.67,585.0,9,0.0,0.0,0.0012,True
+unsorted-unsorted,C-028 / unsorted,C-014 / unsorted,C-028,C-014,69,18022,0.4348,51.45,585.0,9,0.0,0.0001,0.0004,True
+unsorted-unsorted,C-021 / unsorted,C-028 / unsorted,C-021,C-028,171,69,0.4203,5241.51,780.0,12,0.0,0.0,0.0048,True
+unsorted-unsorted,C-028 / unsorted,C-003 / unsorted,C-028,C-003,69,656,0.3913,1271.85,65.0,1,0.0,0.0,0.0,True
+unsorted-unsorted,C-004 / unsorted,C-019 / unsorted,C-004,C-019,323,1008,0.3901,825.31,65.0,1,0.0,0.0,0.005,True
+unsorted-unsorted,C-012 / unsorted,C-028 / unsorted,C-012,C-028,297,69,0.3768,2696.95,65.0,1,0.0,0.0,0.0,True
+unsorted-unsorted,C-028 / unsorted,C-007 / unsorted,C-028,C-007,69,932,0.3478,795.92,195.0,3,0.0,0.0,0.0,True
+unsorted-unsorted,C-006 / unsorted,C-014 / unsorted,C-006,C-014,465,18022,0.3441,40.72,1430.0,22,0.0,0.0001,0.0023,True
+unsorted-unsorted,C-006 / unsorted,C-005 / unsorted,C-006,C-005,465,774,0.3376,930.27,260.0,4,0.0,0.0,0.0056,False
+unsorted-unsorted,C-006 / unsorted,C-019 / unsorted,C-006,C-019,465,1008,0.3226,682.47,715.0,11,0.0,0.0,0.0076,False
+unsorted-unsorted,C-006 / unsorted,C-013 / unsorted,C-006,C-013,465,2942,0.3161,229.16,1170.0,18,0.0,0.0,0.0031,True
