@@ -1,0 +1,83 @@
+import pandas as pd
+import statsmodels.formula.api as smf
+from statsmodels.formula.api import mixedlm
+import statsmodels.api as sm
+
+from analyses.spike_rate import compute_mean_spike_rate_table
+
+
+##### ---- Single Neuron Level Analysis
+
+def run_neuron_wise_spike_rate_regression(exploded_df, social_df, social_col='AffiliationTo_z', model_type='ols'):
+    # Step 1: Compute mean spike rate (per neuron per monkey identity)
+    mean_df = compute_mean_spike_rate_table(exploded_df)
+    # Step 2: Merge with social score
+    merged_df = pd.merge(mean_df, social_df[['MonkeyName', social_col]], on='MonkeyName')
+
+    # Step 3: Per-neuron regression
+    results = []
+    for neuron in merged_df['NeuronID'].unique():
+        neuron_df = merged_df[merged_df['NeuronID'] == neuron]
+        if len(neuron_df) < 3:
+            continue
+        if model_type == 'ols':
+            model = smf.ols(f"MeanSpikeRate ~ {social_col}", data=neuron_df).fit()
+        elif model_type == 'glm':
+            model = smf.glm(f"MeanSpikeRate ~ {social_col}", data=neuron_df,
+                            family=sm.families.Poisson()).fit()
+        else:
+            raise ValueError("model_type must be 'ols' or 'glm'")
+
+        results.append({
+            'NeuronID': neuron,
+            'R_squared': model.rsquared if model_type == 'ols' else None,
+            'coef': model.params.get(social_col),
+            'p_value': model.pvalues.get(social_col)
+        })
+
+    return pd.DataFrame(results)
+
+# NOTE: Trial-level regression was removed.
+# Justification: social predictors are constant across trials,
+# causing collinearity and weak interpretability.
+# Preferred alternatives:
+#   - run_mean_rate_regression()
+#   - run_population_glmm()
+
+##### ---- Population Level Analysis
+
+def run_stimulus_level_glmm(exploded_df, social_df, social_col='AffiliationTo_z'):
+    # Step 1: Prepare spike count data
+    df = exploded_df.copy()
+    df['SpikeCount'] = df['SpikeTimes'].apply(len)
+
+    # Collapse to one spike count per trial
+    trial_spike_count_df = (
+        df.groupby(['NeuronID', 'MonkeyName', 'TaskField'])['SpikeCount']
+        .sum()
+        .reset_index()
+    )
+
+    # Step 2: Merge with social score
+    merged_df = pd.merge(trial_spike_count_df, social_df[['MonkeyName', social_col]], on='MonkeyName')
+    model = mixedlm(f"SpikeCount ~ {social_col}", data=merged_df, groups=merged_df['MonkeyName'])
+    result = model.fit()
+    return result.summary()
+
+def run_population_glmm(exploded_df, social_df, social_col='AffiliationTo_z'):
+    # Step 1: Prepare spike count data
+    df = exploded_df.copy()
+    df['SpikeCount'] = df['SpikeTimes'].apply(len)
+
+    # Collapse to one spike count per trial
+    trial_spike_count_df = (
+        df.groupby(['NeuronID', 'MonkeyName', 'TaskField'])['SpikeCount']
+        .sum()
+        .reset_index()
+    )
+
+    # Step 2: Merge with social score
+    merged_df = pd.merge(trial_spike_count_df, social_df[['MonkeyName', social_col]], on='MonkeyName')
+    model = mixedlm(f"SpikeCount ~ {social_col}", data=merged_df, groups=merged_df['NeuronID'])
+    result = model.fit()
+    return result.summary()

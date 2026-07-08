@@ -1,0 +1,6 @@
+Channels do NOT match!
+TDC unit_id 6 Ch 13, MS5 unit_id 22 Ch 27, KS4 unit_id 44 Ch 27
+Channels do NOT match!
+TDC unit_id 8 Ch 7, MS5 unit_id 27 Ch 17, KS4 unit_id 40 Ch 17
+Using... KiloSortSortingExtractor: 54 units - 1 segments - 20.0kHz for getting the original channels that sorted units belong to
+Units in agreement: 9
