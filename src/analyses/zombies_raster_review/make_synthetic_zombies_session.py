@@ -118,3 +118,93 @@ def make_synthetic_overlay_pair(
         si_rows.append(row)
     si = pd.DataFrame(si_rows)
     return {"manual": manual, "SI": si}
+
+
+def _spread_over_recording(df: pd.DataFrame, *, spacing_s: float = 6.0) -> pd.DataFrame:
+    """Place each trial at a distinct absolute time on a shared recording clock.
+
+    ``make_synthetic_zombies_unit`` reuses one ``(0.0, epoch_len)`` epoch for
+    every trial, which is fine for a per-trial raster (it re-zeros each trial)
+    but wrong for a *concatenated* spike train: piling all trials into 2.5 s
+    makes chance coincidence enormous. Offsetting trial ``i`` by ``i*spacing_s``
+    spreads them over a realistic recording so coincidence-over-chance behaves
+    like real data. Rendering is unaffected (it re-zeros by ``EpochStartStop``).
+    """
+    out = df.copy(deep=True)
+    spike_col, offsets = [], []
+    for i, (_, r) in enumerate(out.iterrows()):
+        off = i * spacing_s
+        offsets.append((r["EpochStartStop"][0] + off, r["EpochStartStop"][1] + off))
+        spike_col.append(np.asarray(r["SpikeTimes"], dtype=float) + off)
+    out["SpikeTimes"] = spike_col
+    out["EpochStartStop"] = offsets
+    return out
+
+
+def _copy_unit_as(df: pd.DataFrame, *, channel: str, neuron_id: str,
+                  keep_frac: float, jitter_s: float, seed: int) -> pd.DataFrame:
+    """A near-duplicate of ``df``'s trains: keep a fraction of spikes + jitter.
+
+    Simulates the same neuron seen by the *other* sorter on a *different*
+    channel — high spike-time coincidence but a new channel/NeuronID.
+    """
+    rng = np.random.default_rng(seed)
+    out = df.copy(deep=True)
+    new_spikes = []
+    for sp in out["SpikeTimes"]:
+        sp = np.asarray(sp, dtype=float)
+        keep = rng.random(sp.size) < keep_frac
+        kept = np.sort(sp[keep] + rng.normal(0, jitter_s, size=int(keep.sum())))
+        new_spikes.append(kept)
+    out["SpikeTimes"] = new_spikes
+    out["Channel"] = channel
+    out["NeuronID"] = neuron_id
+    return out
+
+
+def make_synthetic_cross_source_session(
+    *,
+    date: str = "2023-09-26",
+    round_no: int = 2,
+    window_s: Optional[Tuple[float, float]] = (0.1, 0.45),
+    seed: int = 7,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Fabricate a mixed-source and an SI-source session for one recording.
+
+    A single neuron is deliberately placed on **different channels** in the two
+    sorts — ``Channel.C_011_Unit 1`` (mixed) vs ``...Channel.C_020_Unit 1`` (SI)
+    — with coincident spike trains, so a channel-name match would fail but the
+    coincidence matcher pairs them. Each source also gets an *independent* decoy
+    unit that should match nothing across sources.
+
+    Returns ``(mixed_df, si_df)`` in the exploded per-trial shape both
+    SpikeSources return. No DB / recordings needed.
+    """
+    # the shared "true" neuron, generated once then spread over the recording
+    truth = _spread_over_recording(make_synthetic_zombies_unit(
+        neuron_id="_truth_", channel="_truth_", date=date, round_no=round_no,
+        window_s=window_s, seed=seed))
+
+    # mixed sort calls it C_011; SI sort (strongest channel) calls it C_020
+    mixed_true = _copy_unit_as(
+        truth, channel="Channel.C_011_Unit 1",
+        neuron_id=f"AMG_{date}_{round_no}_Channel.C_011_Unit 1",
+        keep_frac=0.92, jitter_s=0.0003, seed=seed + 1)
+    si_true = _copy_unit_as(
+        truth, channel="Channel.C_020_Unit 1",
+        neuron_id=f"AMG_{date}_{round_no}_Channel.C_020_Unit 1",
+        keep_frac=0.85, jitter_s=0.0003, seed=seed + 2)
+
+    # independent decoys (their own spike trains, uncorrelated with truth)
+    mixed_decoy = _spread_over_recording(make_synthetic_zombies_unit(
+        neuron_id=f"AMG_{date}_{round_no}_Channel.C_005_Unit 1",
+        channel="Channel.C_005_Unit 1", date=date, round_no=round_no,
+        window_s=window_s, seed=seed + 50))
+    si_decoy = _spread_over_recording(make_synthetic_zombies_unit(
+        neuron_id=f"AMG_{date}_{round_no}_Channel.C_007_Unit 1",
+        channel="Channel.C_007_Unit 1", date=date, round_no=round_no,
+        window_s=window_s, seed=seed + 60))
+
+    mixed_df = pd.concat([mixed_true, mixed_decoy], ignore_index=True)
+    si_df = pd.concat([si_true, si_decoy], ignore_index=True)
+    return mixed_df, si_df

@@ -20,10 +20,15 @@ Examples
         --source si \
         --list analyses/zombies_raster_review/unit_lists/zombies_si_sorted_anova_passed.csv
 
+    # overlay: coincidence-match the two sorts per session and overlay each neuron
+    python -m analyses.zombies_raster_review.run_zombies_rasters --overlay
+
     # no data on hand — render a fabricated unit to preview the format
     python -m analyses.zombies_raster_review.run_zombies_rasters --demo
 
 Defaults for ``--list`` point at the copies bundled in ``unit_lists/``.
+Overlay matching is by spike-time coincidence (SI and the manual sort can name
+the same neuron on different channels); see ``coincidence_match.py``.
 """
 from __future__ import annotations
 
@@ -39,6 +44,10 @@ from analyses.zombies_raster_review.unit_lists import (
 )
 from analyses.zombies_raster_review.zombies_raster import (
     plot_zombies_raster, plot_overlay_raster,
+)
+from analyses.zombies_raster_review.coincidence_match import (
+    session_units, match_units_across_sources, group_matches, MatchGroup,
+    DEFAULT_COINCIDENCE_THRESHOLD, DEFAULT_RATIO_THRESHOLD, DEFAULT_WINDOW_MS,
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -75,7 +84,7 @@ def run_from_requests(
     requests: List[RasterRequest],
     out_dir: str,
     *,
-    xlim: float = 2.0,
+    xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
 ) -> Dict[str, int]:
     """Load each needed session once, then render every requested unit."""
@@ -133,10 +142,18 @@ def run_from_list(source_kind: str, list_path: str, out_dir: str, **kw) -> Dict[
 
 
 # --------------------------------------------------------------------------- #
-# Overlay mode — compare the two sorts of one channel
+# Overlay mode — match the two sorts by spike-time coincidence, then overlay
 # --------------------------------------------------------------------------- #
+# SpikeInterface names a neuron after its strongest channel, but the manual sort
+# may have put that same neuron on a *different* channel — so the two sorts can't
+# be paired by channel name. Instead we pair units whose spike trains are
+# coincident (same neuron fires on both records within a fraction of a ms), the
+# logic borrowed from ``spikesorting.cross_channel_analysis``. See
+# ``coincidence_match.py``.
+
+
 def _channel_token(channel: str) -> str:
-    """Normalise a channel string to a ``C_018``-style token for matching."""
+    """Normalise a channel string to a ``C_018``-style token (utility)."""
     tok = str(channel).replace("Channel.", "").replace("-", "_").strip()
     return tok.split("_Unit")[0]
 
@@ -145,6 +162,8 @@ def _units_on_channel(session_df, base_channel: str) -> Dict[str, "pd.DataFrame"
     """Split a session DataFrame into per-unit frames on one base channel.
 
     Keyed by a short unit label (the tail of NeuronID, or the Channel string).
+    A convenience for inspecting one channel; overlay matching no longer relies
+    on it (see the coincidence-based flow below).
     """
     token = _channel_token(base_channel)
     if "BaseChannel" in session_df.columns:
@@ -160,37 +179,175 @@ def _units_on_channel(session_df, base_channel: str) -> Dict[str, "pd.DataFrame"
     return out
 
 
-def run_overlay_for_channel(
-    date: str, round_no: int, base_channel: str, out_dir: str,
-    *, window_ms=None, xlim: float = 2.0, psth_bin_ms: float = 50.0,
-) -> Optional[str]:
-    """Overlay the manual (mixed) and SI sorts of one channel on a single raster."""
+def _short_mixed_label(cell_id: str) -> str:
+    """``Channel.C_011_Unit 1`` → ``manual: C_011_Unit 1`` for the overlay lane."""
+    return "manual: " + str(cell_id).split("Channel.")[-1]
+
+
+def _short_si_label(neuron_id: str) -> str:
+    """``AMG_..._Channel.C_020_Unit 1`` → ``SI: C_020_Unit 1``."""
+    return "SI: " + str(neuron_id).split("Channel.")[-1]
+
+
+def _group_window_s(group: MatchGroup, mixed_windows: dict, si_windows: dict):
+    """Window (s) to shade for a group — from an anchor cell in it, if any."""
+    for sid in group.si_ids:
+        if si_windows.get(sid):
+            return si_windows[sid]
+    for cid in group.mixed_ids:
+        if mixed_windows.get(cid):
+            return mixed_windows[cid]
+    return None
+
+
+def render_overlays_for_units(
+    units_mixed: Dict[str, "pd.DataFrame"],
+    units_si: Dict[str, "pd.DataFrame"],
+    out_dir: str,
+    *,
+    label: str,
+    mixed_anchor_windows: Optional[dict] = None,
+    si_anchor_windows: Optional[dict] = None,
+    window_ms: float = DEFAULT_WINDOW_MS,
+    coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
+    ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
+    xlim: float = 2.4,
+    psth_bin_ms: float = 50.0,
+) -> List[str]:
+    """Match two sorts' units by coincidence and render one overlay per group.
+
+    DB-free core (takes already-loaded per-unit frames). ``*_anchor_windows`` map
+    an ANOVA-passed unit id → its significant window (s); when either is given,
+    only groups containing at least one anchor are drawn, and the anchor's window
+    is shaded. Returns the saved figure paths.
+    """
     os.makedirs(out_dir, exist_ok=True)
-    unit_dfs: Dict[str, "pd.DataFrame"] = {}
+    mixed_anchor_windows = mixed_anchor_windows or {}
+    si_anchor_windows = si_anchor_windows or {}
+    anchored_only = bool(mixed_anchor_windows or si_anchor_windows)
+
+    matches = match_units_across_sources(
+        units_mixed, units_si, window_ms=window_ms,
+        coincidence_threshold=coincidence_threshold, ratio_threshold=ratio_threshold,
+    )
+    groups = group_matches(matches)
+
+    written: List[str] = []
+    for i, g in enumerate(groups, start=1):
+        is_anchored = (any(cid in mixed_anchor_windows for cid in g.mixed_ids) or
+                       any(sid in si_anchor_windows for sid in g.si_ids))
+        if anchored_only and not is_anchored:
+            continue
+
+        unit_dfs: Dict[str, "pd.DataFrame"] = {}
+        for cid in g.mixed_ids:
+            if cid in units_mixed:
+                unit_dfs[_short_mixed_label(cid)] = units_mixed[cid]
+        for sid in g.si_ids:
+            if sid in units_si:
+                unit_dfs[_short_si_label(sid)] = units_si[sid]
+        if len(unit_dfs) < 2:
+            continue  # need at least one unit from each sort to overlay
+
+        window_s = _group_window_s(g, mixed_anchor_windows, si_anchor_windows)
+        members = " · ".join(unit_dfs.keys())
+        title = (f"Sort match #{i} — {label}\n"
+                 f"{members}  ·  coincidence {g.best_coincidence:.2f}")
+        save_path = os.path.join(out_dir, f"overlay_{label}_group{i:02d}.png")
+        fig = plot_overlay_raster(
+            unit_dfs, title=title, window_s=window_s,
+            xlim=xlim, psth_bin_ms=psth_bin_ms, save_path=save_path,
+        )
+        if fig is not None:
+            written.append(save_path)
+
+    print(f"[overlay {label}] {len(matches)} cross-sort match(es) → "
+          f"{len(groups)} group(s) → {len(written)} overlay(s) written")
+    return written
+
+
+def run_overlay_by_coincidence(
+    date: str, round_no: int, out_dir: str,
+    *,
+    mixed_anchor_windows: Optional[dict] = None,
+    si_anchor_windows: Optional[dict] = None,
+    window_ms: float = DEFAULT_WINDOW_MS,
+    coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
+    ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
+    xlim: float = 2.4,
+    psth_bin_ms: float = 50.0,
+) -> List[str]:
+    """Load both sorts for one session and overlay coincidence-matched units."""
+    os.makedirs(out_dir, exist_ok=True)
+    loaded = {}
     for source_kind in ("mixed", "si"):
         source = _make_source(source_kind)
         try:
-            sdf = source.load(date, round_no)
+            loaded[source_kind] = source.load(date, round_no)
         except Exception as e:
-            print(f"[overlay] {source_kind} load failed for {date} r{round_no}: {e}")
-            continue
-        if sdf is None or sdf.empty:
-            continue
-        for label, udf in _units_on_channel(sdf, base_channel).items():
-            unit_dfs[f"{source_kind}: {label}"] = udf
+            print(f"[overlay {date} r{round_no}] {source_kind} load failed: {e}")
+            loaded[source_kind] = None
 
-    if not unit_dfs:
-        print(f"[overlay] no units found on {base_channel} for {date} r{round_no}")
-        return None
+    missing = [k for k, v in loaded.items() if v is None or getattr(v, "empty", True)]
+    if missing:
+        print(f"[overlay {date} r{round_no}] need both sorts; missing/empty: {missing}")
+        return []
 
-    window_s = (window_ms[0] / 1000.0, window_ms[1] / 1000.0) if window_ms else None
-    tok = _channel_token(base_channel)
-    save_path = os.path.join(out_dir, f"overlay_{date}_round{round_no}_{tok}.png")
-    plot_overlay_raster(
-        unit_dfs, title=f"Sort comparison — {tok} · {date} round {round_no}",
-        window_s=window_s, xlim=xlim, psth_bin_ms=psth_bin_ms, save_path=save_path,
+    units_mixed = session_units(loaded["mixed"], "Channel")
+    units_si = session_units(loaded["si"], "NeuronID")
+    return render_overlays_for_units(
+        units_mixed, units_si, out_dir, label=f"{date}_round{round_no}",
+        mixed_anchor_windows=mixed_anchor_windows, si_anchor_windows=si_anchor_windows,
+        window_ms=window_ms, coincidence_threshold=coincidence_threshold,
+        ratio_threshold=ratio_threshold, xlim=xlim, psth_bin_ms=psth_bin_ms,
     )
-    return save_path
+
+
+def run_overlay_from_lists(
+    mixed_list_path: str, si_list_path: str, out_dir: str,
+    *,
+    only_date: Optional[str] = None,
+    only_round: Optional[int] = None,
+    window_ms: float = DEFAULT_WINDOW_MS,
+    coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
+    ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
+    xlim: float = 2.4,
+    psth_bin_ms: float = 50.0,
+) -> List[str]:
+    """Overlay coincidence-matched sorts for every ``(date, round)`` in the lists.
+
+    The ANOVA-passed cells in the two lists are the *anchors*: each session's
+    overlays are restricted to coincidence groups that contain at least one
+    anchor, and the anchor's significant window is shaded. Pass ``only_date`` /
+    ``only_round`` to restrict to a single session.
+    """
+    mixed_reqs = load_mixed_manual_requests(mixed_list_path)
+    si_reqs = load_si_sorted_requests(si_list_path)
+
+    mixed_windows: Dict[tuple, dict] = defaultdict(dict)
+    si_windows: Dict[tuple, dict] = defaultdict(dict)
+    for r in mixed_reqs:
+        mixed_windows[(r.date, r.round_no)][r.match_value] = r.window_s
+    for r in si_reqs:
+        si_windows[(r.date, r.round_no)][r.match_value] = r.window_s
+
+    sessions = sorted(set(mixed_windows) | set(si_windows))
+    if only_date is not None:
+        sessions = [s for s in sessions
+                    if s[0] == only_date and (only_round is None or s[1] == only_round)]
+    print(f"Overlay by coincidence over {len(sessions)} session(s)")
+
+    written: List[str] = []
+    for date, round_no in sessions:
+        written += run_overlay_by_coincidence(
+            date, round_no, out_dir,
+            mixed_anchor_windows=mixed_windows.get((date, round_no)),
+            si_anchor_windows=si_windows.get((date, round_no)),
+            window_ms=window_ms, coincidence_threshold=coincidence_threshold,
+            ratio_threshold=ratio_threshold, xlim=xlim, psth_bin_ms=psth_bin_ms,
+        )
+    print(f"\nDone: {len(written)} overlay(s) across {len(sessions)} session(s)")
+    return written
 
 
 # --------------------------------------------------------------------------- #
@@ -199,6 +356,7 @@ def run_overlay_for_channel(
 def _run_demo(out_dir: str):
     from analyses.zombies_raster_review.make_synthetic_zombies_session import (
         make_synthetic_zombies_unit, make_synthetic_overlay_pair,
+        make_synthetic_cross_source_session,
     )
     os.makedirs(out_dir, exist_ok=True)
     # single-unit raster (with a few subject 81G trials that must be excluded)
@@ -216,6 +374,16 @@ def _run_demo(out_dir: str):
         window_s=(0.1, 0.45),
         save_path=os.path.join(out_dir, "demo_overlay.png"),
     )
+    # coincidence-matched overlay: the SAME neuron is on C_011 (mixed) and C_020
+    # (SI) — different channels — so it is matched by spike-time coincidence, not
+    # by channel name. C_020 is the anchor (as if it were the ANOVA-passed cell).
+    mixed_df, si_df = make_synthetic_cross_source_session()
+    units_mixed = session_units(mixed_df, "Channel")
+    units_si = session_units(si_df, "NeuronID")
+    render_overlays_for_units(
+        units_mixed, units_si, out_dir, label="DEMO_coincidence",
+        si_anchor_windows={"AMG_2023-09-26_2_Channel.C_020_Unit 1": (0.1, 0.45)},
+    )
     print(f"Demo rasters written to {out_dir}")
 
 
@@ -225,17 +393,25 @@ def main(argv=None):
     p.add_argument("--source", choices=["mixed", "si"], help="which spike source")
     p.add_argument("--list", dest="list_path", help="unit list (Excel for mixed, CSV for si)")
     p.add_argument("--out", help="output directory for figures")
-    p.add_argument("--xlim", type=float, default=2.0, help="x-axis limit in seconds")
+    p.add_argument("--xlim", type=float, default=2.4, help="x-axis limit in seconds")
     p.add_argument("--psth-bin-ms", type=float, default=50.0)
     p.add_argument("--demo", action="store_true", help="render a fabricated unit")
+    p.add_argument("--overlay", action="store_true",
+                   help="coincidence-match the two sorts and overlay (uses both lists)")
     args = p.parse_args(argv)
 
     if args.demo:
         _run_demo(args.out or os.path.join(os.getcwd(), "zombies_raster_demo_out"))
         return
 
+    if args.overlay:
+        out_dir = args.out or os.path.join(os.getcwd(), "zombies_rasters_overlay")
+        run_overlay_from_lists(DEFAULT_LISTS["mixed"], DEFAULT_LISTS["si"], out_dir,
+                               xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
+        return
+
     if not args.source:
-        p.error("--source is required (or use --demo)")
+        p.error("--source is required (or use --demo / --overlay)")
     list_path = args.list_path or DEFAULT_LISTS[args.source]
     out_dir = args.out or os.path.join(os.getcwd(), f"zombies_rasters_{args.source}")
     run_from_list(args.source, list_path, out_dir, xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
@@ -254,8 +430,10 @@ if __name__ == "__main__":
     #               (MixedManualSpikeSource: manually sorted + unsorted).
     #    "si"       one raster per unit in the SI-sorted CSV list
     #               (SISortedSpikeSource).
-    #    "overlay"  overlay the two sorts (manual vs SI) of ONE channel in one
-    #               session, matched trial-for-trial — for cross-checking sorts.
+    #    "overlay"  for each (date, round) in the lists, match the two sorts by
+    #               spike-time COINCIDENCE (not channel name — SI and manual can
+    #               put the same neuron on different channels) and overlay each
+    #               matched group, matched trial-for-trial. See coincidence_match.
     # ========================================================================
     MODE = "demo"
 
@@ -267,13 +445,18 @@ if __name__ == "__main__":
     LIST_PATH = None            # None → use the bundled list in unit_lists/
 
     # -- MODE == "overlay" --
-    OVERLAY_DATE = "2023-09-26"
-    OVERLAY_ROUND = 2
-    OVERLAY_CHANNEL = "C_018"   # base channel; both sorts of it are overlaid
-    OVERLAY_WINDOW_MS = None    # e.g. (100, 450) to shade a response window
+    #  By default sweeps every (date, round) in the two lists. Set
+    #  OVERLAY_DATE (and optionally OVERLAY_ROUND) to restrict to one session.
+    OVERLAY_DATE = None         # e.g. "2023-09-26" to do just one date
+    OVERLAY_ROUND = None        # e.g. 2 (only used when OVERLAY_DATE is set)
+    #  Coincidence tuning (cross-sort). A pair is matched when its coincidence is
+    #  >= COINCIDENCE_THRESHOLD and >= RATIO_THRESHOLD × chance.
+    COINCIDENCE_THRESHOLD = DEFAULT_COINCIDENCE_THRESHOLD
+    RATIO_THRESHOLD = DEFAULT_RATIO_THRESHOLD
+    COINCIDENCE_WINDOW_MS = DEFAULT_WINDOW_MS
 
     # -- plot tuning (applies to all modes) --
-    XLIM_S = 2.0
+    XLIM_S = 2.4
     PSTH_BIN_MS = 50.0
     # ========================================================================
 
@@ -284,10 +467,14 @@ if __name__ == "__main__":
         run_from_list(MODE, list_path, os.path.join(OUT_DIR, MODE),
                       xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
     elif MODE == "overlay":
-        run_overlay_for_channel(
-            OVERLAY_DATE, OVERLAY_ROUND, OVERLAY_CHANNEL,
+        run_overlay_from_lists(
+            DEFAULT_LISTS["mixed"], DEFAULT_LISTS["si"],
             os.path.join(OUT_DIR, "overlay"),
-            window_ms=OVERLAY_WINDOW_MS, xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS,
+            only_date=OVERLAY_DATE, only_round=OVERLAY_ROUND,
+            window_ms=COINCIDENCE_WINDOW_MS,
+            coincidence_threshold=COINCIDENCE_THRESHOLD,
+            ratio_threshold=RATIO_THRESHOLD,
+            xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS,
         )
     else:
         raise ValueError(f"unknown MODE '{MODE}'")

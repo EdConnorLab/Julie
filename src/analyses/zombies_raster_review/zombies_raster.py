@@ -129,6 +129,25 @@ def _psth(all_trials: List[np.ndarray], *, xlim: float, bin_ms: float
 # --------------------------------------------------------------------------- #
 # Main plot
 # --------------------------------------------------------------------------- #
+def _window_label_ms(window_s: Tuple[float, float]) -> str:
+    """``(0.3, 0.4)`` s → ``"300–400 ms"`` for on-plot annotation."""
+    return f"{window_s[0] * 1000:.0f}–{window_s[1] * 1000:.0f} ms"
+
+
+def _annotate_window_ms(ax, window_s: Tuple[float, float]):
+    """Label the window's extent in ms at the top of the shaded band on ``ax``.
+
+    Drawn just inside the top of the panel (x in data coords, y in axes
+    fraction, so the y-axis inversion doesn't matter) with a light background so
+    it stays readable over spikes and never collides with the title.
+    """
+    xmid = (window_s[0] + window_s[1]) / 2.0
+    ax.text(xmid, 0.99, _window_label_ms(window_s),
+            transform=ax.get_xaxis_transform(), ha="center", va="top",
+            fontsize=9, fontweight="bold", color="#8A6D00", clip_on=False,
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#E0C060", alpha=0.85))
+
+
 def plot_zombies_raster(
     neuron_df,
     *,
@@ -136,7 +155,7 @@ def plot_zombies_raster(
     spike_col: str = "SpikeTimes",
     window_s: Optional[Tuple[float, float]] = None,
     p_value: Optional[float] = None,
-    xlim: float = 2.0,
+    xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
     save_path: Optional[str] = None,
 ):
@@ -184,6 +203,7 @@ def plot_zombies_raster(
     if window_s is not None:
         ax.axvspan(window_s[0], window_s[1], color="#F2C94C", alpha=0.30, zorder=1,
                    label="ANOVA sig. window")
+        _annotate_window_ms(ax, window_s)
     ax.set_ylim(-0.5, total_trials - 0.5)
     ax.set_xlim(0, xlim)
     ax.invert_yaxis()  # most dominant monkey (rank 1) at the top
@@ -195,6 +215,8 @@ def plot_zombies_raster(
         ax.spines[s].set_visible(False)
 
     sub = f"{total_trials} trials · {len(by_monkey)} monkeys"
+    if window_s is not None:
+        sub += f" · window {_window_label_ms(window_s)}"
     if p_value is not None:
         sub += f" · p={p_value:.3g}"
     ax.set_title(f"{neuron_label}\n{sub}", fontsize=11, loc="left")
@@ -251,7 +273,7 @@ def plot_overlay_raster(
     spike_col: str = "SpikeTimes",
     key_col: str = "TaskField",
     window_s: Optional[Tuple[float, float]] = None,
-    xlim: float = 2.0,
+    xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
     save_path: Optional[str] = None,
 ):
@@ -342,6 +364,7 @@ def plot_overlay_raster(
     ax.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7)
     if window_s is not None:
         ax.axvspan(window_s[0], window_s[1], color="#F2C94C", alpha=0.25, zorder=1)
+        _annotate_window_ms(ax, window_s)
     ax.set_ylim(-0.5, total_rows - 0.5)
     ax.set_xlim(0, xlim)
     ax.invert_yaxis()
