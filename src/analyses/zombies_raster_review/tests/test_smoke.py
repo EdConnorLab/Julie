@@ -237,6 +237,40 @@ def test_overlay_probe_toggle_both_render():
             assert os.path.exists(path) and os.path.getsize(path) > 0
 
 
+def _fake_footprint(uid, peak_chan, channels):
+    # a decaying spike shape: full on the peak channel, smaller on the others
+    import numpy as np
+    from spikesorting.cross_channel_analysis.waveforms import Footprint
+    t = np.linspace(0, 1, 50)
+    spike = -np.exp(-((t - 0.4) / 0.06) ** 2)
+    scales = {c: (1.0 if c == peak_chan else 0.3) for c in channels}
+    w = np.stack([scales[c] * spike for c in channels])
+    return Footprint(uid=uid, channels=list(channels), waveforms=w,
+                     peak_channel=peak_chan, peak_amplitude=1.0)
+
+
+def test_overlay_with_footprints_renders():
+    # the waveform-footprint panel renders when footprints are supplied
+    pair = make_synthetic_overlay_pair()   # lanes: "manual", "SI"
+    chans = ["C_020", "C_011", "C_005"]
+    footprints = {
+        "manual": _fake_footprint("manual", "C_011", chans),
+        "SI": _fake_footprint("SI", "C_011", chans),
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "wave.png")
+        fig = plot_overlay_raster(pair, title="with footprints", window_s=(0.1, 0.45),
+                                  footprints=footprints, save_path=path)
+        assert fig is not None
+        assert os.path.exists(path) and os.path.getsize(path) > 0
+        # a None footprint (extraction failed for one unit) must not crash
+        path2 = os.path.join(tmp, "wave2.png")
+        fig2 = plot_overlay_raster(pair, title="one missing",
+                                   footprints={"manual": footprints["manual"], "SI": None},
+                                   save_path=path2)
+        assert fig2 is not None and os.path.getsize(path2) > 0
+
+
 if __name__ == "__main__":
     test_parse_mixed_list()
     test_parse_si_list()
@@ -254,4 +288,5 @@ if __name__ == "__main__":
     test_group_windows_marks_all_sources()
     test_unit_channel_token()
     test_overlay_probe_toggle_both_render()
+    test_overlay_with_footprints_renders()
     print("All zombies_raster_review smoke tests passed.")

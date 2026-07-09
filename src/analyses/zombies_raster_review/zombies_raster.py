@@ -379,6 +379,54 @@ def _draw_probe_map(ax, unit_dfs, colors, pair_coincidences=None):
                 ha="center", va="top", fontsize=7, color="0.6")
 
 
+def _draw_footprints(ax, footprints_by_label, colors):
+    """Draw each unit's normalised cross-channel waveform along the probe.
+
+    Shares the probe's depth axis: a unit's average waveform is drawn as a small
+    trace at *every* contact's depth, so its spatial footprint reads as a depth
+    profile (biggest at the peak contact, decaying away). Each unit is normalised
+    to its own peak (so shapes compare regardless of amplitude) and coloured to
+    its raster lane. Two units that are one neuron peak at the same contact with
+    the same shape; synchronous-but-distinct neurons peak at different contacts.
+    """
+    from spikesorting.cross_channel_analysis import probe_geometry as geom
+
+    n = len(geom.PROBE_CHANNEL_ORDER)
+    pitch = geom.Y_PITCH_UM
+    amp = 0.6 * pitch  # a full-scale (normalised = 1) deflection spans ~0.6 contacts
+
+    drew = False
+    for label, fp in (footprints_by_label or {}).items():
+        if fp is None:
+            continue
+        w = np.asarray(fp.waveforms, dtype=float)
+        peak = float(np.max(np.abs(w))) if w.size else 0.0
+        if peak <= 0:
+            continue
+        w = w / peak
+        color = colors.get(label, "0.3")
+        xs = np.linspace(0.1, 0.9, w.shape[1])
+        for row, chan in enumerate(fp.channels):
+            ci = geom.contact_index_of(chan)
+            if ci is None:
+                continue
+            depth = ci * pitch
+            ax.plot(xs, depth - w[row] * amp, color=color, lw=0.6, alpha=0.85, zorder=3)
+            drew = True
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
+    ax.invert_yaxis()
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for s in ("top", "right", "bottom", "left"):
+        ax.spines[s].set_visible(False)
+    ax.set_title("footprint\n(norm.)", fontsize=9)
+    if not drew:
+        ax.text(0.5, 0.5, "waveforms\nunavailable", transform=ax.transAxes,
+                ha="center", va="center", fontsize=8, color="0.55")
+
+
 # --------------------------------------------------------------------------- #
 # Overlay mode — compare two sorts of the same channel on one raster
 # --------------------------------------------------------------------------- #
@@ -406,6 +454,7 @@ def plot_overlay_raster(
     window_s: Optional[Tuple[float, float]] = None,
     windows: Optional[list] = None,
     pair_coincidences: Optional[list] = None,
+    footprints: Optional[dict] = None,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
     show_probe: bool = True,
@@ -425,6 +474,11 @@ def plot_overlay_raster(
     called out with which list (``"mixed"``/``"SI"``) and cell it came from. For
     a single window with no source, pass the legacy ``window_s`` instead.
 
+    ``pair_coincidences`` is ``[(label_a, label_b, coincidence), …]`` drawn as
+    labelled links on the probe map. ``footprints`` maps a lane label to its
+    :class:`~spikesorting.cross_channel_analysis.waveforms.Footprint`; when given
+    (and ``show_probe``), a waveform-footprint panel is added on the right.
+
     Returns the ``Figure`` (or ``None`` if there are no Zombies trials).
     """
     labels = list(unit_dfs.keys())
@@ -442,7 +496,16 @@ def plot_overlay_raster(
         present.update(z["MonkeyName"].dropna().unique())
     ordered, rank_by_monkey = zombies_monkey_order(present)
 
-    if show_probe:
+    ax_probe = ax_wave = None
+    if show_probe and footprints is not None:
+        fig = plt.figure(figsize=(12.5, 9))
+        gs = GridSpec(2, 3, width_ratios=[5.2, 1.05, 1.5], height_ratios=[3.2, 1.0],
+                      hspace=0.08, wspace=0.10, figure=fig)
+        ax = fig.add_subplot(gs[0, 0])
+        ax_psth = fig.add_subplot(gs[1, 0], sharex=ax)
+        ax_probe = fig.add_subplot(gs[:, 1])
+        ax_wave = fig.add_subplot(gs[:, 2])
+    elif show_probe:
         fig = plt.figure(figsize=(11, 9))
         gs = GridSpec(2, 2, width_ratios=[5.5, 1.15], height_ratios=[3.2, 1.0],
                       hspace=0.08, wspace=0.14, figure=fig)
@@ -454,7 +517,6 @@ def plot_overlay_raster(
         gs = GridSpec(2, 1, height_ratios=[3.2, 1.0], hspace=0.08, figure=fig)
         ax = fig.add_subplot(gs[0])
         ax_psth = fig.add_subplot(gs[1], sharex=ax)
-        ax_probe = None
 
     lane_h = 0.8 / len(labels)
     y = 0
@@ -550,6 +612,9 @@ def plot_overlay_raster(
     # --- probe map: where these units sit on the linear probe ---
     if ax_probe is not None:
         _draw_probe_map(ax_probe, unit_dfs, colors, pair_coincidences)
+    # --- footprint: each unit's normalised waveform along the probe ---
+    if ax_wave is not None:
+        _draw_footprints(ax_wave, footprints, colors)
 
     _save_or_keep(fig, save_path)
     return fig

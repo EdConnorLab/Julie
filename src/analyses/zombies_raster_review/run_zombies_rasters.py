@@ -234,6 +234,7 @@ def render_overlays_for_units(
     mixed_anchor_windows: Optional[dict] = None,
     si_anchor_windows: Optional[dict] = None,
     listed_only: bool = False,
+    footprints_by_id: Optional[dict] = None,
     window_ms: float = DEFAULT_WINDOW_MS,
     coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
@@ -289,6 +290,16 @@ def render_overlays_for_units(
         # per-pair coincidence, in the overlay's lane-label terms, for the probe map
         pair_coincidences = [(_short_mixed_label(mid), _short_si_label(sid), c)
                              for mid, sid, c in g.pairs]
+        # per-unit footprints (if extracted), keyed by the same lane labels
+        group_footprints = None
+        if footprints_by_id is not None:
+            group_footprints = {}
+            for cid in g.mixed_ids:
+                if cid in units_mixed:
+                    group_footprints[_short_mixed_label(cid)] = footprints_by_id.get(cid)
+            for sid in g.si_ids:
+                if sid in units_si:
+                    group_footprints[_short_si_label(sid)] = footprints_by_id.get(sid)
         # units are named in the legend and the probe map, so keep the title
         # short — some groups have >10 units and listing them all is unreadable.
         # "best" coincidence here; the probe map shows every pair's value.
@@ -299,6 +310,7 @@ def render_overlays_for_units(
         save_path = os.path.join(out_dir, f"overlay_{label}_group{i:02d}.png")
         fig = plot_overlay_raster(
             unit_dfs, title=title, windows=windows, pair_coincidences=pair_coincidences,
+            footprints=group_footprints,
             xlim=xlim, psth_bin_ms=psth_bin_ms, save_path=save_path,
         )
         if fig is not None:
@@ -315,6 +327,7 @@ def run_overlay_by_coincidence(
     mixed_anchor_windows: Optional[dict] = None,
     si_anchor_windows: Optional[dict] = None,
     listed_only: bool = False,
+    show_waveforms: bool = False,
     window_ms: float = DEFAULT_WINDOW_MS,
     coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
@@ -339,10 +352,19 @@ def run_overlay_by_coincidence(
 
     units_mixed = session_units(loaded["mixed"], "Channel")
     units_si = session_units(loaded["si"], "NeuronID")
+
+    # waveform footprints: extract once for every unit (loads the recording once).
+    # Both sorts are cut from the same voltages at each unit's spike times, so the
+    # footprints are directly comparable. Returns {} if the recording is absent.
+    footprints_by_id = None
+    if show_waveforms:
+        from analyses.zombies_raster_review.waveform_footprint import extract_footprints
+        footprints_by_id = extract_footprints({**units_mixed, **units_si}, date, round_no)
+
     return render_overlays_for_units(
         units_mixed, units_si, out_dir, label=f"{date}_round{round_no}",
         mixed_anchor_windows=mixed_anchor_windows, si_anchor_windows=si_anchor_windows,
-        listed_only=listed_only,
+        listed_only=listed_only, footprints_by_id=footprints_by_id,
         window_ms=window_ms, coincidence_threshold=coincidence_threshold,
         ratio_threshold=ratio_threshold, xlim=xlim, psth_bin_ms=psth_bin_ms,
     )
@@ -354,6 +376,7 @@ def run_overlay_from_lists(
     only_date: Optional[str] = None,
     only_round: Optional[int] = None,
     listed_only: bool = False,
+    show_waveforms: bool = False,
     window_ms: float = DEFAULT_WINDOW_MS,
     coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
@@ -400,7 +423,7 @@ def run_overlay_from_lists(
             date, round_no, out_dir,
             mixed_anchor_windows=mixed_windows.get((date, round_no)),
             si_anchor_windows=si_windows.get((date, round_no)),
-            listed_only=listed_only,
+            listed_only=listed_only, show_waveforms=show_waveforms,
             window_ms=window_ms, coincidence_threshold=coincidence_threshold,
             ratio_threshold=ratio_threshold, xlim=xlim, psth_bin_ms=psth_bin_ms,
         )
@@ -458,6 +481,8 @@ def main(argv=None):
                    help="coincidence-match the two sorts and overlay (uses both lists)")
     p.add_argument("--listed-only", action="store_true",
                    help="overlay only cells in the xlsx/csv lists (with --overlay)")
+    p.add_argument("--waveforms", action="store_true",
+                   help="add the cross-channel waveform footprint panel (needs the recording)")
     args = p.parse_args(argv)
 
     if args.demo:
@@ -467,7 +492,7 @@ def main(argv=None):
     if args.overlay:
         out_dir = args.out or os.path.join(os.getcwd(), "zombies_rasters_overlay")
         run_overlay_from_lists(DEFAULT_LISTS["mixed"], DEFAULT_LISTS["si"], out_dir,
-                               listed_only=args.listed_only,
+                               listed_only=args.listed_only, show_waveforms=args.waveforms,
                                xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
         return
 
@@ -516,6 +541,10 @@ if __name__ == "__main__":
     #                       when that twin isn't listed (the fuller "all cells"
     #                       view; useful once you extend beyond the lists).
     LISTED_ONLY = False
+    #  SHOW_WAVEFORMS: add the cross-channel waveform footprint panel (right of
+    #  the probe map). Needs the raw recording on disk (amplifier.dat + info.rhd)
+    #  and windowsort importable; without them the panel says "unavailable".
+    SHOW_WAVEFORMS = False
     #  Coincidence tuning (cross-sort). A pair is matched when its coincidence is
     #  >= COINCIDENCE_THRESHOLD and >= RATIO_THRESHOLD × chance.
     COINCIDENCE_THRESHOLD = DEFAULT_COINCIDENCE_THRESHOLD
@@ -538,7 +567,7 @@ if __name__ == "__main__":
             DEFAULT_LISTS["mixed"], DEFAULT_LISTS["si"],
             os.path.join(OUT_DIR, "overlay"),
             only_date=OVERLAY_DATE, only_round=OVERLAY_ROUND,
-            listed_only=LISTED_ONLY,
+            listed_only=LISTED_ONLY, show_waveforms=SHOW_WAVEFORMS,
             window_ms=COINCIDENCE_WINDOW_MS,
             coincidence_threshold=COINCIDENCE_THRESHOLD,
             ratio_threshold=RATIO_THRESHOLD,

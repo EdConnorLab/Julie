@@ -47,11 +47,25 @@ below.
   each overlaid unit marked on its physical contact (colour matches its raster
   lane). Units sharing a contact (e.g. manual `C_025` and SI `C_025_Unit 1`) are
   offset side-by-side so they don't overlap. The title reports the **span** in µm
-  between the group's units. This answers a key question: units clustered on
-  nearby contacts are plausibly *one* neuron seen twice, whereas high-coincidence
-  units far apart on the probe are *distinct* neurons firing synchronously.
-  Contact geometry comes from `spikesorting.cross_channel_analysis.probe_geometry`
-  (65 µm pitch). Pass `show_probe=False` to omit the panel.
+  between the group's units, and each matched pair is drawn as a **line labelled
+  with its coincidence** — so you see every pair's value (not just the group's
+  best) *and* how far apart the two units are. This answers a key question:
+  units clustered on nearby contacts are plausibly *one* neuron seen twice,
+  whereas high-coincidence units far apart on the probe are *distinct* neurons
+  firing synchronously. Contact geometry comes from
+  `spikesorting.cross_channel_analysis.probe_geometry` (65 µm pitch). Pass
+  `show_probe=False` to omit the panel.
+- **Waveform footprint (optional, far-right panel)** — each unit's average spike
+  waveform on every contact, drawn along the probe's depth axis and normalised to
+  its own peak, colour-matched to the raster lane. Same neuron ⇒ both sorters'
+  traces peak on the same contact with the same shape; distinct-but-synchronous
+  neurons peak at different contacts. Enable with `SHOW_WAVEFORMS = True` (or
+  `--waveforms`). **Both** sorts' waveforms are cut from the *same* voltages
+  (windowsort's preprocessed recording) at each unit's own spike times, so they
+  are directly comparable and no SpikeInterface-analyzer / unit-id mapping is
+  needed. Needs the raw recording on disk (`amplifier.dat` + `info.rhd`) and
+  `windowsort` importable; when absent the panel says "waveforms unavailable" and
+  the rest of the figure still renders.
 
 The recording **subject (81G) is always excluded** — she is never a stimulus, so
 she never appears as a row even if she shows up in a session's trial table.
@@ -82,6 +96,7 @@ OUT_DIR = ...     # defaults to output/ next to this file (gitignored)
 OVERLAY_DATE  = None     # e.g. "2023-09-26" to restrict to one date
 OVERLAY_ROUND = None     # e.g. 2 (only used when OVERLAY_DATE is set)
 LISTED_ONLY   = False    # True → only cells in the xlsx/csv lists (see below)
+SHOW_WAVEFORMS = False   # True → add the waveform-footprint panel (needs recording)
 COINCIDENCE_THRESHOLD = 0.2   # min coincidence fraction to call a match
 RATIO_THRESHOLD       = 5.0   # …and it must be this many × chance
 ```
@@ -155,6 +170,7 @@ plot_zombies_raster(neuron_df, neuron_label="C-018 Unit 1",
 | `unit_lists.py` | parse the Excel/CSV lists → `RasterRequest`s |
 | `zombies_raster.py` | the raster + PSTH renderer (Zombies-focused) |
 | `coincidence_match.py` | pair the two sorts' units by spike-time coincidence |
+| `waveform_footprint.py` | cross-channel mean-waveform footprint per unit (needs recording) |
 | `run_zombies_rasters.py` | CLI: list → load sessions → render + save |
 | `make_synthetic_zombies_session.py` | fabricate a session for demo/tests |
 | `tests/test_smoke.py` | end-to-end tests (no DB / recordings) |
