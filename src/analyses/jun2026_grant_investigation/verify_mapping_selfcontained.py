@@ -4,9 +4,9 @@ Set LOADER_SOURCE to 'mine' to test YOUR replicate_analysis.load_data_kw,
 or 'reference' to test the reference implementation below.
 """
 import pandas as pd, numpy as np
-from common import MONKEY_NAME, SUBJECT, K_TO_FULL
+from common import MONKEY_NAME, SUBJECT, K_TO_FULL, KW_PKL
 
-PKL =  '/home/connorlab/Documents/GitHub/Julie/Cortana/old/generated_for_ed_si_sorted/si_sorted_Zombies_significant_windows_pKW_passed_mean_spike_rates.pkl'
+PKL = KW_PKL
 LOADER_SOURCE = 'mine'   # <-- change to 'mine' in your env to test your edited file
 
 order9 = [m for i, m in enumerate(MONKEY_NAME) if i != SUBJECT]

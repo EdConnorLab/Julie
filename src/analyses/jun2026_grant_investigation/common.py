@@ -17,14 +17,38 @@ import re
 from pathlib import Path
 
 # ============================================================
-# DEFAULT DATA PATH - change this OR override DATA_FILE in each fig script
+# DATA PATHS - resolved so the same code runs on the PI's machine
+# (absolute /home/connorlab/... paths) and on a fresh checkout (paths relative
+# to the repo root). The first candidate that exists wins; otherwise the first
+# is returned so error messages still point at the canonical location.
 # ============================================================
-# Looks for the file next to this script. Replace with an absolute path if needed.
-DEFAULT_DATA_FILE = str(
-   # '/home/connorlab/Documents/GitHub/Julie/Cortana/old/Ed and ANOVA/'
-   # 'used_for_R01/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx'
-    '/home/connorlab/Documents/GitHub/Julie/Cortana/old/generated_for_ed_si_sorted/si_sorted_Zombies_significant_windows_pKW_passed_mean_spike_rates.pkl'
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def resolve_path(*candidates):
+    for c in candidates:
+        if c and Path(c).exists():
+            return str(c)
+    return str(candidates[0])
+
+
+# His original grant cell list: wide-format xlsx, per-trial spike-count lists.
+HIS_XLSX = resolve_path(
+    '/home/connorlab/Documents/GitHub/Julie/Cortana/old/Ed and ANOVA/'
+    'used_for_R01/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx',
+    REPO_ROOT / 'Cortana' / 'old' / 'Ed and ANOVA' / 'used_for_R01' /
+    'zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx',
 )
+
+# SI-sorted, KW-passed cell list: long-format pkl, mean spike RATES.
+KW_PKL = resolve_path(
+    '/home/connorlab/Documents/GitHub/Julie/Cortana/old/generated_for_ed_si_sorted/'
+    'si_sorted_Zombies_significant_windows_pKW_passed_mean_spike_rates.pkl',
+    REPO_ROOT / 'Cortana' / 'old' / 'generated_for_ed_si_sorted' /
+    'si_sorted_Zombies_significant_windows_pKW_passed_mean_spike_rates.pkl',
+)
+
+DEFAULT_DATA_FILE = KW_PKL
 
 # ============================================================
 # CONSTANTS - DO NOT CHANGE unless you also change the data
@@ -62,6 +86,22 @@ SUB_FROM = SUB_TO.T.copy()
 AGN_FROM = AGN_TO.T.copy()
 ALL_BEH = [AFF_TO, AFF_FROM, SUB_TO, SUB_FROM, AGN_TO, AGN_FROM]
 
+# The grant's hardcoded SUB_TO[110E -> 94B] was 5 (transcription typo); the
+# submission feature df says 15 (SUB_TO above holds the corrected 15). Rebuild the
+# 6-matrix list with either value so "matrix-fix" effects can be separated from
+# "cell-list" effects when investigating why cell lists disagree.
+SUB_TO_GRANT_TYPO = 5     # reproduces his exact grant numbers
+SUB_TO_CORRECTED = 15     # matches zombies_feature_df_submission.xlsx
+
+
+def build_beh_matrices(sub_to_110e_94b=SUB_TO_CORRECTED):
+    """Return the 6-behavior list [aff_to, aff_from, sub_to, sub_from, agn_to,
+    agn_from] with SUB_TO[110E->94B] set to the given value (5 = grant typo,
+    15 = corrected). 'from' matrices are transposes of their 'to' counterparts."""
+    sub = SUB_TO.copy()
+    sub[4, 3] = sub_to_110e_94b
+    return [AFF_TO, AFF_TO.T.copy(), sub, sub.T.copy(), AGN_TO, AGN_TO.T.copy()]
+
 # Mapping from "k" (0..8 across non-subject monkeys) to full monkey index (0..9)
 K_TO_FULL = [0,1,2,3,4,5,7,8,9]
 FULL_TO_K = {f:k for k,f in enumerate(K_TO_FULL)}
@@ -91,7 +131,7 @@ def load_data(path=None, ncells=74):
         df: pandas DataFrame (in case caller wants metadata)
     """
     if path is None:
-        path = DEFAULT_DATA_FILE
+        path = HIS_XLSX
     df = pd.read_excel(path)
     if ncells is None or ncells <= 0:
         ncells = len(df)
@@ -106,13 +146,44 @@ def load_data(path=None, ncells=74):
     return X_mean, df.iloc[:ncells]
 
 
+def load_data_kw(path=None):
+    """Load the long-format SI-sorted KW pkl into the same shape as load_data().
+
+    Groups the Zombies-group rows by (NeuronID, WindowStart_ms, WindowEnd_ms) and
+    keeps every (neuron, window) combo that has all 9 non-subject Zombies present.
+    NOTE: these rows are (neuron x significant-window) combos, so the row count
+    (38) exceeds the neuron count (34) -- a few neurons contribute two windows.
+
+    Returns:
+        X_mean: (nrows, 9) mean spike RATE, columns ordered as MONKEY_NAME minus 81G
+        df:     DataFrame with 'Cell' (NeuronID) and 'Time Window' metadata
+    """
+    if path is None:
+        path = KW_PKL
+    order9 = [m for i, m in enumerate(MONKEY_NAME) if i != SUBJECT]
+    d = pd.read_pickle(path)
+    d = d[d.MonkeyGroup == 'Zombies']
+    rows, meta = [], []
+    for (nid, ws, we), g in d.groupby(['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']):
+        m = g.set_index('MonkeyName')['MeanSpikeRate']
+        if all(k in m.index for k in order9):
+            rows.append([m[k] for k in order9])
+            meta.append({'Cell': nid, 'Time Window': f'({ws}, {we})'})
+    return np.array(rows, float), pd.DataFrame(meta)
+
+
 # ============================================================
 # REGRESSION HELPERS
 # ============================================================
-def build_y_per(valid_k_per_source):
-    """Build dict {(behavior_idx, source_idx): y_vector}."""
+def build_y_per(valid_k_per_source, all_beh=None):
+    """Build dict {(behavior_idx, source_idx): y_vector}.
+
+    all_beh defaults to the module-level ALL_BEH (SUB_TO corrected to 15). Pass
+    build_beh_matrices(SUB_TO_GRANT_TYPO) to reproduce his exact grant numbers."""
+    if all_beh is None:
+        all_beh = ALL_BEH
     y_per = {}
-    for ib, B in enumerate(ALL_BEH):
+    for ib, B in enumerate(all_beh):
         for source in range(NMONKEYS):
             fs = [K_TO_FULL[k] for k in valid_k_per_source[source]]
             y_per[(ib, source)] = np.array([B[source, f] for f in fs], dtype=float)

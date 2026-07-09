@@ -23,7 +23,7 @@ import time
 import pandas as pd
 import numpy as np
 from common import (
-    load_data, build_valid_k_per_source, build_y_per, vec_r2, scalar_r2,
+    load_data, load_data_kw, build_valid_k_per_source, build_y_per, vec_r2, scalar_r2,
     NMONKEYS, SUBJECT, MONKEY_NAME, BEH_NAMES, AFF_TO, AFF_FROM,
     DEFAULT_DATA_FILE,
 )
@@ -40,22 +40,6 @@ NPERM       = 10000           # drop to 1000 for fast smoke-tests
 RANDOM_SEED = 20251121
 # =====================================================================
 
-
-def load_data_kw(pkl_path):
-    """Load the long-format KW pkl and return (X_mean, df) matching common.load_data's output.
-    X_mean: (ncells, 9) mean spike rate, columns ordered as MONKEY_NAME minus subject 81G."""
-    from common import MONKEY_NAME, SUBJECT
-    order9 = [m for i, m in enumerate(MONKEY_NAME) if i != SUBJECT]  # 9 non-subject Zombies, exact order
-    d = pd.read_pickle(pkl_path)
-    d = d[d.MonkeyGroup == 'Zombies']
-    rows, meta = [], []
-    for (nid, ws, we), g in d.groupby(['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']):
-        m = g.set_index('MonkeyName')['MeanSpikeRate']
-        if all(k in m.index for k in order9):
-            rows.append([m[k] for k in order9])
-            meta.append({'Cell': nid, 'Time Window': f'({ws}, {we})'})
-    X_mean = np.array(rows, float)
-    return X_mean, pd.DataFrame(meta)
 
 def main():
     print(f"Loading data from {DATA_FILE}")
