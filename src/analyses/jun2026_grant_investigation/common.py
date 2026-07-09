@@ -21,8 +21,8 @@ from pathlib import Path
 # ============================================================
 # Looks for the file next to this script. Replace with an absolute path if needed.
 DEFAULT_DATA_FILE = str(
-  '/home/connorlab/Documents/GitHub/Julie/Cortana/old/Ed and ANOVA/used_for_R01'
-  '/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx'
+   '/home/connorlab/Documents/GitHub/Julie/Cortana/old/Ed and ANOVA/'
+   'used_for_R01/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx'
 )
 
 # ============================================================
@@ -39,9 +39,16 @@ AFF_TO = np.array([
     [38,43,24,0,18,6,31,26,29,4],[90,3,8,8,0,22,8,9,1,18],[23,12,17,1,23,0,23,16,3,10],
     [17,18,43,34,10,23,0,34,2,9],[11,70,18,17,8,17,33,0,5,3],[3,6,4,31,2,1,2,4,0,9],
     [8,0,0,1,26,8,2,1,7,0]], dtype=float)
+# NOTE (2026-07-09): SUB_TO[4,3] = 110E -> 94B corrected from 5 to 15.
+#   5 was a transcription typo in the grant's hardcoded matrix; 15 is the correct
+#   value per zombies_feature_df_submission.xlsx. Propagates to SUB_FROM via .T,
+#   so it affects sub_to (source=110E) and sub_from (source=94B). All other cells
+#   in AFF/SUB/AGN matched the feature dfs exactly.
 SUB_TO = np.array([
     [0,0,0,1,0,1,0,0,2,0],[4,0,0,13,0,0,0,2,1,0],[9,2,0,10,0,0,4,3,0,0],
-    [7,0,2,0,0,0,0,1,6,0],[11,8,3,5,0,2,4,2,4,18],[90,16,14,43,0,0,10,7,9,6],
+    [7,0,2,0,0,0,0,1,6,0],
+    [11,8,3,15,0,2,4,2,4,18],   # 110E row: col 94B corrected 5 -> 15 (typo fix, see note above)
+    [90,16,14,43,0,0,10,7,9,6],
     [29,12,1,17,0,0,0,23,17,1],[41,6,1,28,0,0,2,0,5,0],[16,2,0,8,0,1,0,0,0,2],
     [7,2,3,1,2,0,5,2,5,0]], dtype=float)
 AGN_TO = np.array([

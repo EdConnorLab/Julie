@@ -32,7 +32,8 @@ from common import (
 # CONFIG - EDIT THESE
 # =====================================================================
 DATA_FILE   = DEFAULT_DATA_FILE
-NCELLS      = 74              # his hardcoded value; use None or 0 for all rows
+NCELLS      = 74             # his hardcoded value; use None or 0 for all rows
+CELL_SUBSET = 'multiunit'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
 THRESH      = 0.5             # R^2 cutoff
 NPERM       = 10000           # drop to 1000 for fast smoke-tests
 RANDOM_SEED = 20251121
@@ -42,12 +43,53 @@ RANDOM_SEED = 20251121
 def main():
     print(f"Loading data from {DATA_FILE}")
     X_mean, df = load_data(DATA_FILE, ncells=NCELLS)
+
+    # ---- CELL SUBSET FILTER (sorted vs multiunit) ----
+    # 'Unit' in the Cell name = manually sorted single unit; absence = multiunit.
+    # Mask X_mean and df together so neural rows stay aligned with metadata.
+    if CELL_SUBSET != 'all':
+        cell_names = df['Cell'].astype(str)
+        has_unit = cell_names.str.contains('Unit', case=False, na=False).to_numpy()
+        keep = has_unit if CELL_SUBSET == 'sorted' else ~has_unit
+        X_mean = X_mean[keep]
+        df = df.iloc[keep].reset_index(drop=True)
+        print(f"  CELL_SUBSET='{CELL_SUBSET}': kept {int(keep.sum())} of {len(keep)} cells")
+    else:
+        print(f"  CELL_SUBSET='all': using all {X_mean.shape[0]} cells")
+
     ncells = X_mean.shape[0]
     print(f"  Using ncells={ncells}")
 
     valid_k = build_valid_k_per_source()
     y_per = build_y_per(valid_k)
     X_per_source = {s: X_mean[:, valid_k[s]].copy() for s in range(NMONKEYS)}
+
+    # ---- DEGENERACY SCAN ----
+    # A regression's R^2 is forced to 0 (not a real fit) whenever the neural
+    # response is constant across the valid sinks (n*Sxx - Sx^2 == 0), or the
+    # behavior vector is constant. vec_r2() returns 0 in both cases, which is
+    # indistinguishable from a genuine ~0 fit and never crosses THRESH, so these
+    # regressions silently drop out of nsig / sumR^2. This scan lists them so a
+    # structural zero can be told apart from a real one. (The original script
+    # would instead raise ZeroDivisionError on these same cases.)
+    print("\n--- DEGENERACY SCAN (regressions forced to R^2=0) ---")
+    EPS = 1e-12
+    n_forced = 0
+    for s in range(NMONKEYS):
+        xvar = X_per_source[s].var(axis=1)              # (ncells,)
+        for ic in np.where(xvar < EPS)[0]:
+            n_forced += 6                                # all 6 behaviors hit for this (cell, source)
+            print(f"  [const neural]   source={MONKEY_NAME[s]:>5s}  cell#{ic}:  "
+                  f"resp={X_per_source[s][ic]}  -> R^2=0 for all 6 behaviors")
+    for ib in range(6):
+        for s in range(NMONKEYS):
+            if np.var(y_per[(ib, s)]) < EPS:
+                n_forced += ncells
+                print(f"  [const behavior] {BEH_NAMES[ib]:>8s} source={MONKEY_NAME[s]:>5s}:  "
+                      f"behavior vector constant -> R^2=0 for all {ncells} cells")
+    if n_forced == 0:
+        print("  none - every regression has non-degenerate neural and behavior variance.")
+    print(f"  total regressions forced to 0: {n_forced} / {ncells*6*NMONKEYS}")
 
     # ---- OBSERVED PASS ----
     print("\n--- OBSERVED PASS ---")
