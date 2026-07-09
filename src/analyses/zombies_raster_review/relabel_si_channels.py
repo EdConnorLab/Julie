@@ -108,7 +108,8 @@ def _cache_dir(cache_subdir: str, monkey: Optional[str]) -> Path:
 
 def relabel_cache(cache_subdir: str, *, only_date: Optional[str] = None,
                   only_round: Optional[int] = None, apply: bool = False,
-                  mapping_csv: Optional[str] = None, monkey: Optional[str] = None) -> None:
+                  backup: bool = True, mapping_csv: Optional[str] = None,
+                  monkey: Optional[str] = None) -> None:
     from analyses.zombies_raster_review.waveform_footprint import load_session_voltages
 
     cache_dir = _cache_dir(cache_subdir, monkey)
@@ -148,11 +149,15 @@ def relabel_cache(cache_subdir: str, *, only_date: Optional[str] = None,
         all_map.update(id_map)
 
         if apply:
-            backup = pkl.with_suffix(".pkl.bak")
-            if not backup.exists():
-                shutil.copy2(pkl, backup)
-            new_df.to_pickle(pkl)
-            print(f"    written (backup: {backup.name})")
+            if backup:
+                backup_path = pkl.with_suffix(".pkl.bak")
+                if not backup_path.exists():
+                    shutil.copy2(pkl, backup_path)
+                new_df.to_pickle(pkl)
+                print(f"    written (backup: {backup_path.name})")
+            else:
+                new_df.to_pickle(pkl)
+                print("    written (no backup)")
 
     if mapping_csv and all_map:
         pd.DataFrame({"old_NeuronID": list(all_map), "new_NeuronID": list(all_map.values())}) \
@@ -172,10 +177,13 @@ def main(argv=None):
     p.add_argument("--round", type=int, default=None, dest="round_no")
     p.add_argument("--monkey", default=None, help="subject folder (default: pipeline default)")
     p.add_argument("--apply", action="store_true", help="write changes (else dry-run)")
+    p.add_argument("--no-backup", action="store_true",
+                   help="don't write .pkl.bak copies (saves disk; original is unrecoverable)")
     p.add_argument("--mapping-csv", default=None, help="write old→new NeuronID map here")
     args = p.parse_args(argv)
     relabel_cache(args.cache_subdir, only_date=args.date, only_round=args.round_no,
-                  apply=args.apply, mapping_csv=args.mapping_csv, monkey=args.monkey)
+                  apply=args.apply, backup=not args.no_backup,
+                  mapping_csv=args.mapping_csv, monkey=args.monkey)
 
 
 if __name__ == "__main__":
