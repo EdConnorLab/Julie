@@ -10,7 +10,7 @@ from clat.util import time_util
 from clat.util.connection import Connection
 
 from project_util import SUBJECT_MONKEY
-from src.compile.julie_database_fields import (
+from compile.julie_database_fields import (
     FileNameField, MonkeyIdField, MonkeyNameField, MonkeyGroupField,
 )
 
