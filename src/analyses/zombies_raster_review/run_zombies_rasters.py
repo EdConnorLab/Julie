@@ -189,15 +189,40 @@ def _short_si_label(neuron_id: str) -> str:
     return "SI: " + str(neuron_id).split("Channel.")[-1]
 
 
-def _group_window_s(group: MatchGroup, mixed_windows: dict, si_windows: dict):
-    """Window (s) to shade for a group — from an anchor cell in it, if any."""
-    for sid in group.si_ids:
-        if si_windows.get(sid):
-            return si_windows[sid]
+def _cell_token(uid: str) -> str:
+    """``AMG_..._Channel.C_020_Unit 1`` / ``Channel.C_011_Unit 1`` → ``C_020_Unit 1``."""
+    return str(uid).split("Channel.")[-1]
+
+
+def _as_window_list(value) -> List[tuple]:
+    """Normalise an anchor-window value to a list of ``(lo_s, hi_s)`` windows.
+
+    Accepts ``None`` (→ ``[]``), a single ``(lo, hi)`` tuple, or a list of them —
+    a cell can carry several significant windows (it appears on several list rows).
+    """
+    if value is None:
+        return []
+    if (isinstance(value, (tuple, list)) and len(value) == 2
+            and all(isinstance(x, (int, float)) for x in value)):
+        return [(float(value[0]), float(value[1]))]
+    return [(float(w[0]), float(w[1])) for w in value if w is not None]
+
+
+def _group_windows(group: MatchGroup, mixed_windows: dict, si_windows: dict) -> List[tuple]:
+    """Every ANOVA window to shade for a group, tagged by source list and cell.
+
+    Returns ``(lo_s, hi_s, source, cell_label)`` for each window of each *listed*
+    cell in the group — so a mixed-list cell and an SI-list cell (and cells with
+    multiple windows) all get marked, each showing which list it came from.
+    """
+    specs: List[tuple] = []
     for cid in group.mixed_ids:
-        if mixed_windows.get(cid):
-            return mixed_windows[cid]
-    return None
+        for lo, hi in _as_window_list(mixed_windows.get(cid)):
+            specs.append((lo, hi, "mixed", _cell_token(cid)))
+    for sid in group.si_ids:
+        for lo, hi in _as_window_list(si_windows.get(sid)):
+            specs.append((lo, hi, "SI", _cell_token(sid)))
+    return specs
 
 
 def render_overlays_for_units(
@@ -260,7 +285,7 @@ def render_overlays_for_units(
         if len(unit_dfs) < 2:
             continue  # need at least one unit from each sort to overlay
 
-        window_s = _group_window_s(g, mixed_anchor_windows, si_anchor_windows)
+        windows = _group_windows(g, mixed_anchor_windows, si_anchor_windows)
         # units are named in the legend and the probe map, so keep the title
         # short — some groups have >10 units and listing them all is unreadable.
         n_mixed, n_si = len(g.mixed_ids), len(g.si_ids)
@@ -269,7 +294,7 @@ def render_overlays_for_units(
                  f"coincidence {g.best_coincidence:.2f}")
         save_path = os.path.join(out_dir, f"overlay_{label}_group{i:02d}.png")
         fig = plot_overlay_raster(
-            unit_dfs, title=title, window_s=window_s,
+            unit_dfs, title=title, windows=windows,
             xlim=xlim, psth_bin_ms=psth_bin_ms, save_path=save_path,
         )
         if fig is not None:
@@ -346,12 +371,18 @@ def run_overlay_from_lists(
     mixed_reqs = load_mixed_manual_requests(mixed_list_path)
     si_reqs = load_si_sorted_requests(si_list_path)
 
+    # (date, round) -> {cell_id: [window_s, ...]}. A cell can appear on several
+    # list rows with different significant windows, so accumulate them all.
     mixed_windows: Dict[tuple, dict] = defaultdict(dict)
     si_windows: Dict[tuple, dict] = defaultdict(dict)
     for r in mixed_reqs:
-        mixed_windows[(r.date, r.round_no)][r.match_value] = r.window_s
+        wl = mixed_windows[(r.date, r.round_no)].setdefault(r.match_value, [])
+        if r.window_s is not None:
+            wl.append(r.window_s)
     for r in si_reqs:
-        si_windows[(r.date, r.round_no)][r.match_value] = r.window_s
+        wl = si_windows[(r.date, r.round_no)].setdefault(r.match_value, [])
+        if r.window_s is not None:
+            wl.append(r.window_s)
 
     sessions = sorted(set(mixed_windows) | set(si_windows))
     if only_date is not None:

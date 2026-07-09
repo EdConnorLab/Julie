@@ -153,6 +153,38 @@ def _annotate_window_ms(ax, window_s: Tuple[float, float]):
             bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#E0C060", alpha=0.85))
 
 
+# Which list a window came from → its highlight colour (amber = mixed/xlsx,
+# violet = SI/csv). A ``None`` source (a single legacy window) stays amber.
+_WINDOW_SRC_COLORS = {"mixed": "#F2C94C", "SI": "#B39DDB", None: "#F2C94C"}
+
+
+def _shade_windows(ax, windows, *, alpha: float = 0.22):
+    """Shade every ``(lo_s, hi_s, source, label)`` window band on ``ax``."""
+    for lo, hi, src, _ in windows:
+        ax.axvspan(lo, hi, color=_WINDOW_SRC_COLORS.get(src, "#F2C94C"),
+                   alpha=alpha, zorder=1)
+
+
+def _annotate_windows(ax, windows):
+    """Callout each window at the top of ``ax``, coloured by its source list.
+
+    Callouts are staggered by left-edge order so several windows (e.g. one from
+    the mixed list and one from the SI list, or a cell with multiple windows) do
+    not stack on the same line. Each says which list it came from and its ms
+    extent; the outline colour also encodes the source.
+    """
+    y_levels = [0.985, 0.90, 0.815, 0.73]
+    for rank, idx in enumerate(sorted(range(len(windows)), key=lambda k: windows[k][0])):
+        lo, hi, src, label = windows[idx]
+        color = _WINDOW_SRC_COLORS.get(src, "#F2C94C")
+        head = f"{src} {label}\n" if src else ""
+        ax.text((lo + hi) / 2.0, y_levels[rank % len(y_levels)],
+                f"{head}{lo * 1000:.0f}–{hi * 1000:.0f} ms",
+                transform=ax.get_xaxis_transform(), ha="center", va="top",
+                fontsize=7, color="0.1", clip_on=False,
+                bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=color, lw=1.1, alpha=0.92))
+
+
 def plot_zombies_raster(
     neuron_df,
     *,
@@ -355,6 +387,7 @@ def plot_overlay_raster(
     spike_col: str = "SpikeTimes",
     key_col: str = "TaskField",
     window_s: Optional[Tuple[float, float]] = None,
+    windows: Optional[list] = None,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
     show_probe: bool = True,
@@ -369,10 +402,20 @@ def plot_overlay_raster(
     thin lane per sort, coloured consistently, so you can see spike-for-spike
     where the sorts agree or differ. The PSTH panel overlays each sort's rate.
 
+    ``windows`` is a list of ``(lo_s, hi_s, source, label)`` tuples — every
+    ANOVA-significant window in the group, from either list, each shaded and
+    called out with which list (``"mixed"``/``"SI"``) and cell it came from. For
+    a single window with no source, pass the legacy ``window_s`` instead.
+
     Returns the ``Figure`` (or ``None`` if there are no Zombies trials).
     """
     labels = list(unit_dfs.keys())
     colors = {lab: _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)] for i, lab in enumerate(labels)}
+
+    # windows to shade: an explicit multi-source list wins; else fall back to the
+    # single legacy ``window_s`` (source-less). Each entry is (lo, hi, src, label).
+    if windows is None:
+        windows = [(window_s[0], window_s[1], None, None)] if window_s is not None else []
 
     # union of monkeys present across all sorts, ranked, subject excluded
     present = set()
@@ -454,9 +497,8 @@ def plot_overlay_raster(
         return None
 
     ax.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7)
-    if window_s is not None:
-        ax.axvspan(window_s[0], window_s[1], color="#F2C94C", alpha=0.25, zorder=1)
-        _annotate_window_ms(ax, window_s)
+    _shade_windows(ax, windows, alpha=0.25)
+    _annotate_windows(ax, windows)
     ax.set_ylim(-0.5, total_rows - 0.5)
     ax.set_xlim(0, xlim)
     ax.invert_yaxis()
@@ -479,8 +521,7 @@ def plot_overlay_raster(
         ax_psth.fill_between(centers, mean - sem, mean + sem, color=colors[lab], alpha=0.18)
         ax_psth.plot(centers, mean, color=colors[lab], lw=1.5, label=lab)
     ax_psth.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7)
-    if window_s is not None:
-        ax_psth.axvspan(window_s[0], window_s[1], color="#F2C94C", alpha=0.25)
+    _shade_windows(ax_psth, windows, alpha=0.25)
     ax_psth.set_xlim(0, xlim)
     ax_psth.set_ylim(bottom=0)
     ax_psth.set_xlabel("time from stimulus onset (s)", fontsize=10)

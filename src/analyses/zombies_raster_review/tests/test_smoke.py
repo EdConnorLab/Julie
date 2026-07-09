@@ -195,6 +195,25 @@ def test_listed_only_toggle():
         assert len(w_both) == 1
 
 
+def test_group_windows_marks_all_sources():
+    from analyses.zombies_raster_review.run_zombies_rasters import _group_windows
+    from analyses.zombies_raster_review.coincidence_match import MatchGroup
+    g = MatchGroup(mixed_ids=["Channel.C_011_Unit 1"],
+                   si_ids=["AMG_2023-09-26_2_Channel.C_020_Unit 1"],
+                   best_coincidence=0.6)
+    specs = _group_windows(
+        g,
+        {"Channel.C_011_Unit 1": [(0.30, 0.40)]},
+        {"AMG_2023-09-26_2_Channel.C_020_Unit 1": [(0.10, 0.45), (0.80, 0.90)]},
+    )
+    # one mixed window + two SI windows, each tagged with its source list
+    assert len(specs) == 3
+    assert sorted(s[2] for s in specs) == ["SI", "SI", "mixed"]
+    # a single (lo, hi) tuple (legacy) is accepted too, tagged + cell-labelled
+    specs2 = _group_windows(g, {"Channel.C_011_Unit 1": (0.30, 0.40)}, {})
+    assert specs2 == [(0.30, 0.40, "mixed", "C_011_Unit 1")]
+
+
 def test_unit_channel_token():
     df = make_synthetic_zombies_unit(channel="Channel.C_011_Unit 1",
                                      neuron_id="AMG_2023-09-26_2_Channel.C_020_Unit 1")
@@ -228,6 +247,7 @@ if __name__ == "__main__":
     test_group_matches_bundles_connected_units()
     test_render_overlays_for_units_writes_png()
     test_listed_only_toggle()
+    test_group_windows_marks_all_sources()
     test_unit_channel_token()
     test_overlay_probe_toggle_both_render()
     print("All zombies_raster_review smoke tests passed.")

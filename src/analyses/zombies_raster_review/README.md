@@ -38,6 +38,11 @@ The units are named in the **legend** (and probe map), so the title stays short
 (counts + coincidence) even for groups with many units. See **Overlay matching**
 below.
 
+- **All windows marked** — a group can contain a mixed-list cell and an SI-list
+  cell (and a cell may have several significant windows), so **every** window is
+  shaded and called out at the top with which list it came from
+  (`mixed` = xlsx, amber; `SI` = csv, violet) and the cell id. One overlay can
+  therefore show two or more windows at once.
 - **Probe map (right panel)** — the 32-channel linear probe drawn to scale, with
   each overlaid unit marked on its physical contact (colour matches its raster
   lane). Units sharing a contact (e.g. manual `C_025` and SI `C_025_Unit 1`) are
