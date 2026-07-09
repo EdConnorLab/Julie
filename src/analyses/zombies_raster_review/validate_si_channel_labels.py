@@ -167,33 +167,42 @@ def diagnose(date: str, round_no: int, monkey: Optional[str] = None) -> None:
 
 
 def _structural_checks(date: str, round_no: int, monkey: Optional[str]) -> None:
-    """The two upstream conditions that would cause a mismatch."""
+    """The two upstream conditions that would cause a mismatch (checked separately
+    so a failure in one still reports the other)."""
+    import os
+    from spikesorting.sort_spikes.sort_spikes import build_intan_session_path
+    kw = {"monkey": monkey} if monkey else {}
+    intan_dir = build_intan_session_path(date, round_no, **kw)
+
     print("\n--- structural checks (root cause) ---")
+
+    # (B) amplifier.dat native ordering — needs only info.rhd, no SpikeInterface
     try:
-        import spikeinterface.sorters as ss
-        from spikesorting.sort_spikes.sort_spikes import (
-            build_intan_session_path, get_recording_session_info,
-        )
-        kw = {"monkey": monkey} if monkey else {}
-        intan_dir = build_intan_session_path(date, round_no, **kw)
-
-        import os
-        sorting_KS4 = ss.read_sorter_folder(os.path.join(intan_dir, "kilosort4_output"))
-        ids = list(sorting_KS4.get_unit_ids())
-        contiguous = list(ids) == list(range(len(ids)))
-        print(f"KS4 unit ids (n={len(ids)}): {ids[:12]}{' …' if len(ids) > 12 else ''}")
-        print(f"  contiguous 0..N-1? {contiguous}  "
-              f"→ if False, get_unit_ids()[ks4_uid] fetches the WRONG unit's spikes")
-
+        from spikesorting.sort_spikes.sort_spikes import get_recording_session_info
         _, enabled = get_recording_session_info(intan_dir)
         native = [ch["native_order"] for ch in enabled]
         native_ordered = native == list(range(len(native)))
-        print(f"amplifier.dat native_order (n={len(native)}): {native[:12]}"
-              f"{' …' if len(native) > 12 else ''}")
-        print(f"  equals recording index 0..N-1? {native_ordered}  "
+        print(f"(B) amplifier.dat native_order (n={len(native)}): "
+              f"{native[:16]}{' …' if len(native) > 16 else ''}")
+        print(f"    equals recording index 0..N-1? {native_ordered}  "
               f"→ if False, Channel[f'C_{{index:03}}'] names the WRONG channel")
     except Exception as e:
-        print(f"[structural checks unavailable: {e}]")
+        print(f"(B) native-order check unavailable: {e}")
+
+    # (A) KS4 unit-id contiguity — load the sorting only, NOT the recording
+    # (register_recording=False avoids rebuilding the saved preprocessing chain,
+    #  which fails when the installed SpikeInterface differs from the sort-time one)
+    try:
+        import spikeinterface.sorters as ss
+        sorting_KS4 = ss.read_sorter_folder(
+            os.path.join(intan_dir, "kilosort4_output"), register_recording=False)
+        ids = list(sorting_KS4.get_unit_ids())
+        contiguous = ids == list(range(len(ids)))
+        print(f"(A) KS4 unit ids (n={len(ids)}): {ids[:16]}{' …' if len(ids) > 16 else ''}")
+        print(f"    contiguous 0..N-1? {contiguous}  "
+              f"→ if False, get_unit_ids()[ks4_uid] fetches the WRONG unit's spikes")
+    except Exception as e:
+        print(f"(A) KS4-id check unavailable: {e}")
 
 
 def main(argv=None):
