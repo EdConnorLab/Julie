@@ -36,7 +36,7 @@ window, so its exact value does not matter as long as it is used consistently.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -161,12 +161,16 @@ Node = Tuple[str, str]
 class MatchGroup:
     """A connected set of units (across both sorts) that are mutually coincident.
 
-    ``mixed_ids`` / ``si_ids`` list the members from each source. ``best`` is the
-    strongest pairwise coincidence inside the group (a quality summary for logs).
+    ``mixed_ids`` / ``si_ids`` list the members from each source.
+    ``best_coincidence`` is the strongest pairwise coincidence inside the group.
+    ``pairs`` keeps every matched ``(mixed_id, si_id, coincidence)`` so callers
+    can report each pair, not just the best — one number hides weak links in a
+    group with 3+ units.
     """
     mixed_ids: List[str]
     si_ids: List[str]
     best_coincidence: float
+    pairs: List[Tuple[str, str, float]] = field(default_factory=list)
 
     @property
     def n_units(self) -> int:
@@ -196,25 +200,26 @@ def group_matches(matches: List[CrossSortMatch]) -> List[MatchGroup]:
         if ra != rb:
             parent[ra] = rb
 
-    best_in_root: Dict[Node, float] = {}
     for m in matches:
-        a: Node = ("mixed", m.mixed_id)
-        b: Node = ("si", m.si_id)
-        union(a, b)
+        union(("mixed", m.mixed_id), ("si", m.si_id))
 
     # bucket nodes by component root
     members: Dict[Node, List[Node]] = {}
     for node in list(parent.keys()):
         members.setdefault(find(node), []).append(node)
-    # strongest coincidence seen per component
+    # collect the pairs (and the strongest coincidence) per component
+    best_in_root: Dict[Node, float] = {}
+    pairs_in_root: Dict[Node, List[Tuple[str, str, float]]] = {}
     for m in matches:
         root = find(("mixed", m.mixed_id))
         best_in_root[root] = max(best_in_root.get(root, 0.0), m.coincidence)
+        pairs_in_root.setdefault(root, []).append((m.mixed_id, m.si_id, m.coincidence))
 
     groups: List[MatchGroup] = []
     for root, nodes in members.items():
         mixed_ids = sorted(uid for src, uid in nodes if src == "mixed")
         si_ids = sorted(uid for src, uid in nodes if src == "si")
-        groups.append(MatchGroup(mixed_ids, si_ids, best_in_root.get(root, 0.0)))
+        pairs = sorted(pairs_in_root.get(root, []), key=lambda p: p[2], reverse=True)
+        groups.append(MatchGroup(mixed_ids, si_ids, best_in_root.get(root, 0.0), pairs))
     groups.sort(key=lambda g: g.best_coincidence, reverse=True)
     return groups

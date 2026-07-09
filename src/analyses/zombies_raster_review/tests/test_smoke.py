@@ -154,6 +154,10 @@ def test_group_matches_bundles_connected_units():
     g = groups[0]
     assert any("C_011" in c for c in g.mixed_ids)
     assert any("C_020" in s for s in g.si_ids)
+    # per-pair coincidence is retained (not just the group's best)
+    assert len(g.pairs) >= 1
+    mid, sid, coinc = g.pairs[0]
+    assert "C_011" in mid and "C_020" in sid and 0.0 < coinc <= 1.0
 
 
 def test_render_overlays_for_units_writes_png():

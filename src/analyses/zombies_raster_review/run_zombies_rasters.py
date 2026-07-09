@@ -286,15 +286,19 @@ def render_overlays_for_units(
             continue  # need at least one unit from each sort to overlay
 
         windows = _group_windows(g, mixed_anchor_windows, si_anchor_windows)
+        # per-pair coincidence, in the overlay's lane-label terms, for the probe map
+        pair_coincidences = [(_short_mixed_label(mid), _short_si_label(sid), c)
+                             for mid, sid, c in g.pairs]
         # units are named in the legend and the probe map, so keep the title
         # short — some groups have >10 units and listing them all is unreadable.
+        # "best" coincidence here; the probe map shows every pair's value.
         n_mixed, n_si = len(g.mixed_ids), len(g.si_ids)
         title = (f"Sort match #{i} — {label}   ·   "
                  f"{n_mixed} manual + {n_si} SI units   ·   "
-                 f"coincidence {g.best_coincidence:.2f}")
+                 f"best coincidence {g.best_coincidence:.2f}")
         save_path = os.path.join(out_dir, f"overlay_{label}_group{i:02d}.png")
         fig = plot_overlay_raster(
-            unit_dfs, title=title, windows=windows,
+            unit_dfs, title=title, windows=windows, pair_coincidences=pair_coincidences,
             xlim=xlim, psth_bin_ms=psth_bin_ms, save_path=save_path,
         )
         if fig is not None:

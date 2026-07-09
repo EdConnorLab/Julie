@@ -299,7 +299,7 @@ def _unit_channel_token(df) -> Optional[str]:
     return None
 
 
-def _draw_probe_map(ax, unit_dfs, colors):
+def _draw_probe_map(ax, unit_dfs, colors, pair_coincidences=None):
     """Draw the 32-channel linear probe, marking each overlaid unit's contact.
 
     Marker colour matches the raster lane; units sharing a contact (e.g. manual
@@ -308,6 +308,11 @@ def _draw_probe_map(ax, unit_dfs, colors):
     apart), so units clustered on nearby contacts are plausibly one neuron, while
     high-coincidence units far apart are distinct neurons firing synchronously —
     which is exactly what this panel is here to reveal.
+
+    ``pair_coincidences`` is a list of ``(label_a, label_b, coincidence)``: each
+    matched cross-sort pair is drawn as a line between the two units' markers,
+    labelled with its coincidence — so you read each pair's value *and* how far
+    apart the two units are in one glance.
     """
     from collections import defaultdict
     from spikesorting.cross_channel_analysis import probe_geometry as geom
@@ -328,18 +333,30 @@ def _draw_probe_map(ax, unit_dfs, colors):
         (off_probe if ci is None else per_contact[ci]).append((label, tok))
 
     marked_depths = []
+    pos = {}          # lane label -> (x, depth) of its marker, for pair lines
     x0, x_step = 0.22, 0.28
     for ci, units in sorted(per_contact.items()):
         depth = ci * pitch
         marked_depths.append(depth)
         for j, (label, tok) in enumerate(units):
             x = x0 + x_step * j
+            pos[label] = (x, depth)
             ax.plot([0, x], [depth, depth], color="0.6", lw=0.7, zorder=2)  # connector
             ax.scatter([x], [depth], s=58, color=colors.get(label, "0.3"),
                        edgecolor="black", linewidth=0.4, zorder=3)
         # channel id once, just past the last marker on this contact
         ax.text(x0 + x_step * (len(units) - 1) + 0.22, depth, units[0][1],
                 va="center", ha="left", fontsize=7, color="0.25", clip_on=False)
+
+    # per-pair coincidence: a line between the two units' markers, labelled
+    for la, lb, coinc in (pair_coincidences or []):
+        if la in pos and lb in pos:
+            (xa, da), (xb, db) = pos[la], pos[lb]
+            ax.plot([xa, xb], [da, db], color="0.45", lw=0.9, zorder=2)
+            ax.text((xa + xb) / 2 + 0.06, (da + db) / 2, f"{coinc:.2f}",
+                    fontsize=6.5, ha="left", va="center", color="0.1", zorder=4,
+                    bbox=dict(boxstyle="round,pad=0.12", fc="white", ec="0.55",
+                              lw=0.3, alpha=0.92))
 
     ax.set_xlim(-0.25, 1.4)
     ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
@@ -388,6 +405,7 @@ def plot_overlay_raster(
     key_col: str = "TaskField",
     window_s: Optional[Tuple[float, float]] = None,
     windows: Optional[list] = None,
+    pair_coincidences: Optional[list] = None,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
     show_probe: bool = True,
@@ -531,7 +549,7 @@ def plot_overlay_raster(
 
     # --- probe map: where these units sit on the linear probe ---
     if ax_probe is not None:
-        _draw_probe_map(ax_probe, unit_dfs, colors)
+        _draw_probe_map(ax_probe, unit_dfs, colors, pair_coincidences)
 
     _save_or_keep(fig, save_path)
     return fig
