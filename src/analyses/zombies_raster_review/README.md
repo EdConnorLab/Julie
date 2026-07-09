@@ -58,9 +58,17 @@ below.
 - **Waveform footprint (optional, far-right panel)** — each unit's average spike
   waveform on the contacts near its peak (±`FOOTPRINT_CONTACT_RADIUS`, default 5,
   since a spike only bleeds onto a few neighbours), drawn along the probe's depth
-  axis and normalised to its own peak, colour-matched to the raster lane. Same
-  neuron ⇒ both sorters' traces peak on the same contact with the same shape;
-  distinct-but-synchronous neurons peak at different contacts. Enable with `SHOW_WAVEFORMS = True` (or
+  axis, normalised to its own peak, colour-matched to the raster lane, and with
+  each drawn contact's **channel name labelled on the right**. By default each
+  unit's window is centred on the contact where its waveform is **actually
+  biggest** (`FOOTPRINT_CENTER_ON = "peak"`), *not* its sorter-assigned channel.
+  So: two units that are one neuron peak on the **same** contact → their traces
+  overlap in **one** cluster (even if the two sorters named them different
+  channels — that naming disagreement is itself the finding); two distinct
+  neurons peak on **different** contacts → **two** clusters. Set
+  `FOOTPRINT_CENTER_ON = "named"` to instead centre each on its sorter-assigned
+  channel (matching the probe-map marker); a mis-assigned unit then shows a flat
+  footprint at its named contact. Enable with `SHOW_WAVEFORMS = True` (or
   `--waveforms`). **Both** sorts' waveforms are cut from the *same* voltages
   (windowsort's preprocessed recording) at each unit's own spike times, so they
   are directly comparable and no SpikeInterface-analyzer / unit-id mapping is
@@ -154,6 +162,27 @@ xlsx/csv on **both** sides, so every unit in every overlay is from your lists.
 Use this while investigating the two lists on their own. (A listed cell with no
 listed cross-sort partner then produces no overlay, since an overlay needs a unit
 from each sort.) From the terminal: `--overlay --listed-only`.
+
+### Waveform caveat — both sorts are cut from the *same* recording
+
+The footprint waveforms are computed by cutting snippets at each unit's spike
+times from **one** voltage source: windowsort's 300 Hz high-pass
+`preprocessed_data.dat`. In particular the **SI** unit's waveform is cut from
+*that* recording, **not** from SpikeInterface's own (band-pass 300–6000 Hz +
+common-median-referenced) preprocessing that produced its native templates. This
+is deliberate:
+
+- Same spike times, same voltage source, same method for both sorts → the manual
+  and SI footprints are **directly comparable** (a raw µV comparison across the
+  two native pipelines would not be, because different filtering/referencing
+  changes amplitude — which is also why the footprints are normalised).
+- It sidesteps the SpikeInterface analyzer / `NeuronID`→unit-id mapping problem
+  entirely (that id is not stored and is resolved positionally upstream), because
+  the SI spike **times** are already attached to the `NeuronID` in the cache.
+
+If you ever want SI's *native* template (on its own band-pass + CMR data, e.g. to
+validate SI's own preprocessing), that is a separate path that does need the
+analyzer folder and the unit-id mapping.
 
 ### As a library
 

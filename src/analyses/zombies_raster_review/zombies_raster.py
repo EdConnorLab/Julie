@@ -379,23 +379,45 @@ def _draw_probe_map(ax, unit_dfs, colors, pair_coincidences=None):
                 ha="center", va="top", fontsize=7, color="0.6")
 
 
-# How many contacts on either side of a unit's peak to draw its footprint over.
+# How many contacts on either side of the centre to draw a unit's footprint over.
 # A unit's spike only bleeds onto a handful of nearby contacts, so drawing the
 # whole 32-contact column is mostly flat clutter; ±this keeps it legible.
 FOOTPRINT_CONTACT_RADIUS = 5
 
+# Where to centre each unit's footprint window:
+#   "peak"  — the contact where the unit's waveform is actually biggest (truth).
+#             Two coincident units then overlap at ONE cluster if they are really
+#             one neuron, or sit at two clusters if they are distinct.
+#   "named" — the sorter's assigned channel (matches the probe-map marker). A
+#             mis-assigned unit then shows a flat footprint at its named contact.
+FOOTPRINT_CENTER_ON = "peak"
 
-def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTACT_RADIUS):
+
+def _channel_name_of_contact(geom, ci: int) -> str:
+    """Contact index → Intan channel name, e.g. contact 3 → ``"C_010"``."""
+    return f"C_{int(geom.PROBE_CHANNEL_ORDER[ci]):03d}"
+
+
+def _named_contact_of_label(geom, label: str):
+    """Contact index of the channel named in a lane label (``"SI: C_002…"``→C_002)."""
+    tok = label.split(":")[-1].strip().split("_Unit")[0].strip()
+    return geom.contact_index_of(tok)
+
+
+def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTACT_RADIUS,
+                     center_on=FOOTPRINT_CENTER_ON):
     """Draw each unit's normalised cross-channel waveform along the probe.
 
     Shares the probe's depth axis: a unit's average waveform is drawn as a small
     trace at each contact's depth, so its spatial footprint reads as a depth
-    profile (biggest at the peak contact, decaying away). Only contacts within
-    ``n_contacts`` of that unit's own peak are drawn — a spike bleeds onto just a
-    few neighbours, so the rest would be flat clutter. Each unit is normalised to
-    its own peak (so shapes compare regardless of amplitude) and coloured to its
-    raster lane. Two units that are one neuron peak at the same contact with the
-    same shape; synchronous-but-distinct neurons peak at different contacts.
+    profile. Only contacts within ``n_contacts`` of the window centre are drawn
+    (a spike bleeds onto just a few neighbours; the rest is flat clutter). The
+    centre is the unit's actual **peak** contact (``center_on="peak"``) or its
+    sorter-assigned **named** contact (``"named"``). Every drawn contact is
+    labelled with its channel name on the right. Each unit is normalised to its
+    own peak (shapes compare regardless of amplitude) and coloured to its raster
+    lane. Two units that are one neuron peak on the same contact with the same
+    shape; synchronous-but-distinct neurons peak on different contacts.
     """
     from spikesorting.cross_channel_analysis import probe_geometry as geom
 
@@ -403,7 +425,7 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
     pitch = geom.Y_PITCH_UM
     amp = 0.6 * pitch  # a full-scale (normalised = 1) deflection spans ~0.6 contacts
 
-    drew = False
+    drawn_contacts = set()
     for label, fp in (footprints_by_label or {}).items():
         if fp is None:
             continue
@@ -415,28 +437,42 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
         color = colors.get(label, "0.3")
         xs = np.linspace(0.1, 0.9, w.shape[1])
         contacts = [geom.contact_index_of(c) for c in fp.channels]
-        # this unit's peak contact (largest peak-to-peak among mapped contacts)
-        p2p = w.max(axis=1) - w.min(axis=1)
         mapped = [r for r, ci in enumerate(contacts) if ci is not None]
         if not mapped:
             continue
+        # centre the window: named channel, or the actual peak contact
+        p2p = w.max(axis=1) - w.min(axis=1)
         peak_ci = contacts[max(mapped, key=lambda r: p2p[r])]
+        center_ci = peak_ci
+        if center_on == "named":
+            named_ci = _named_contact_of_label(geom, label)
+            if named_ci is not None:
+                center_ci = named_ci
         for row, ci in enumerate(contacts):
-            if ci is None or abs(ci - peak_ci) > n_contacts:
+            if ci is None or abs(ci - center_ci) > n_contacts:
                 continue
             depth = ci * pitch
             ax.plot(xs, depth - w[row] * amp, color=color, lw=0.7, alpha=0.85, zorder=3)
-            drew = True
+            drawn_contacts.add(ci)
 
     ax.set_xlim(0, 1)
     ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
     ax.invert_yaxis()
     ax.set_xticks([])
-    ax.set_yticks([])
     for s in ("top", "right", "bottom", "left"):
         ax.spines[s].set_visible(False)
-    ax.set_title(f"footprint\n(norm., ±{n_contacts} ch)", fontsize=9)
-    if not drew:
+    # label each drawn contact with its channel name on the right
+    if drawn_contacts:
+        ticks = sorted(drawn_contacts)
+        ax.set_yticks([c * pitch for c in ticks])
+        ax.set_yticklabels([_channel_name_of_contact(geom, c) for c in ticks], fontsize=6)
+        ax.yaxis.tick_right()
+        ax.tick_params(axis="y", length=0)
+    else:
+        ax.set_yticks([])
+    tag = "peak" if center_on == "peak" else "named ch"
+    ax.set_title(f"footprint\n(norm., ±{n_contacts} ch @ {tag})", fontsize=9)
+    if not drawn_contacts:
         ax.text(0.5, 0.5, "waveforms\nunavailable", transform=ax.transAxes,
                 ha="center", va="center", fontsize=8, color="0.55")
 
