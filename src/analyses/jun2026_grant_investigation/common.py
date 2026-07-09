@@ -21,8 +21,9 @@ from pathlib import Path
 # ============================================================
 # Looks for the file next to this script. Replace with an absolute path if needed.
 DEFAULT_DATA_FILE = str(
-   '/home/connorlab/Documents/GitHub/Julie/Cortana/old/Ed and ANOVA/'
-   'used_for_R01/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx'
+   # '/home/connorlab/Documents/GitHub/Julie/Cortana/old/Ed and ANOVA/'
+   # 'used_for_R01/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx'
+    '/home/connorlab/Documents/GitHub/Julie/Cortana/old/generated_for_ed_si_sorted/si_sorted_Zombies_significant_windows_pKW_passed_mean_spike_rates.pkl'
 )
 
 # ============================================================
