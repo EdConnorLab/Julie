@@ -56,10 +56,11 @@ below.
   `spikesorting.cross_channel_analysis.probe_geometry` (65 µm pitch). Pass
   `show_probe=False` to omit the panel.
 - **Waveform footprint (optional, far-right panel)** — each unit's average spike
-  waveform on every contact, drawn along the probe's depth axis and normalised to
-  its own peak, colour-matched to the raster lane. Same neuron ⇒ both sorters'
-  traces peak on the same contact with the same shape; distinct-but-synchronous
-  neurons peak at different contacts. Enable with `SHOW_WAVEFORMS = True` (or
+  waveform on the contacts near its peak (±`FOOTPRINT_CONTACT_RADIUS`, default 5,
+  since a spike only bleeds onto a few neighbours), drawn along the probe's depth
+  axis and normalised to its own peak, colour-matched to the raster lane. Same
+  neuron ⇒ both sorters' traces peak on the same contact with the same shape;
+  distinct-but-synchronous neurons peak at different contacts. Enable with `SHOW_WAVEFORMS = True` (or
   `--waveforms`). **Both** sorts' waveforms are cut from the *same* voltages
   (windowsort's preprocessed recording) at each unit's own spike times, so they
   are directly comparable and no SpikeInterface-analyzer / unit-id mapping is

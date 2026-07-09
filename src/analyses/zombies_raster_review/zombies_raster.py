@@ -379,15 +379,23 @@ def _draw_probe_map(ax, unit_dfs, colors, pair_coincidences=None):
                 ha="center", va="top", fontsize=7, color="0.6")
 
 
-def _draw_footprints(ax, footprints_by_label, colors):
+# How many contacts on either side of a unit's peak to draw its footprint over.
+# A unit's spike only bleeds onto a handful of nearby contacts, so drawing the
+# whole 32-contact column is mostly flat clutter; ±this keeps it legible.
+FOOTPRINT_CONTACT_RADIUS = 5
+
+
+def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTACT_RADIUS):
     """Draw each unit's normalised cross-channel waveform along the probe.
 
     Shares the probe's depth axis: a unit's average waveform is drawn as a small
-    trace at *every* contact's depth, so its spatial footprint reads as a depth
-    profile (biggest at the peak contact, decaying away). Each unit is normalised
-    to its own peak (so shapes compare regardless of amplitude) and coloured to
-    its raster lane. Two units that are one neuron peak at the same contact with
-    the same shape; synchronous-but-distinct neurons peak at different contacts.
+    trace at each contact's depth, so its spatial footprint reads as a depth
+    profile (biggest at the peak contact, decaying away). Only contacts within
+    ``n_contacts`` of that unit's own peak are drawn — a spike bleeds onto just a
+    few neighbours, so the rest would be flat clutter. Each unit is normalised to
+    its own peak (so shapes compare regardless of amplitude) and coloured to its
+    raster lane. Two units that are one neuron peak at the same contact with the
+    same shape; synchronous-but-distinct neurons peak at different contacts.
     """
     from spikesorting.cross_channel_analysis import probe_geometry as geom
 
@@ -406,12 +414,18 @@ def _draw_footprints(ax, footprints_by_label, colors):
         w = w / peak
         color = colors.get(label, "0.3")
         xs = np.linspace(0.1, 0.9, w.shape[1])
-        for row, chan in enumerate(fp.channels):
-            ci = geom.contact_index_of(chan)
-            if ci is None:
+        contacts = [geom.contact_index_of(c) for c in fp.channels]
+        # this unit's peak contact (largest peak-to-peak among mapped contacts)
+        p2p = w.max(axis=1) - w.min(axis=1)
+        mapped = [r for r, ci in enumerate(contacts) if ci is not None]
+        if not mapped:
+            continue
+        peak_ci = contacts[max(mapped, key=lambda r: p2p[r])]
+        for row, ci in enumerate(contacts):
+            if ci is None or abs(ci - peak_ci) > n_contacts:
                 continue
             depth = ci * pitch
-            ax.plot(xs, depth - w[row] * amp, color=color, lw=0.6, alpha=0.85, zorder=3)
+            ax.plot(xs, depth - w[row] * amp, color=color, lw=0.7, alpha=0.85, zorder=3)
             drew = True
 
     ax.set_xlim(0, 1)
@@ -421,7 +435,7 @@ def _draw_footprints(ax, footprints_by_label, colors):
     ax.set_yticks([])
     for s in ("top", "right", "bottom", "left"):
         ax.spines[s].set_visible(False)
-    ax.set_title("footprint\n(norm.)", fontsize=9)
+    ax.set_title(f"footprint\n(norm., ±{n_contacts} ch)", fontsize=9)
     if not drew:
         ax.text(0.5, 0.5, "waveforms\nunavailable", transform=ax.transAxes,
                 ha="center", va="center", fontsize=8, color="0.55")
