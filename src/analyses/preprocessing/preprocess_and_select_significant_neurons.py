@@ -192,9 +192,9 @@ def detect_significant_windows_using_pANOVA(
     if group_df.empty:
         out = pd.DataFrame()
         _save_pickle(out, cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_significant_windows_pANOVA_passed.pkl", cfg.save)
-        return out
+        return out, out
 
-    panova_results, _ = run_permutation_anova_by_window(
+    results_df, _ = run_permutation_anova_by_window(
         group_df,
         category_col="MonkeyName",
         neuron_col="NeuronID",
@@ -206,9 +206,29 @@ def detect_significant_windows_using_pANOVA(
         plot=False,
     )
 
-    sig = panova_results[panova_results["p-value"]<alpha] if not panova_results.empty else pd.DataFrame()
-    _save_pickle(sig, cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_significant_windows_pANOVA_passed.pkl", cfg.save)
-    return sig
+    # FDR correction on ALL p-values
+    results_df = multiple_comparison_test(results_df)
+    # Save all results (includes both uncorrected and FDR-corrected)
+    _save_pickle(results_df, cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_all_windows_pANOVA_tested.pkl",
+                 cfg.save)
+
+    # Significant based on uncorrected permutation p-value
+    sig_results = results_df[results_df["p-value"] < alpha]
+    _save_pickle(sig_results,
+                 cfg.analysis_cache_dir / f"{source.name}_{cfg.group_name}_significant_windows_pANOVA_passed.pkl",
+                 cfg.save)
+    print("significant windows based on pANOVA")
+    print(sig_results.shape)
+    print(sig_results)
+    # Count FDR survivors for reporting
+    sig_col = [c for c in results_df.columns if c.endswith("_significant")][0]
+    n_fdr = results_df[sig_col].sum()
+
+    print(f"Total windows tested: {len(results_df)}")
+    print(f"Significant windows after permutation test (p < {alpha}): {len(sig_results)}")
+    print(f"Significant windows after FDR correction: {n_fdr}")
+
+    return results_df, sig_results
 
 
 def detect_significant_windows_using_pKW(
@@ -285,4 +305,4 @@ if __name__ == "__main__":
 
     # 3) significant windows
     res_window_kw, sig_windows_kw = detect_significant_windows_using_pKW(windows, cfg, source=source)
-    sig_windows_panova = detect_significant_windows_using_pANOVA(windows, cfg, source=source)
+    res_window_panova, sig_windows_panova = detect_significant_windows_using_pANOVA(windows, cfg, source=source)
