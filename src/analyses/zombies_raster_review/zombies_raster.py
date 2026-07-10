@@ -47,8 +47,13 @@ GROUP = "Zombies"
 # row in these rasters even if she shows up in a session's trial table.
 SUBJECT_MONKEY_ID = "81G"
 
-# palette for overlay mode (manual vs SI-sorted, etc.)
-_OVERLAY_COLORS = ["#4E79A7", "#E15759", "#59A14F", "#B07AA1", "#F28E2B"]
+# palette for overlay mode (manual vs SI-sorted, etc.). A 10-colour qualitative
+# set (Tableau 10) so groups with many units stay distinguishable in both the
+# raster lanes and the probe map; colours still cycle beyond 10.
+_OVERLAY_COLORS = [
+    "#4E79A7", "#E15759", "#59A14F", "#B07AA1", "#F28E2B",
+    "#76B7B2", "#EDC948", "#AF7AA1", "#FF9DA7", "#9C755F",
+]
 
 
 def zombies_monkey_order(present) -> Tuple[list, dict]:
@@ -129,6 +134,57 @@ def _psth(all_trials: List[np.ndarray], *, xlim: float, bin_ms: float
 # --------------------------------------------------------------------------- #
 # Main plot
 # --------------------------------------------------------------------------- #
+def _window_label_ms(window_s: Tuple[float, float]) -> str:
+    """``(0.3, 0.4)`` s → ``"300–400 ms"`` for on-plot annotation."""
+    return f"{window_s[0] * 1000:.0f}–{window_s[1] * 1000:.0f} ms"
+
+
+def _annotate_window_ms(ax, window_s: Tuple[float, float]):
+    """Label the window's extent in ms at the top of the shaded band on ``ax``.
+
+    Drawn just inside the top of the panel (x in data coords, y in axes
+    fraction, so the y-axis inversion doesn't matter) with a light background so
+    it stays readable over spikes and never collides with the title.
+    """
+    xmid = (window_s[0] + window_s[1]) / 2.0
+    ax.text(xmid, 0.99, _window_label_ms(window_s),
+            transform=ax.get_xaxis_transform(), ha="center", va="top",
+            fontsize=9, fontweight="bold", color="#8A6D00", clip_on=False,
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#E0C060", alpha=0.85))
+
+
+# Which list a window came from → its highlight colour (amber = mixed/xlsx,
+# violet = SI/csv). A ``None`` source (a single legacy window) stays amber.
+_WINDOW_SRC_COLORS = {"mixed": "#F2C94C", "SI": "#B39DDB", None: "#F2C94C"}
+
+
+def _shade_windows(ax, windows, *, alpha: float = 0.22):
+    """Shade every ``(lo_s, hi_s, source, label)`` window band on ``ax``."""
+    for lo, hi, src, _ in windows:
+        ax.axvspan(lo, hi, color=_WINDOW_SRC_COLORS.get(src, "#F2C94C"),
+                   alpha=alpha, zorder=1)
+
+
+def _annotate_windows(ax, windows):
+    """Callout each window at the top of ``ax``, coloured by its source list.
+
+    Callouts are staggered by left-edge order so several windows (e.g. one from
+    the mixed list and one from the SI list, or a cell with multiple windows) do
+    not stack on the same line. Each says which list it came from and its ms
+    extent; the outline colour also encodes the source.
+    """
+    y_levels = [0.985, 0.90, 0.815, 0.73]
+    for rank, idx in enumerate(sorted(range(len(windows)), key=lambda k: windows[k][0])):
+        lo, hi, src, label = windows[idx]
+        color = _WINDOW_SRC_COLORS.get(src, "#F2C94C")
+        head = f"{src} {label}\n" if src else ""
+        ax.text((lo + hi) / 2.0, y_levels[rank % len(y_levels)],
+                f"{head}{lo * 1000:.0f}–{hi * 1000:.0f} ms",
+                transform=ax.get_xaxis_transform(), ha="center", va="top",
+                fontsize=7, color="0.1", clip_on=False,
+                bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=color, lw=1.1, alpha=0.92))
+
+
 def plot_zombies_raster(
     neuron_df,
     *,
@@ -136,7 +192,7 @@ def plot_zombies_raster(
     spike_col: str = "SpikeTimes",
     window_s: Optional[Tuple[float, float]] = None,
     p_value: Optional[float] = None,
-    xlim: float = 2.0,
+    xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
     save_path: Optional[str] = None,
 ):
@@ -184,6 +240,7 @@ def plot_zombies_raster(
     if window_s is not None:
         ax.axvspan(window_s[0], window_s[1], color="#F2C94C", alpha=0.30, zorder=1,
                    label="ANOVA sig. window")
+        _annotate_window_ms(ax, window_s)
     ax.set_ylim(-0.5, total_trials - 0.5)
     ax.set_xlim(0, xlim)
     ax.invert_yaxis()  # most dominant monkey (rank 1) at the top
@@ -195,6 +252,8 @@ def plot_zombies_raster(
         ax.spines[s].set_visible(False)
 
     sub = f"{total_trials} trials · {len(by_monkey)} monkeys"
+    if window_s is not None:
+        sub += f" · window {_window_label_ms(window_s)}"
     if p_value is not None:
         sub += f" · p={p_value:.3g}"
     ax.set_title(f"{neuron_label}\n{sub}", fontsize=11, loc="left")
@@ -227,6 +286,198 @@ def _save_or_keep(fig, save_path):
 
 
 # --------------------------------------------------------------------------- #
+# Probe map — where each overlaid unit sits on the 32-channel linear probe
+# --------------------------------------------------------------------------- #
+def _unit_channel_token(df) -> Optional[str]:
+    """Best-effort ``C_020``-style channel token for a unit's per-trial frame."""
+    for col in ("Channel", "NeuronID"):
+        if col in df.columns and len(df) > 0:
+            raw = str(df[col].iloc[0])
+            tok = raw.split("Channel.")[-1].split("_Unit")[0].strip()
+            if tok:
+                return tok
+    return None
+
+
+def _draw_probe_map(ax, unit_dfs, colors, pair_coincidences=None):
+    """Draw the 32-channel linear probe, marking each overlaid unit's contact.
+
+    Marker colour matches the raster lane; units sharing a contact (e.g. manual
+    ``C_025`` and SI ``C_025_Unit 1``) are offset horizontally so they don't
+    overlap. Vertical position is physical depth (contacts are ``Y_PITCH_UM``
+    apart), so units clustered on nearby contacts are plausibly one neuron, while
+    high-coincidence units far apart are distinct neurons firing synchronously —
+    which is exactly what this panel is here to reveal.
+
+    ``pair_coincidences`` is a list of ``(label_a, label_b, coincidence)``: each
+    matched cross-sort pair is drawn as a line between the two units' markers,
+    labelled with its coincidence — so you read each pair's value *and* how far
+    apart the two units are in one glance.
+    """
+    from collections import defaultdict
+    from spikesorting.cross_channel_analysis import probe_geometry as geom
+
+    n = len(geom.PROBE_CHANNEL_ORDER)
+    pitch = geom.Y_PITCH_UM
+
+    # backbone shank: a thin line down the probe with a short tick per contact
+    ax.plot([0, 0], [0, (n - 1) * pitch], color="0.75", lw=1.2, zorder=1)
+    for c in range(n):
+        ax.plot([-0.12, 0.12], [c * pitch, c * pitch], color="0.82", lw=0.8, zorder=1)
+
+    per_contact = defaultdict(list)   # contact index -> [(label, token)]
+    off_probe = []
+    for label, df in unit_dfs.items():
+        tok = _unit_channel_token(df)
+        ci = geom.contact_index_of(tok) if tok else None
+        (off_probe if ci is None else per_contact[ci]).append((label, tok))
+
+    marked_depths = []
+    pos = {}          # lane label -> (x, depth) of its marker, for pair lines
+    x0, x_step = 0.22, 0.28
+    for ci, units in sorted(per_contact.items()):
+        depth = ci * pitch
+        marked_depths.append(depth)
+        for j, (label, tok) in enumerate(units):
+            x = x0 + x_step * j
+            pos[label] = (x, depth)
+            ax.plot([0, x], [depth, depth], color="0.6", lw=0.7, zorder=2)  # connector
+            ax.scatter([x], [depth], s=58, color=colors.get(label, "0.3"),
+                       edgecolor="black", linewidth=0.4, zorder=3)
+        # channel id once, just past the last marker on this contact
+        ax.text(x0 + x_step * (len(units) - 1) + 0.22, depth, units[0][1],
+                va="center", ha="left", fontsize=7, color="0.25", clip_on=False)
+
+    # per-pair coincidence: a line between the two units' markers, labelled
+    for la, lb, coinc in (pair_coincidences or []):
+        if la in pos and lb in pos:
+            (xa, da), (xb, db) = pos[la], pos[lb]
+            ax.plot([xa, xb], [da, db], color="0.45", lw=0.9, zorder=2)
+            ax.text((xa + xb) / 2 + 0.06, (da + db) / 2, f"{coinc:.2f}",
+                    fontsize=6.5, ha="left", va="center", color="0.1", zorder=4,
+                    bbox=dict(boxstyle="round,pad=0.12", fc="white", ec="0.55",
+                              lw=0.3, alpha=0.92))
+
+    ax.set_xlim(-0.25, 1.4)
+    ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
+    ax.invert_yaxis()  # contact 0 at the top, deeper contacts downward
+    ax.set_ylabel("depth on probe (µm)", fontsize=8)
+    ax.set_xticks([])
+    ax.tick_params(axis="y", labelsize=7)
+    for s in ("top", "right", "bottom"):
+        ax.spines[s].set_visible(False)
+
+    # headline: how far apart the marked units are (span in µm) — goes in the
+    # title so it never overlaps the markers
+    if len(marked_depths) >= 2:
+        span = max(marked_depths) - min(marked_depths)
+        ax.set_title(f"probe (32 ch)\nunit span {span:.0f} µm", fontsize=9)
+    else:
+        ax.set_title("probe (32 ch)", fontsize=9)
+    if off_probe:
+        ax.text(0.5, -0.02, f"{len(off_probe)} off-probe", transform=ax.transAxes,
+                ha="center", va="top", fontsize=7, color="0.6")
+
+
+# How many contacts on either side of the centre to draw a unit's footprint over.
+# A unit's spike only bleeds onto a handful of nearby contacts, so drawing the
+# whole 32-contact column is mostly flat clutter; ±this keeps it legible.
+FOOTPRINT_CONTACT_RADIUS = 5
+
+# Where to centre each unit's footprint window:
+#   "peak"  — the contact where the unit's waveform is actually biggest (truth).
+#             Two coincident units then overlap at ONE cluster if they are really
+#             one neuron, or sit at two clusters if they are distinct.
+#   "named" — the sorter's assigned channel (matches the probe-map marker). A
+#             mis-assigned unit then shows a flat footprint at its named contact.
+FOOTPRINT_CENTER_ON = "peak"
+
+
+def _channel_name_of_contact(geom, ci: int) -> str:
+    """Contact index → Intan channel name, e.g. contact 3 → ``"C_010"``."""
+    return f"C_{int(geom.PROBE_CHANNEL_ORDER[ci]):03d}"
+
+
+def _named_contact_of_label(geom, label: str):
+    """Contact index of the channel named in a lane label (``"SI: C_002…"``→C_002)."""
+    tok = label.split(":")[-1].strip().split("_Unit")[0].strip()
+    return geom.contact_index_of(tok)
+
+
+def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTACT_RADIUS,
+                     center_on=FOOTPRINT_CENTER_ON):
+    """Draw each unit's normalised cross-channel waveform along the probe.
+
+    Shares the probe's depth axis: a unit's average waveform is drawn as a small
+    trace at each contact's depth, so its spatial footprint reads as a depth
+    profile. Only contacts within ``n_contacts`` of the window centre are drawn
+    (a spike bleeds onto just a few neighbours; the rest is flat clutter). The
+    centre is the unit's actual **peak** contact (``center_on="peak"``) or its
+    sorter-assigned **named** contact (``"named"``). Every drawn contact is
+    labelled with its channel name on the right. Each unit is normalised to its
+    own peak (shapes compare regardless of amplitude) and coloured to its raster
+    lane. Two units that are one neuron peak on the same contact with the same
+    shape; synchronous-but-distinct neurons peak on different contacts.
+    """
+    from spikesorting.cross_channel_analysis import probe_geometry as geom
+
+    n = len(geom.PROBE_CHANNEL_ORDER)
+    pitch = geom.Y_PITCH_UM
+    amp = 0.6 * pitch  # a full-scale (normalised = 1) deflection spans ~0.6 contacts
+
+    drawn_contacts = set()
+    for label, fp in (footprints_by_label or {}).items():
+        if fp is None:
+            continue
+        w = np.asarray(fp.waveforms, dtype=float)
+        peak = float(np.max(np.abs(w))) if w.size else 0.0
+        if peak <= 0:
+            continue
+        w = w / peak
+        color = colors.get(label, "0.3")
+        xs = np.linspace(0.1, 0.9, w.shape[1])
+        contacts = [geom.contact_index_of(c) for c in fp.channels]
+        mapped = [r for r, ci in enumerate(contacts) if ci is not None]
+        if not mapped:
+            continue
+        # centre the window: named channel, or the actual peak contact
+        p2p = w.max(axis=1) - w.min(axis=1)
+        peak_ci = contacts[max(mapped, key=lambda r: p2p[r])]
+        center_ci = peak_ci
+        if center_on == "named":
+            named_ci = _named_contact_of_label(geom, label)
+            if named_ci is not None:
+                center_ci = named_ci
+        for row, ci in enumerate(contacts):
+            if ci is None or abs(ci - center_ci) > n_contacts:
+                continue
+            depth = ci * pitch
+            ax.plot(xs, depth - w[row] * amp, color=color, lw=0.7, alpha=0.85, zorder=3)
+            drawn_contacts.add(ci)
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
+    ax.invert_yaxis()
+    ax.set_xticks([])
+    for s in ("top", "right", "bottom", "left"):
+        ax.spines[s].set_visible(False)
+    # label each drawn contact with its channel name on the right
+    if drawn_contacts:
+        ticks = sorted(drawn_contacts)
+        ax.set_yticks([c * pitch for c in ticks])
+        ax.set_yticklabels([_channel_name_of_contact(geom, c) for c in ticks], fontsize=6)
+        ax.yaxis.tick_right()
+        ax.tick_params(axis="y", length=0)
+    else:
+        ax.set_yticks([])
+    tag = "peak" if center_on == "peak" else "named ch"
+    ax.set_title(f"footprint\n(norm., ±{n_contacts} ch @ {tag})", fontsize=9)
+    if not drawn_contacts:
+        ax.text(0.5, 0.5, "waveforms\nunavailable", transform=ax.transAxes,
+                ha="center", va="center", fontsize=8, color="0.55")
+
+
+# --------------------------------------------------------------------------- #
 # Overlay mode — compare two sorts of the same channel on one raster
 # --------------------------------------------------------------------------- #
 def _aligned_by_key(df, monkey, spike_col, key_col):
@@ -251,8 +502,12 @@ def plot_overlay_raster(
     spike_col: str = "SpikeTimes",
     key_col: str = "TaskField",
     window_s: Optional[Tuple[float, float]] = None,
-    xlim: float = 2.0,
+    windows: Optional[list] = None,
+    pair_coincidences: Optional[list] = None,
+    footprints: Optional[dict] = None,
+    xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
+    show_probe: bool = True,
     save_path: Optional[str] = None,
 ):
     """Overlay several sorts of the *same channel* on one raster for comparison.
@@ -264,10 +519,25 @@ def plot_overlay_raster(
     thin lane per sort, coloured consistently, so you can see spike-for-spike
     where the sorts agree or differ. The PSTH panel overlays each sort's rate.
 
+    ``windows`` is a list of ``(lo_s, hi_s, source, label)`` tuples — every
+    ANOVA-significant window in the group, from either list, each shaded and
+    called out with which list (``"mixed"``/``"SI"``) and cell it came from. For
+    a single window with no source, pass the legacy ``window_s`` instead.
+
+    ``pair_coincidences`` is ``[(label_a, label_b, coincidence), …]`` drawn as
+    labelled links on the probe map. ``footprints`` maps a lane label to its
+    :class:`~spikesorting.cross_channel_analysis.waveforms.Footprint`; when given
+    (and ``show_probe``), a waveform-footprint panel is added on the right.
+
     Returns the ``Figure`` (or ``None`` if there are no Zombies trials).
     """
     labels = list(unit_dfs.keys())
     colors = {lab: _OVERLAY_COLORS[i % len(_OVERLAY_COLORS)] for i, lab in enumerate(labels)}
+
+    # windows to shade: an explicit multi-source list wins; else fall back to the
+    # single legacy ``window_s`` (source-less). Each entry is (lo, hi, src, label).
+    if windows is None:
+        windows = [(window_s[0], window_s[1], None, None)] if window_s is not None else []
 
     # union of monkeys present across all sorts, ranked, subject excluded
     present = set()
@@ -276,10 +546,27 @@ def plot_overlay_raster(
         present.update(z["MonkeyName"].dropna().unique())
     ordered, rank_by_monkey = zombies_monkey_order(present)
 
-    fig = plt.figure(figsize=(9, 9))
-    gs = GridSpec(2, 1, height_ratios=[3.2, 1.0], hspace=0.08, figure=fig)
-    ax = fig.add_subplot(gs[0])
-    ax_psth = fig.add_subplot(gs[1], sharex=ax)
+    ax_probe = ax_wave = None
+    if show_probe and footprints is not None:
+        fig = plt.figure(figsize=(12.5, 9))
+        gs = GridSpec(2, 3, width_ratios=[5.2, 1.05, 1.5], height_ratios=[3.2, 1.0],
+                      hspace=0.08, wspace=0.10, figure=fig)
+        ax = fig.add_subplot(gs[0, 0])
+        ax_psth = fig.add_subplot(gs[1, 0], sharex=ax)
+        ax_probe = fig.add_subplot(gs[:, 1])
+        ax_wave = fig.add_subplot(gs[:, 2])
+    elif show_probe:
+        fig = plt.figure(figsize=(11, 9))
+        gs = GridSpec(2, 2, width_ratios=[5.5, 1.15], height_ratios=[3.2, 1.0],
+                      hspace=0.08, wspace=0.14, figure=fig)
+        ax = fig.add_subplot(gs[0, 0])
+        ax_psth = fig.add_subplot(gs[1, 0], sharex=ax)
+        ax_probe = fig.add_subplot(gs[:, 1])
+    else:
+        fig = plt.figure(figsize=(9, 9))
+        gs = GridSpec(2, 1, height_ratios=[3.2, 1.0], hspace=0.08, figure=fig)
+        ax = fig.add_subplot(gs[0])
+        ax_psth = fig.add_subplot(gs[1], sharex=ax)
 
     lane_h = 0.8 / len(labels)
     y = 0
@@ -340,8 +627,8 @@ def plot_overlay_raster(
         return None
 
     ax.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7)
-    if window_s is not None:
-        ax.axvspan(window_s[0], window_s[1], color="#F2C94C", alpha=0.25, zorder=1)
+    _shade_windows(ax, windows, alpha=0.25)
+    _annotate_windows(ax, windows)
     ax.set_ylim(-0.5, total_rows - 0.5)
     ax.set_xlim(0, xlim)
     ax.invert_yaxis()
@@ -364,14 +651,20 @@ def plot_overlay_raster(
         ax_psth.fill_between(centers, mean - sem, mean + sem, color=colors[lab], alpha=0.18)
         ax_psth.plot(centers, mean, color=colors[lab], lw=1.5, label=lab)
     ax_psth.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7)
-    if window_s is not None:
-        ax_psth.axvspan(window_s[0], window_s[1], color="#F2C94C", alpha=0.25)
+    _shade_windows(ax_psth, windows, alpha=0.25)
     ax_psth.set_xlim(0, xlim)
     ax_psth.set_ylim(bottom=0)
     ax_psth.set_xlabel("time from stimulus onset (s)", fontsize=10)
     ax_psth.set_ylabel("rate (Hz)", fontsize=10)
     for s in ("top", "right"):
         ax_psth.spines[s].set_visible(False)
+
+    # --- probe map: where these units sit on the linear probe ---
+    if ax_probe is not None:
+        _draw_probe_map(ax_probe, unit_dfs, colors, pair_coincidences)
+    # --- footprint: each unit's normalised waveform along the probe ---
+    if ax_wave is not None:
+        _draw_footprints(ax_wave, footprints, colors)
 
     _save_or_keep(fig, save_path)
     return fig

@@ -56,16 +56,26 @@ def find_consensus_units(sortings, analyzers, intan_dir):
     if consensus_maps is None or len(consensus_maps) == 0:
         return None, []
 
-    # Check channel agreement across sorters and build unit table
-    tdc_peak = si.get_template_extremum_channel(analyzer_TDC, peak_sign='both', outputs='index')
-    ms5_peak = si.get_template_extremum_channel(analyzer_MS5, peak_sign='both', outputs='index')
-    ks4_peak = si.get_template_extremum_channel(analyzer_KS4, peak_sign='both', outputs='index')
+    # Peak channel per unit. Use outputs='id' (the recording channel identifier,
+    # 0..N-1 in amplifier.dat read order) and translate to the Intan NATIVE number
+    # via native_of. Previously this used outputs='index' and named the channel
+    # Channel[f"C_{index:03}"] directly — wrong, because the recording is not in
+    # native order (only 24 of 32 channels are enabled; read index != native).
+    _, enabled_channels = get_recording_session_info(intan_dir)
+    native_of = [ch["native_order"] for ch in enabled_channels]  # read id -> Intan native
+
+    tdc_peak = si.get_template_extremum_channel(analyzer_TDC, peak_sign='both', outputs='id')
+    ms5_peak = si.get_template_extremum_channel(analyzer_MS5, peak_sign='both', outputs='id')
+    ks4_peak = si.get_template_extremum_channel(analyzer_KS4, peak_sign='both', outputs='id')
 
     summary_lines = []
     base_channel_list = []
     for consensus_map in consensus_maps:
         tdc_uid, ms5_uid, ks4_uid = consensus_map['tdc'], consensus_map['ms5'], consensus_map['ks4']
-        tdc_ch, ms5_ch, ks4_ch = tdc_peak[tdc_uid], ms5_peak[ms5_uid], ks4_peak[ks4_uid]
+        # channel ids → Intan native numbers
+        tdc_ch = native_of[int(tdc_peak[tdc_uid])]
+        ms5_ch = native_of[int(ms5_peak[ms5_uid])]
+        ks4_ch = native_of[int(ks4_peak[ks4_uid])]
         base_channel_list.append((ks4_uid, ks4_ch))
 
         if not (tdc_ch == ms5_ch == ks4_ch):
@@ -77,12 +87,14 @@ def find_consensus_units(sortings, analyzers, intan_dir):
     # Use KS4 as the primary source for spike trains
     chan_count = {}
     sorted_results = []
-    for unit_idx, chan_idx in base_channel_list:
-        channel = Channel[f"C_{chan_idx:03}"]
+    for ks4_uid, chan_idx in base_channel_list:
+        channel = Channel[f"C_{chan_idx:03}"]        # chan_idx is now the Intan native number
         chan_count[chan_idx] = chan_count.get(chan_idx, 0) + 1
         sorted_results.append({
             'BaseChannel': channel,
-            'SpikeIdx': sorting_KS4.get_unit_spike_train(unit_id=sorting_KS4.get_unit_ids()[unit_idx]),
+            # index by unit id, not position (get_unit_ids()[uid] only equals the
+            # unit with id `uid` when ids are a contiguous 0..N-1)
+            'SpikeIdx': sorting_KS4.get_unit_spike_train(unit_id=ks4_uid),
             'Channel': f"{channel}_Unit {chan_count[chan_idx]}",
         })
 
