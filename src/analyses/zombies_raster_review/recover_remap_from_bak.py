@@ -38,20 +38,24 @@ def recover_map(cache_subdir: str, out_csv: str, monkey: Optional[str] = None) -
         return {}
 
     mapping: dict = {}
+    skipped: list = []
     for bak in baks:
         cur = bak.with_suffix("")  # 'x.pkl.bak' -> 'x.pkl'
         if not cur.exists():
             print(f"[{bak.name}] no relabelled counterpart {cur.name}; skip")
+            skipped.append(bak.name)
             continue
         old_df, new_df = pd.read_pickle(bak), pd.read_pickle(cur)
         if len(old_df) != len(new_df):
             print(f"[{bak.name}] row count differs ({len(old_df)} vs {len(new_df)}); skip")
+            skipped.append(bak.name)
             continue
         # sanity: rows must line up (same trial sequence) for the zip to be valid
         if "TaskField" in old_df and "TaskField" in new_df and not (
                 old_df["TaskField"].reset_index(drop=True)
                 .equals(new_df["TaskField"].reset_index(drop=True))):
             print(f"[{bak.name}] row order differs from backup; skip (recover this one manually)")
+            skipped.append(bak.name)
             continue
         pairs = 0
         for o, n in zip(old_df["NeuronID"].astype(str), new_df["NeuronID"].astype(str)):
@@ -65,6 +69,15 @@ def recover_map(cache_subdir: str, out_csv: str, monkey: Optional[str] = None) -
             .to_csv(out_csv, index=False)
         changed = sum(1 for o, n in mapping.items() if o != n)
         print(f"\nWrote {len(mapping)} unit(s) ({changed} with a changed channel) → {out_csv}")
+
+    processed = len(baks) - len(skipped)
+    print(f"\nComplete? processed {processed}/{len(baks)} backup(s), {len(skipped)} skipped.")
+    if skipped:
+        print("  SKIPPED (NOT in remap — keep these .bak / investigate before deleting):")
+        for name in skipped:
+            print(f"    {name}")
+    else:
+        print("  → every .bak is captured; safe to delete them after this.")
     return mapping
 
 
