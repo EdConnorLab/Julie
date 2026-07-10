@@ -22,7 +22,10 @@ def filter_good_neurons(exploded_df,
                         n_time_blocks = 4,
                         min_active_blocks = 3,
                         max_isi_violation_rate=0.02,
-                        refractory_ms=2.0
+                        refractory_ms=2.0,
+                        condition_col="MonkeyName",
+                        min_reps_per_condition=None,
+                        n_conditions=None
                         ):
     """
     Filters neurons based on total spikes, firing rate, total trial participation count.
@@ -35,6 +38,13 @@ def filter_good_neurons(exploded_df,
     - min_active_blocks: minimum number of blocks with non-zero firing
     - max_isi_violation_rate: maximum fraction of ISIs below refractory period
     - refractory_ms: refractory period in milliseconds
+    - condition_col: column identifying the stimulus condition (e.g. the 37 photos)
+    - min_reps_per_condition: if set, require EVERY condition to have >= this many
+      trials. Targets balanced coverage (what RDM/RSA/state-space need) directly,
+      rather than a session total that can hide a starved condition. Off by default.
+    - n_conditions: expected number of conditions (e.g. 37). A condition entirely
+      missing counts as 0 reps, so coverage is checked against this set; if None it
+      defaults to however many conditions the session actually presented.
 
     """
     if exploded_df is None or getattr(exploded_df, "empty", True):
@@ -42,6 +52,12 @@ def filter_good_neurons(exploded_df,
 
     if "NeuronID" not in exploded_df.columns:
         return []
+
+    # Conditions the session actually presented; a condition missing from a neuron
+    # counts as 0 reps, so coverage is judged against this expected set.
+    have_cond = condition_col in exploded_df.columns
+    expected_conditions = n_conditions if n_conditions is not None else (
+        exploded_df[condition_col].nunique() if have_cond else None)
 
     neuron_stats = []
 
@@ -77,25 +93,40 @@ def filter_good_neurons(exploded_df,
             isi_violation = 1.0
 
 
+        # Reps per condition, and the worst (min) across the expected set. A neuron
+        # that doesn't cover every expected condition has an effective min of 0.
+        if have_cond:
+            reps = group.groupby(condition_col).size()
+            min_reps_per_cond = int(reps.min()) if (
+                expected_conditions is None or reps.shape[0] >= expected_conditions) else 0
+        else:
+            min_reps_per_cond = np.nan
+
         neuron_stats.append({
             "NeuronID": neuron_id,
             "TotalSpikes": total_spikes,
             "MeanFiringRateHz": mean_firing_rate,
             "TotalTrials": total_trials,
             "ActiveBlocks": active_blocks,
-            "ISIViolationRate": isi_violation
+            "ISIViolationRate": isi_violation,
+            "MinRepsPerCondition": min_reps_per_cond
         })
 
     stats_df = pd.DataFrame(neuron_stats)
 
     # Apply filters
-    good_neurons = stats_df[
+    keep = (
         (stats_df["TotalSpikes"] >= min_total_spikes) &
         (stats_df["MeanFiringRateHz"] >= min_firing_rate_hz) &
         (stats_df["TotalTrials"] >= min_trial_count) &
         (stats_df["ActiveBlocks"] >= min_active_blocks) &
         (stats_df["ISIViolationRate"] <= max_isi_violation_rate)
-        ]["NeuronID"].tolist()
+    )
+    # Per-condition coverage: only bites when min_reps_per_condition is set.
+    if min_reps_per_condition is not None and have_cond:
+        keep &= (stats_df["MinRepsPerCondition"] >= min_reps_per_condition)
+
+    good_neurons = stats_df[keep]["NeuronID"].tolist()
 
     # print("How many neurons fail to pass each filter:")
     # print(f"Fail total spikes: {(stats_df['TotalSpikes'] < min_total_spikes).sum()}")
@@ -103,6 +134,8 @@ def filter_good_neurons(exploded_df,
     # print(f"Fail trial count:  {(stats_df['TotalTrials'] < min_trial_count).sum()}")
     # print(f"Fail active blocks:{(stats_df['ActiveBlocks'] < min_active_blocks).sum()}")
     # print(f"Fail ISI: {(stats_df['ISIViolationRate'] > max_isi_violation_rate).sum()}")
+    # if min_reps_per_condition is not None:
+    #     print(f"Fail per-condition reps: {(stats_df['MinRepsPerCondition'] < min_reps_per_condition).sum()}")
 
     return good_neurons
 
