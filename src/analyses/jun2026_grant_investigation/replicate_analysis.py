@@ -32,8 +32,14 @@ from common import (
 # =====================================================================
 # CONFIG - EDIT THESE
 # =====================================================================
-DATA_FILE   = DEFAULT_DATA_FILE
-NCELLS      = 74             # his hardcoded value; use None or 0 for all rows
+# Where the neural data comes from:
+#   'grant_xlsx'  - Ed's original 74/75-cell xlsx (mean spike counts)   -> load_data
+#   'cache_kw'    - SI-sorted KW list, rebuilt from analysis_cache       -> connector
+#   'cache_anova' - SI-sorted ANOVA list, rebuilt from analysis_cache    -> connector
+#   'kw_pkl'      - DEPRECATED: old *_mean_spike_rates pkl (channels not remapped)
+DATA_SOURCE = 'cache_kw'
+DATA_FILE   = DEFAULT_DATA_FILE   # only used by 'grant_xlsx'/'kw_pkl'
+NCELLS      = 74             # 'grant_xlsx' only: his hardcoded value; None/0 for all rows
 CELL_SUBSET = 'all'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
 THRESH      = 0.5             # R^2 cutoff
 NPERM       = 10000           # drop to 1000 for fast smoke-tests
@@ -41,10 +47,21 @@ RANDOM_SEED = 20251121
 # =====================================================================
 
 
+def load_neural_data():
+    """Dispatch on DATA_SOURCE. Returns (X_mean (ncells,9), df with 'Cell')."""
+    if DATA_SOURCE == 'grant_xlsx':
+        return load_data(DATA_FILE, ncells=NCELLS)
+    if DATA_SOURCE == 'kw_pkl':
+        return load_data_kw(DATA_FILE)
+    if DATA_SOURCE in ('cache_kw', 'cache_anova'):
+        from spike_count_connector import load_data_from_cache
+        return load_data_from_cache('KW' if DATA_SOURCE == 'cache_kw' else 'ANOVA')
+    raise ValueError(f"unknown DATA_SOURCE={DATA_SOURCE!r}")
+
+
 def main():
-    print(f"Loading data from {DATA_FILE}")
-    # X_mean, df = load_data(DATA_FILE, ncells=NCELLS)
-    X_mean, df = load_data_kw(DATA_FILE)
+    print(f"Loading data (DATA_SOURCE={DATA_SOURCE})")
+    X_mean, df = load_neural_data()
     # ---- CELL SUBSET FILTER (sorted vs multiunit) ----
     # 'Unit' in the Cell name = manually sorted single unit; absence = multiunit.
     # Mask X_mean and df together so neural rows stay aligned with metadata.
