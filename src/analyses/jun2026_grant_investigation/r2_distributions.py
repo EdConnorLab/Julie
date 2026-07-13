@@ -41,11 +41,12 @@ from common import (
 # CONFIG - edit these
 # =====================================================================
 THRESH = 0.50                # R^2 cutoff (the grant pipeline's threshold)
+PLOT_STYLE = 'facets'        # 'facets' (one panel per list) | 'ecdf' (curves) | 'overlay' (old)
 SOURCES = 'allocentric'      # 'allocentric' (drop 81G as a source) | 'all' (10 sources)
 BEHAVIORS = 'all'            # 'all' (6) or a list of indices into BEH_NAMES
 GRANT_NCELLS = 74            # GRANT list: first 74 rows (None/0 for all 75)
 DENSITY = True               # normalize histograms for shape comparison (lists differ in n)
-ALPHA = 0.45                 # fill transparency so overlapping lists show through
+ALPHA = 0.85                 # fill transparency (overlay style only)
 NBINS = 40
 # =====================================================================
 
@@ -110,41 +111,86 @@ def summarize(tab):
 COLORS = {'GRANT': '#8172B3', 'KW': '#4C72B0', 'ANOVA': '#C44E52'}
 
 
-def make_figure(tab):
-    set_plot_style()
-    labels = list(dict.fromkeys(tab['list']))
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-
-    # left: full range [0, 1], all fits
+def _fig_facets(tab, labels):
+    """One panel per list (no occlusion). Top row = full [0,1]; bottom = R²>THRESH."""
+    fig, axes = plt.subplots(2, len(labels), figsize=(4.6 * len(labels), 7),
+                             sharex='row', sharey='row')
     bins_full = np.linspace(0, 1, NBINS + 1)
+    bins_tail = np.linspace(THRESH, 1.0, NBINS // 2 + 1)
+    for j, lab in enumerate(labels):
+        r = tab.loc[tab['list'] == lab, 'r2'].to_numpy()
+        rt = r[r > THRESH]
+        c = COLORS.get(lab, None)
+        axes[0, j].hist(r, bins=bins_full, density=DENSITY, color=c, alpha=0.9)
+        axes[0, j].axvline(THRESH, ls='--', color='#333', lw=1)
+        axes[0, j].set_title(f"{lab}   (n_fits={len(r)})")
+        axes[1, j].hist(rt, bins=bins_tail, density=DENSITY, color=c, alpha=0.9)
+        axes[1, j].set_title(f"{lab}   R²>{THRESH}  (n={len(rt)})")
+        axes[1, j].set_xlabel('R²'); axes[1, j].set_xlim(THRESH, 1.0)
+    ylab = 'density' if DENSITY else 'count'
+    axes[0, 0].set_ylabel(f'{ylab}  (all fits)')
+    axes[1, 0].set_ylabel(f'{ylab}  (R²>{THRESH} tail)')
+    return fig
+
+
+def _ecdf_xy(x):
+    xs = np.sort(x)
+    return xs, np.arange(1, len(xs) + 1) / len(xs)
+
+
+def _fig_ecdf(tab, labels):
+    """Left: ECDF of all fits (lines never occlude). Right: tail survival --
+    fraction of fits with R² > x, over [THRESH, 1] -- a direct tail comparison."""
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    tgrid = np.linspace(THRESH, 1.0, 200)
+    for lab in labels:
+        r = tab.loc[tab['list'] == lab, 'r2'].to_numpy()
+        c = COLORS.get(lab, None)
+        xs, ys = _ecdf_xy(r)
+        axes[0].step(xs, ys, where='post', lw=2, color=c, label=f"{lab} (n={len(r)})")
+        axes[1].plot(tgrid, [(r > t).mean() for t in tgrid], lw=2, color=c,
+                     label=f"{lab} ({int((r > THRESH).sum())} > {THRESH})")
+    axes[0].axvline(THRESH, ls='--', color='#333', lw=1)
+    axes[0].set_xlim(0, 1); axes[0].set_ylabel('cumulative fraction of fits')
+    axes[0].set_title('ECDF of every (cell × source × behavior) fit')
+    axes[1].set_xlim(THRESH, 1.0); axes[1].set_ylabel('fraction of fits with R² > x')
+    axes[1].set_title(f'Tail: fraction of fits above threshold x')
+    for ax in axes:
+        ax.set_xlabel('R²'); ax.legend(frameon=False, fontsize=8)
+    return fig
+
+
+def _fig_overlay(tab, labels):
+    """Old style: overlapping filled histograms (hard to read with 3 lists)."""
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    bins_full = np.linspace(0, 1, NBINS + 1)
+    bins_tail = np.linspace(THRESH, 1.0, NBINS // 2 + 1)
     for lab in labels:
         r = tab.loc[tab['list'] == lab, 'r2'].to_numpy()
         c = COLORS.get(lab, None)
         axes[0].hist(r, bins=bins_full, density=DENSITY, histtype='stepfilled',
                      alpha=ALPHA, color=c, edgecolor=c, lw=1.2, label=f"{lab} (n_fits={len(r)})")
+        axes[1].hist(r[r > THRESH], bins=bins_tail, density=DENSITY, histtype='stepfilled',
+                     alpha=ALPHA, color=c, edgecolor=c, lw=1.2, label=f"{lab} (n={int((r > THRESH).sum())})")
     axes[0].axvline(THRESH, ls='--', color='#333', lw=1)
-    axes[0].text(THRESH, axes[0].get_ylim()[1], f' {THRESH}', va='top', fontsize=8)
     axes[0].set_title('R² of every (cell × source × behavior) fit')
-
-    # right: the R² > THRESH tail only, all fits, zoomed to [THRESH, 1]
-    bins_tail = np.linspace(THRESH, 1.0, NBINS // 2 + 1)
-    for lab in labels:
-        r = tab.loc[(tab['list'] == lab) & (tab['r2'] > THRESH), 'r2'].to_numpy()
-        c = COLORS.get(lab, None)
-        axes[1].hist(r, bins=bins_tail, density=DENSITY, histtype='stepfilled',
-                     alpha=ALPHA, color=c, edgecolor=c, lw=1.2, label=f"{lab} (n_fits={len(r)})")
-    axes[1].set_xlim(THRESH, 1.0)
-    axes[1].set_title(f'Distribution of R² > {THRESH} (all fits)')
-
+    axes[1].set_xlim(THRESH, 1.0); axes[1].set_title(f'Distribution of R² > {THRESH} (all fits)')
     for ax in axes:
-        ax.set_xlabel('R²')
-        ax.set_ylabel('density' if DENSITY else 'count')
+        ax.set_xlabel('R²'); ax.set_ylabel('density' if DENSITY else 'count')
         ax.legend(frameon=False, fontsize=8)
+    return fig
+
+
+def make_figure(tab):
+    set_plot_style()
+    labels = list(dict.fromkeys(tab['list']))
+    builder = {'facets': _fig_facets, 'ecdf': _fig_ecdf, 'overlay': _fig_overlay}[PLOT_STYLE]
+    fig = builder(tab, labels)
     fig.suptitle(f"R² distributions  (sources={SOURCES}, behaviors={BEHAVIORS})", fontsize=12)
     fig.tight_layout()
     out = os.path.join(OUTDIR, 'r2_distributions.png')
     fig.savefig(out, dpi=150)
-    print(f"\nSaved figure -> {out}")
+    print(f"\nSaved figure ({PLOT_STYLE}) -> {out}")
     return fig
 
 
