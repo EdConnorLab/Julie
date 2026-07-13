@@ -175,17 +175,18 @@ def read_amplifier_data_robust(file_path, amplifier_channels, round_dir_path=Non
             if os.path.exists(p):
                 n_ext, src = os.path.getsize(p) // stride, fname
                 break
-    if n_ext is not None and n_ext != n_samples:
-        if n_ext and total_i16 % n_ext == 0:
+    if n_ext:
+        # n_ext (a 1-value-per-sample stream) may differ slightly from the amplifier
+        # length after crash-stitching, so compare the IMPLIED channel count, not the
+        # exact sample count. A small discrepancy -> trust info.rhd; a gross one (e.g.
+        # 32 vs 21) would scramble the data, so refuse rather than guess.
+        implied = total_i16 / n_ext
+        if abs(implied - nch) > 0.05 * nch:
             raise ValueError(
-                f"{os.path.basename(file_path)}: {src} implies {total_i16 // n_ext} channels "
+                f"{os.path.basename(file_path)}: {src} implies ~{implied:.2f} channels "
                 f"({total_i16} int16 / {n_ext} samples) but info.rhd names {nch}. info.rhd "
                 f"disagrees with the recording; fix the header or give me this session's "
                 f"correct channel set/order.")
-        raise ValueError(
-            f"{os.path.basename(file_path)}: {src} says {n_ext} samples but amplifier.dat at "
-            f"{nch} channels = {n_samples} samples (+{trailing} trailing int16). Inconsistent; "
-            f"check this session's files.")
 
     mm = np.memmap(file_path, dtype=np.int16, mode='r')
     data = mm[:n_samples * nch].reshape(n_samples, nch)   # drop trailing partial; memmap view
