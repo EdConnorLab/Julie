@@ -148,41 +148,47 @@ def read_amplifier_data_robust(file_path, amplifier_channels, round_dir_path=Non
     """Read an Intan one-file-per-type amplifier file (amplifier.dat /
     preprocessed_data.dat) into {Channel: np.ndarray microvolts}.
 
-    Fixes two failure modes of clat.intan.amplifiers.read_amplifier_data_with_mmap,
-    which infers the sample count as filesize // (nchannels*2):
-      (1) any trailing bytes make that count non-integral, so the reshape raises;
-      (2) a stale info.rhd whose amplifier_channels count disagrees with the actual
-          .dat width is silently misread.
-    This uses time.dat (one int32 timestamp per sample) as the AUTHORITATIVE sample
-    count when available, drops a trailing partial sample, and raises a clear error
-    when the .dat width genuinely differs from the number of named channels (the
-    channel->column mapping is then ambiguous and must be fixed in the header)."""
+    Fixes clat.intan.amplifiers.read_amplifier_data_with_mmap, which infers the
+    sample count as filesize // (nchannels*2) and so crashes on any trailing bytes.
+
+    info.rhd's amplifier_channels IS the authoritative list of saved channels, so we
+    trust its count (nch): n_samples = total_int16 // nch, and drop the trailing
+    partial sample (total_int16 % nch leftover int16 -- e.g. a crash/stitch artifact).
+    time.dat is NOT required (crash-stitched sessions may lack it). When a
+    one-value-per-sample stream is present (time.dat int32, else digitalin.dat uint16)
+    it is used only to CROSS-CHECK; if it proves the file width genuinely differs from
+    nch (e.g. 32 saved but info.rhd names 21), a clear error is raised rather than
+    silently misreading. Columns map to channels in list order: column i -> amplifier_channels[i]."""
     import os
     from clat.intan.channels import Channel
 
-    nch = len(amplifier_channels)
+    nch = len(amplifier_channels)                     # trust info.rhd's saved-channel list
     total_i16 = os.path.getsize(file_path) // 2
+    n_samples = total_i16 // nch                       # samples if the file is nch-wide
+    trailing = total_i16 - n_samples * nch             # leftover int16 (< nch): partial/junk
 
-    n_samples = None
+    # Optional cross-check via a 1-value-per-sample stream, if present.
+    n_ext, src = None, None
     if round_dir_path is not None:
-        time_path = os.path.join(round_dir_path, "time.dat")
-        if os.path.exists(time_path):
-            n_samples = os.path.getsize(time_path) // 4          # int32 timestamps
-    if n_samples is None:
-        n_samples = total_i16 // nch                              # fallback: assume nch-wide
-
-    expected = n_samples * nch
-    trailing = total_i16 - expected
-    if trailing < 0 or trailing >= nch:
-        file_ch = (total_i16 / n_samples) if n_samples else float('nan')
+        for fname, stride in (("time.dat", 4), ("digitalin.dat", 2)):
+            p = os.path.join(round_dir_path, fname)
+            if os.path.exists(p):
+                n_ext, src = os.path.getsize(p) // stride, fname
+                break
+    if n_ext is not None and n_ext != n_samples:
+        if n_ext and total_i16 % n_ext == 0:
+            raise ValueError(
+                f"{os.path.basename(file_path)}: {src} implies {total_i16 // n_ext} channels "
+                f"({total_i16} int16 / {n_ext} samples) but info.rhd names {nch}. info.rhd "
+                f"disagrees with the recording; fix the header or give me this session's "
+                f"correct channel set/order.")
         raise ValueError(
-            f"amplifier width mismatch reading {os.path.basename(file_path)}: file has "
-            f"{file_ch:g} channels (int16={total_i16}, samples={n_samples}) but info.rhd "
-            f"names {nch}. The info.rhd disagrees with the recording; the channel->column "
-            f"mapping is ambiguous. Fix this session's info.rhd before running.")
+            f"{os.path.basename(file_path)}: {src} says {n_ext} samples but amplifier.dat at "
+            f"{nch} channels = {n_samples} samples (+{trailing} trailing int16). Inconsistent; "
+            f"check this session's files.")
 
     mm = np.memmap(file_path, dtype=np.int16, mode='r')
-    data = mm[:expected].reshape(n_samples, nch)                  # memmap view (no full copy)
+    data = mm[:n_samples * nch].reshape(n_samples, nch)   # drop trailing partial; memmap view
     out = {}
     for i, ch in enumerate(amplifier_channels):
         name = ch.get("native_channel_name", f"Channel_{i}")
