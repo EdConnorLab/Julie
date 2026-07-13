@@ -23,6 +23,15 @@ Examples
     # overlay: coincidence-match the two sorts per session and overlay each neuron
     python -m analyses.zombies_raster_review.run_zombies_rasters --overlay
 
+    # overlay the ORIGINAL manual (grant) cells against the SI-sorted cells,
+    # selecting the SI list by method — pANOVA, pKW, or both at once
+    python -m analyses.zombies_raster_review.run_zombies_rasters --overlay --si-method both
+
+    # ...or point at any lists explicitly (SI list may be a .pkl or .csv)
+    python -m analyses.zombies_raster_review.run_zombies_rasters --overlay \
+        --mixed-list ".../zombies_..._usedforgrant.xlsx" \
+        --si-list ".../si_sorted_Zombies_significant_windows_pKW_passed.pkl"
+
     # no data on hand — render a fabricated unit to preview the format
     python -m analyses.zombies_raster_review.run_zombies_rasters --demo
 
@@ -54,6 +63,28 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_LISTS = {
     "mixed": os.path.join(_HERE, "unit_lists", "zombies_mixed_manual_anova_passed.xlsx"),
     "si": os.path.join(_HERE, "unit_lists", "zombies_si_sorted_anova_passed.csv"),
+}
+
+# --------------------------------------------------------------------------- #
+# Comparing the "original" manual cells against SI-sorted cells, per selection
+# method. The mixed (xlsx) list is the ORIGINAL grant cell list; each SI list is
+# the SI-sorted significant windows produced by one selection method (pANOVA vs
+# pKW). Overlay the mixed list against ONE method at a time.
+# --------------------------------------------------------------------------- #
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))  # .../Julie
+_ANALYSIS_CACHE = os.path.join(_REPO_ROOT, "Cortana", "analysis_cache")
+
+# The original manually-sorted cells used for the R01 grant. Same cell list as
+# unit_lists/zombies_mixed_manual_anova_passed.xlsx (wide sheet; the loader reads
+# only Date / Round No. / Cell / Time Window and ignores the spike-count columns).
+GRANT_MIXED_XLSX = os.path.join(
+    _REPO_ROOT, "Cortana", "old", "Ed and ANOVA", "used_for_R01",
+    "zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx")
+
+# SI-sorted significant-window lists, one per selection method (both .pkl).
+SI_METHOD_LISTS = {
+    "pANOVA": os.path.join(_ANALYSIS_CACHE, "si_sorted_Zombies_significant_windows_pANOVA_passed.pkl"),
+    "pKW":    os.path.join(_ANALYSIS_CACHE, "si_sorted_Zombies_significant_windows_pKW_passed.pkl"),
 }
 
 
@@ -431,6 +462,30 @@ def run_overlay_from_lists(
     return written
 
 
+def run_overlay_vs_methods(
+    mixed_list_path: str, si_method_lists: Dict[str, str], out_dir: str,
+    *, methods: Optional[List[str]] = None, **kw
+) -> Dict[str, List[str]]:
+    """Overlay the (original) mixed list against each SI selection method.
+
+    ``si_method_lists`` maps a method name (e.g. ``"pANOVA"`` / ``"pKW"``) to its
+    SI-sorted significant-windows list. Each method's overlays are written to
+    ``<out_dir>/overlay_vs_<method>/`` so the xlsx-vs-pANOVA and xlsx-vs-pKW
+    comparisons stay separate. Returns ``{method: [figure paths]}``.
+    """
+    methods = methods or list(si_method_lists)
+    results: Dict[str, List[str]] = {}
+    for method in methods:
+        si_path = si_method_lists[method]
+        sub = os.path.join(out_dir, f"overlay_vs_{method}")
+        print(f"\n=== overlay: mixed vs {method}  ({os.path.basename(si_path)}) ===")
+        results[method] = run_overlay_from_lists(mixed_list_path, si_path, sub, **kw)
+    total = sum(len(v) for v in results.values())
+    print(f"\nAll methods done: {total} overlay(s) across {len(results)} method(s) "
+          f"→ {', '.join(f'{m}:{len(v)}' for m, v in results.items())}")
+    return results
+
+
 # --------------------------------------------------------------------------- #
 # Demos (no DB / recordings)
 # --------------------------------------------------------------------------- #
@@ -479,6 +534,14 @@ def main(argv=None):
     p.add_argument("--demo", action="store_true", help="render a fabricated unit")
     p.add_argument("--overlay", action="store_true",
                    help="coincidence-match the two sorts and overlay (uses both lists)")
+    p.add_argument("--mixed-list", dest="mixed_list",
+                   help="overlay: the 'original' mixed/manual list (xlsx). "
+                        "Default: the R01 grant cell list.")
+    p.add_argument("--si-list", dest="si_list",
+                   help="overlay: the SI-sorted list (.pkl or .csv). Overrides --si-method.")
+    p.add_argument("--si-method", dest="si_method", choices=["pANOVA", "pKW", "both"],
+                   help="overlay: pick the SI significant-windows list by selection "
+                        "method; 'both' runs each into overlay_vs_<method>/ (default: pANOVA)")
     p.add_argument("--listed-only", action="store_true",
                    help="overlay only cells in the xlsx/csv lists (with --overlay)")
     p.add_argument("--waveforms", action="store_true",
@@ -491,9 +554,14 @@ def main(argv=None):
 
     if args.overlay:
         out_dir = args.out or os.path.join(os.getcwd(), "zombies_rasters_overlay")
-        run_overlay_from_lists(DEFAULT_LISTS["mixed"], DEFAULT_LISTS["si"], out_dir,
-                               listed_only=args.listed_only, show_waveforms=args.waveforms,
-                               xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
+        mixed_list = args.mixed_list or GRANT_MIXED_XLSX
+        common = dict(listed_only=args.listed_only, show_waveforms=args.waveforms,
+                      xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
+        if args.si_method == "both" and not args.si_list:
+            run_overlay_vs_methods(mixed_list, SI_METHOD_LISTS, out_dir, **common)
+        else:
+            si_list = args.si_list or SI_METHOD_LISTS[args.si_method or "pANOVA"]
+            run_overlay_from_lists(mixed_list, si_list, out_dir, **common)
         return
 
     if not args.source:
@@ -520,6 +588,13 @@ if __name__ == "__main__":
     #               spike-time COINCIDENCE (not channel name — SI and manual can
     #               put the same neuron on different channels) and overlay each
     #               matched group, matched trial-for-trial. See coincidence_match.
+    #               Compares MIXED_LIST_PATH vs SI_LIST_PATH (below).
+    #    "overlay_methods"
+    #               like "overlay", but compares the ORIGINAL mixed list against
+    #               EACH SI selection method (pANOVA and pKW) in turn, writing to
+    #               output/overlay/overlay_vs_pANOVA/ and .../overlay_vs_pKW/.
+    #               This is the "differences between SI-sorted and original cells"
+    #               view for both selection methods at once.
     # ========================================================================
     MODE = "demo"
 
@@ -530,7 +605,16 @@ if __name__ == "__main__":
     # -- MODE == "mixed" / "si" --
     LIST_PATH = None            # None → use the bundled list in unit_lists/
 
-    # -- MODE == "overlay" --
+    # -- MODE == "overlay" / "overlay_methods" --
+    #  The two lists being compared:
+    #    MIXED_LIST_PATH: the "original" manually-sorted cells (xlsx). Defaults to
+    #                     the R01 grant list (same cells as the bundled mixed xlsx).
+    #    SI_LIST_PATH:    (MODE == "overlay" only) the SI-sorted list to compare
+    #                     against — a significant-windows .pkl or the old csv. Point
+    #                     at the pANOVA or the pKW pkl. In "overlay_methods" this is
+    #                     ignored; both methods in SI_METHOD_LISTS are run.
+    MIXED_LIST_PATH = GRANT_MIXED_XLSX
+    SI_LIST_PATH = SI_METHOD_LISTS["pANOVA"]
     #  By default sweeps every (date, round) in the two lists. Set
     #  OVERLAY_DATE (and optionally OVERLAY_ROUND) to restrict to one session.
     OVERLAY_DATE = None         # e.g. "2023-09-26" to do just one date
@@ -564,7 +648,18 @@ if __name__ == "__main__":
                       xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
     elif MODE == "overlay":
         run_overlay_from_lists(
-            DEFAULT_LISTS["mixed"], DEFAULT_LISTS["si"],
+            MIXED_LIST_PATH, SI_LIST_PATH,
+            os.path.join(OUT_DIR, "overlay"),
+            only_date=OVERLAY_DATE, only_round=OVERLAY_ROUND,
+            listed_only=LISTED_ONLY, show_waveforms=SHOW_WAVEFORMS,
+            window_ms=COINCIDENCE_WINDOW_MS,
+            coincidence_threshold=COINCIDENCE_THRESHOLD,
+            ratio_threshold=RATIO_THRESHOLD,
+            xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS,
+        )
+    elif MODE == "overlay_methods":
+        run_overlay_vs_methods(
+            MIXED_LIST_PATH, SI_METHOD_LISTS,
             os.path.join(OUT_DIR, "overlay"),
             only_date=OVERLAY_DATE, only_round=OVERLAY_ROUND,
             listed_only=LISTED_ONLY, show_waveforms=SHOW_WAVEFORMS,

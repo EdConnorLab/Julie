@@ -9,10 +9,14 @@ Two spreadsheets drive this side investigation, one per spike source:
   (an unsorted whole-channel). ``Time Window`` is a ``"(start_ms, end_ms)"``
   string.
 
-* **SISortedSpikeSource** — a CSV (columns ``NeuronID``, ``WindowStart_ms``,
-  ``WindowEnd_ms``, ``F-statistic``, ``p-value``, ``Date``, ``Round No.``).
-  ``NeuronID`` is the full id, e.g.
-  ``"AMG_2023-09-26_2_Channel.C_018_Unit 1"``.
+* **SISortedSpikeSource** — a CSV *or* a ``.pkl`` (columns ``NeuronID``,
+  ``WindowStart_ms``, ``WindowEnd_ms``, ``F/H-statistic``, ``p-value``, ``Date``,
+  ``Round No.``). ``NeuronID`` is the full id, e.g.
+  ``"AMG_2023-09-26_2_Channel.C_018_Unit 1"``. The significant-windows pickles
+  written by ``preprocess_and_select_significant_neurons`` (e.g.
+  ``si_sorted_Zombies_significant_windows_pANOVA_passed.pkl`` /
+  ``..._pKW_passed.pkl``) have exactly this schema, so they can be used directly
+  as the SI list — any extra columns (statistic, FDR) are ignored.
 
 Both collapse to a list of :class:`RasterRequest`, which
 ``run_zombies_rasters.py`` groups by session and resolves against the loaded
@@ -82,18 +86,20 @@ def load_mixed_manual_requests(xlsx_path: str) -> List[RasterRequest]:
     return requests
 
 
-def load_si_sorted_requests(csv_path: str) -> List[RasterRequest]:
-    """Parse the SISortedSpikeSource CSV list into requests.
+def load_si_sorted_requests(list_path: str) -> List[RasterRequest]:
+    """Parse the SISortedSpikeSource list into requests, from CSV or ``.pkl``.
 
-    A neuron may appear on several rows (multiple significant windows); each row
-    becomes its own request so every window gets a raster. Adjust downstream if
-    you prefer one raster per neuron.
+    Accepts either the curated CSV or a significant-windows ``.pkl`` (same
+    columns) — the loader picks by extension. A neuron may appear on several rows
+    (multiple significant windows); each row becomes its own request so every
+    window gets a raster. Adjust downstream if you prefer one raster per neuron.
     """
-    df = pd.read_csv(csv_path)
+    df = (pd.read_pickle(list_path) if str(list_path).lower().endswith(".pkl")
+          else pd.read_csv(list_path))
     requests: List[RasterRequest] = []
     for _, row in df.iterrows():
         neuron_id = str(row["NeuronID"]).strip()
-        date = str(row["Date"]).strip()
+        date = pd.to_datetime(row["Date"]).strftime("%Y-%m-%d")
         round_no = int(row["Round No."])
         window = (float(row["WindowStart_ms"]), float(row["WindowEnd_ms"]))
         pval = row.get("p-value")
