@@ -237,12 +237,33 @@ class ThresholdMUASpikeCacheManager(GenericCacheManager):
         amp_channels = rhd['amplifier_channels']
 
         # Prefer preprocessed (already highpass filtered) as the existing manager does.
-        if os.path.exists(preprocessed_path):
-            voltages = read_amplifier_data_with_mmap(preprocessed_path, amp_channels)
-            apply_filter = False
-        else:
-            voltages = read_amplifier_data_with_mmap(amp_path, amp_channels)
-            apply_filter = True
+        dat_path = preprocessed_path if os.path.exists(preprocessed_path) else amp_path
+        apply_filter = not os.path.exists(preprocessed_path)
+
+        # Guard: read_amplifier_data_with_mmap reshapes the flat int16 file by
+        # len(amp_channels). Some sessions have an info.rhd whose amplifier_channels
+        # disagrees with the actual .dat width (e.g. file is 32-channel but the
+        # header names 21) -> the reshape raises, and the column->channel mapping
+        # would be ambiguous anyway. Detect the mismatch (via time.dat, which has one
+        # int32 timestamp per sample) and SKIP the session rather than guess.
+        n_named = len(amp_channels)
+        total_i16 = os.path.getsize(dat_path) // 2
+        time_path = os.path.join(round_dir_path, "time.dat")
+        inferred = None
+        if os.path.exists(time_path):
+            n_samples = os.path.getsize(time_path) // 4
+            if n_samples and total_i16 % n_samples == 0:
+                inferred = total_i16 // n_samples
+        mismatch = (inferred is not None and inferred != n_named) or \
+                   (inferred is None and total_i16 % n_named != 0)
+        if mismatch:
+            got = inferred if inferred is not None else f"~{total_i16 / n_named:.3g}"
+            print(f"[ThresholdMUACache] SKIP {date} round {round_no}: "
+                  f"{os.path.basename(dat_path)} has {got} channels but info.rhd names "
+                  f"{n_named}. Fix this session's info.rhd to include it; skipping for now.")
+            return None
+
+        voltages = read_amplifier_data_with_mmap(dat_path, amp_channels)
 
         spike_times_by_channel, info = detect_mad_spikes_for_recording(
             voltages, sample_rate,
