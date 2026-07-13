@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pkl.bak
+
+# jun2026 grant investigation generated outputs
+src/analyses/jun2026_grant_investigation/investigation_outputs/
+src/analyses/jun2026_grant_investigation/regenerated_inputs/

@@ -1,22 +1,73 @@
 """
-Replication of allbeh_rand_var_exp_2_5_2025.py.
+Replication of allbeh_rand_var_exp_2_5_2025.py (Ed's grant script).
 
 Reproduces his Table 1 to 4 decimal places when run on the
-'_old--usedforgrant.xlsx' file with NCELLS=74.
+'_old--usedforgrant.xlsx' file with DATA_SOURCE='grant_xlsx', NCELLS=74.
+Every statistic and the permutation scheme below is faithful to his script.
 
 In PyCharm: edit the CONFIG block below, then just hit Run.
 
-Pipeline (per cell, per behavior, per source monkey):
-  - For each sink monkey (excluding source and subject 81G):
-      x = mean spike count of cell when sink monkey was visualized
-      y = behavior_matrix[source][sink]
-  - n = 8 data points (or 9 if source == subject 81G)
-  - Fit OLS, compute R^2
-  - Threshold at R^2 > 0.5, accumulate per-source / per-behavior / per-(behavior,source) sums
 
-Permutation test:
-  - NPERM iterations, x shuffled per-cell per-(behavior,source)
-  - Compares shuffled to observed for each summary statistic
+ONE REGRESSION = one (cell, source monkey s, behavior b)
+--------------------------------------------------------
+  x = that cell's mean firing to each *valid sink* monkey
+      (sinks exclude the source s and the subject 81G  ->  n = 8;
+       when s == 81G nothing extra is excluded          ->  n = 9)
+  y = source s's behavior-b value toward those same sink monkeys
+  R^2 = how well the cell's firing profile across monkeys linearly
+        matches s's behavioral profile across monkeys (OLS w/ intercept;
+        vec_r2 == sklearn r2_score on training data, verified).
+A "hit" is R^2 > THRESH (0.5). The summaries aggregate |R^2| over hits.
+
+6 behaviors b = {affiliation, submission, agonism} x {to, from};
+'from' matrices are transposes of 'to'. 10 source monkeys; 81G is subject.
+
+
+OBSERVED SUMMARIES (all are aggregations of the same hit set)
+------------------------------------------------------------
+  sumRsquared_total : sum |R^2| over ALL hits (cells x 6 beh x 10 sources)
+  nsig              : COUNT of hits (not a sum)
+  per source s      : sum |R^2| over the 6 behaviors and all cells, for source s
+  per behavior b    : sum |R^2| over the 10 sources and all cells, for behavior b
+  per grid (b,s)    : sum |R^2| for that single (behavior, source) cell (6x10 table)
+
+  r2_beh (secondary, "correlation of affiliation to sumRsquared"):
+    A second, ACROSS-MONKEY regression with 10 points (one per monkey):
+      x = obs_sumR2_per_src[m]  (encoding strength attributed to monkey m as source)
+      y = AFF_TO[81G,m] + AFF_FROM[81G,m]  (subject 81G's mutual affiliation w/ m)
+    r2_beh = R^2 of that fit. Asks: are the monkeys whose social patterns are
+    most strongly encoded the ones 81G is most affiliated with? (affiliation only;
+    81G's own point sits at y=0.)
+
+
+PERMUTATION NULL  -  what is shuffled
+-------------------------------------
+For every (behavior b, source s), and INDEPENDENTLY for every cell, the cell's
+firing values are permuted across the sink-monkey axis (lines using
+argsort(random) + take_along_axis). y is held FIXED. So the shuffle randomizes
+the MONKEY LABELS linking neural firing to behavior, per cell -- it breaks any
+real firing<->behavior correspondence while preserving each cell's set of firing
+values and the behavior vector. (Permuting x is equivalent to permuting y for R^2.)
+
+Key properties (all faithful to Ed's random.shuffle(x) inside his b/cell/source loop):
+  - per-cell independent (each neuron's labels scrambled separately);
+  - a FRESH permutation is drawn for every (behavior, source) and every iteration,
+    so within one iteration the same neuron is scrambled differently across the
+    6 behaviors and 10 sources -- it is NOT one global monkey relabeling;
+  - NOT shuffled: the behavior matrices, the cell identities, the valid-sink sets,
+    and (for r2_beh) the affiliation vector y_sec. Only x's monkey assignment.
+Each iteration recomputes ALL summaries from this one shuffled dataset.
+
+p-value convention (line: p = 1 - nless/NPERM)
+  nless counts shuffles STRICTLY LESS than observed, so
+    p = fraction of shuffles that matched-or-exceeded observed  (right-tailed).
+  Ties count toward p; the observed is not added to the null. At NPERM=10000 the
+  resolution is 1e-4, so a printed p=0.0000 means "no shuffle reached observed"
+  (report as < 1e-4). Lower p => more significant.
+
+Caveats: total / nsig / r2_beh are single omnibus tests; per-source (10),
+per-behavior (6) and per-grid (60) p-values are each UNCORRECTED. The exchangeable
+unit under this null is the monkey axis within a regression, not the cell.
 """
 
 import time
