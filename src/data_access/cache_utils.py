@@ -228,18 +228,19 @@ class ThresholdMUASpikeCacheManager(GenericCacheManager):
 
         info_path = os.path.join(round_dir_path, "info.rhd")
         amp_path = os.path.join(round_dir_path, "amplifier.dat")
-        preprocessed_path = os.path.join(round_dir_path, "preprocessed_data.dat")
 
         rhd = load_intan_rhd_format.read_data(info_path)
         sample_rate = rhd['frequency_parameters']['amplifier_sample_rate']
         amp_channels = rhd['amplifier_channels']
 
-        # Prefer preprocessed (already highpass filtered) as the existing manager does.
-        dat_path = preprocessed_path if os.path.exists(preprocessed_path) else amp_path
-        apply_filter = not os.path.exists(preprocessed_path)
-        # read_amplifier_data_robust uses time.dat for the true sample count and
-        # raises a clear error if the .dat width genuinely disagrees with info.rhd.
-        voltages = read_amplifier_data_robust(dat_path, amp_channels, round_dir_path)
+        # MUA is detected on the RAW amplifier.dat (full recording length; matches the
+        # epochs and digitalin.dat), applying our own highpass. We deliberately do NOT
+        # use preprocessed_data.dat -- it is re-derived and can be shorter than the
+        # recording, which would silently zero out late trials.
+        if not os.path.exists(amp_path):
+            raise FileNotFoundError(f"amplifier.dat missing in {round_dir_path}; needed for MUA.")
+        voltages = read_amplifier_data_robust(amp_path, amp_channels, round_dir_path)
+        apply_filter = True
 
         spike_times_by_channel, info = detect_mad_spikes_for_recording(
             voltages, sample_rate,
