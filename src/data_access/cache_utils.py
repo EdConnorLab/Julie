@@ -193,6 +193,85 @@ class ThresholdSpikeCacheManager(GenericCacheManager):
         return explode_spike_data(combined, date, round_no)
 
 
+class ThresholdMUASpikeCacheManager(GenericCacheManager):
+    """Cache for multi-unit activity (MUA) from OFFLINE MAD/RMS negative-crossing
+    detection on amplifier.dat / preprocessed_data.dat. Mirrors
+    ThresholdSpikeCacheManager but calls detect_mad_spikes_for_recording. Kept as a
+    separate class so the existing threshold pipeline is untouched."""
+    def __init__(self, monkey: str = SUBJECT_MONKEY):
+        cache_dir = PROJECT_ROOT / monkey / "threshold_mua_spike_cache"
+        super().__init__(cache_dir)
+
+    def load_or_compute(self, date, round_no, *, noise_method='mad',
+                        threshold_multiplier=4.0, refractory_ms=1.0,
+                        force_recompute=False):
+        label = f"{date}_round_{round_no}_{noise_method}{threshold_multiplier}_ref{refractory_ms}"
+        path = self._get_cache_path(label)
+        if path.exists() and not force_recompute:
+            return pd.read_pickle(path)
+        print(f"[ThresholdMUACache] Computing MUA spikes for {date} round {round_no} ...")
+        df = self._compute(date, round_no, noise_method, threshold_multiplier, refractory_ms)
+        if df is not None and not df.empty:
+            df.to_pickle(path)
+        return df
+
+    def _compute(self, date, round_no, noise_method, threshold_multiplier, refractory_ms):
+        import os
+        from clat.intan.rhd import load_intan_rhd_format
+        from clat.intan.amplifiers import read_amplifier_data_with_mmap
+        from data_access.threshold_detection import detect_mad_spikes_for_recording
+
+        reader = RecordingMetadataReader()
+        pickle_filepath, _, round_dir_path = reader.get_metadata_for_spike_analysis(date, round_no)
+
+        raw_trials = pd.read_pickle(pickle_filepath)
+        if raw_trials is None or raw_trials.empty:
+            return None
+
+        info_path = os.path.join(round_dir_path, "info.rhd")
+        amp_path = os.path.join(round_dir_path, "amplifier.dat")
+        preprocessed_path = os.path.join(round_dir_path, "preprocessed_data.dat")
+
+        rhd = load_intan_rhd_format.read_data(info_path)
+        sample_rate = rhd['frequency_parameters']['amplifier_sample_rate']
+        amp_channels = rhd['amplifier_channels']
+
+        # Prefer preprocessed (already highpass filtered) as the existing manager does.
+        if os.path.exists(preprocessed_path):
+            voltages = read_amplifier_data_with_mmap(preprocessed_path, amp_channels)
+            apply_filter = False
+        else:
+            voltages = read_amplifier_data_with_mmap(amp_path, amp_channels)
+            apply_filter = True
+
+        spike_times_by_channel, info = detect_mad_spikes_for_recording(
+            voltages, sample_rate,
+            noise_method=noise_method,
+            threshold_multiplier=threshold_multiplier,
+            refractory_ms=refractory_ms,
+            apply_filter=apply_filter,
+        )
+        for ch, ch_info in info.items():
+            print(f"  {ch}: {ch_info['n_spikes']} spikes (thr={ch_info['threshold']:.1f})")
+
+        rows = []
+        for _, trial in raw_trials.iterrows():
+            epoch_start, epoch_stop = trial['EpochStartStop']
+            trial_spikes = {}
+            for channel, all_times in spike_times_by_channel.items():
+                trial_spikes[channel] = [t for t in all_times if epoch_start <= t < epoch_stop]
+            rows.append({
+                'TaskField': trial['TaskField'],
+                'MonkeyId': trial['MonkeyId'],
+                'MonkeyName': trial['MonkeyName'],
+                'MonkeyGroup': trial['MonkeyGroup'],
+                'SpikeTimes': trial_spikes,
+                'EpochStartStop': trial['EpochStartStop'],
+            })
+        combined = pd.DataFrame(rows)
+        return explode_spike_data(combined, date, round_no)
+
+
 class BehaviorMatrixCacheManager(GenericCacheManager):
     def __init__(self, monkey: str = SUBJECT_MONKEY):
         cache_dir = PROJECT_ROOT / monkey / "behavior_matrix_cache"

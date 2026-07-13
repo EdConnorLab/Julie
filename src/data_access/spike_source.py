@@ -90,3 +90,38 @@ class ThresholdSpikeSource:
         if df is None or getattr(df, "empty", True):
             return None
         return df
+
+
+@dataclass(frozen=True)
+class ThresholdMUASpikeSource:
+    """Multi-unit activity (MUA) from OFFLINE MAD/RMS negative-crossing detection on
+    the raw amplifier signal (threshold_detection.detect_mad_spikes).
+
+    An alternative to online spike.dat MUA: online thresholds are hand-set during
+    recording and drift as cells move / across 32 channels, so they can be
+    inaccurate. Here the threshold is recomputed from the data per channel
+    (median/RMS noise * multiplier), so it doesn't rely on the live settings.
+
+    Distinct from ThresholdSpikeSource (Quian-Quiroga), which is left untouched.
+    pre_filtered=True so the single-unit ISI QC is skipped (this is multiunit).
+    """
+    noise_method: str = "mad"          # 'mad' = median(|v|)/0.6745, or 'rms'
+    threshold_multiplier: float = 4.0
+    refractory_ms: float = 1.0
+    force_recompute: bool = False
+    pre_filtered: bool = True
+    name: str = "threshold_mua"
+
+    def load(self, date: str, round_no: int) -> Optional[pd.DataFrame]:
+        from data_access.cache_utils import ThresholdMUASpikeCacheManager
+        df = ThresholdMUASpikeCacheManager().load_or_compute(
+            date,
+            round_no,
+            noise_method=self.noise_method,
+            threshold_multiplier=self.threshold_multiplier,
+            refractory_ms=self.refractory_ms,
+            force_recompute=self.force_recompute,
+        )
+        if df is None or getattr(df, "empty", True):
+            return None
+        return df

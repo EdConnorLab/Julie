@@ -102,3 +102,68 @@ def detect_spikes_for_recording(voltages_by_channel, sample_rate, *,
                                    "n_spikes": len(indices)}
 
     return spike_times_by_channel, detection_info
+
+
+# ---------------------------------------------------------------------------
+# MAD/RMS multi-unit-activity (MUA) detector.
+# Added for ThresholdMUASpikeSource. Ported from a labmate's offline pipeline
+# (`_count_mad_negative_spikes`). Separate from the Quian-Quiroga detect_spikes
+# above so nothing existing changes.
+# ---------------------------------------------------------------------------
+def estimate_noise(voltage, method='mad'):
+    """Per-channel noise scale. 'mad' -> median(|v|)/0.6745 (robust sigma, same as
+    estimate_noise_std); 'rms' -> sqrt(mean(v**2))."""
+    if method == 'mad':
+        return np.median(np.abs(voltage)) / 0.6745
+    if method == 'rms':
+        return float(np.sqrt(np.mean(np.square(voltage))))
+    raise ValueError(f"unknown noise method {method!r}")
+
+
+def detect_mad_spikes(voltage, threshold, refractory_samples):
+    """Negative-going threshold detector: above->below crossings of `threshold` (<0),
+    each snapped to the local trough, with a refractory period enforced between
+    troughs. Faithful port of the offline `_count_mad_negative_spikes`, but returns
+    the kept trough SAMPLE INDICES (np.ndarray[int]) instead of a count."""
+    voltage = np.asarray(voltage)
+    if voltage.size < 2:
+        return np.array([], dtype=int)
+    below = voltage < threshold
+    crossings = np.where(np.diff(below.astype(np.int8)) == 1)[0] + 1
+    if len(crossings) == 0:
+        return np.array([], dtype=int)
+    n = len(voltage)
+    troughs = []
+    for c in crossings:
+        window_end = min(c + refractory_samples, n)
+        troughs.append(c + int(np.argmin(voltage[c:window_end])))
+    kept = [troughs[0]]
+    for s in troughs[1:]:
+        if s - kept[-1] >= refractory_samples:
+            kept.append(s)
+    return np.array(kept, dtype=int)
+
+
+def detect_mad_spikes_for_recording(voltages_by_channel, sample_rate, *,
+                                    noise_method='mad', threshold_multiplier=4.0,
+                                    refractory_ms=1.0, apply_filter=True):
+    """Run the MAD/RMS negative-crossing MUA detector on every channel.
+
+    threshold = -threshold_multiplier * estimate_noise(v, noise_method).
+    Returns (spike_times_by_channel: dict[Channel, list[float] seconds], info).
+    Mirrors detect_spikes_for_recording's signature so a cache manager can swap
+    detectors; it does NOT modify that function."""
+    refractory_samples = max(1, int(refractory_ms / 1000.0 * sample_rate))
+    spike_times_by_channel = {}
+    detection_info = {}
+    for channel, voltage in voltages_by_channel.items():
+        v = voltage * 0.195 if voltage.dtype == np.int16 else voltage.astype(np.float64, copy=True)
+        if apply_filter:
+            v = highpass_filter(v, sample_rate)
+        sigma = estimate_noise(v, noise_method)
+        threshold = -threshold_multiplier * sigma
+        idx = detect_mad_spikes(v, threshold, refractory_samples)
+        spike_times_by_channel[channel] = (idx / sample_rate).tolist()
+        detection_info[channel] = {"threshold": threshold, "noise": sigma,
+                                   "noise_method": noise_method, "n_spikes": len(idx)}
+    return spike_times_by_channel, detection_info

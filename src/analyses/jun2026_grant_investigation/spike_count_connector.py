@@ -42,7 +42,7 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 from analyses.spike_count import extract_spike_counts_from_windows   # noqa: E402
-from data_access.spike_source import SISortedSpikeSource             # noqa: E402
+from data_access.spike_source import SISortedSpikeSource, ThresholdMUASpikeSource  # noqa: E402
 from project_util import PROJECT_BASE_PATH                           # noqa: E402
 
 # =====================================================================
@@ -54,10 +54,26 @@ MONKEY_NAME = ['7124', '69X', '72X', '94B', '110E', '67G', '81G', '143H', '87J',
 SUBJECT = 6                                     # 81G, excluded as a stimulus column
 ORDER9 = [m for i, m in enumerate(MONKEY_NAME) if i != SUBJECT]  # matches common.MONKEY_NAME order
 
-# name -> significance-windows pkl (relative to the repo root)
+# per-list spike sources (factories -> a fresh instance per use)
+def _si_sorted_source():
+    return SISortedSpikeSource(cache_subdir=CACHE_SUBDIR, pre_filtered=True)
+
+
+def _mua_source():
+    # offline MAD/RMS negative-crossing MUA; tune params to match the offline analysis
+    return ThresholdMUASpikeSource(noise_method='mad', threshold_multiplier=4.0, refractory_ms=1.0)
+
+
+# name -> {significance-windows pkl (repo-relative), spike source factory}
 LISTS = {
-    'KW':    'Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
-    'ANOVA': 'Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pANOVA_passed.pkl',
+    'KW':        {'pkl': 'Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
+                  'source': _si_sorted_source},
+    'ANOVA':     {'pkl': 'Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pANOVA_passed.pkl',
+                  'source': _si_sorted_source},
+    'MUA_KW':    {'pkl': 'Cortana/analysis_cache/threshold_mua_Zombies_significant_windows_pKW_passed.pkl',
+                  'source': _mua_source},
+    'MUA_ANOVA': {'pkl': 'Cortana/analysis_cache/threshold_mua_Zombies_significant_windows_pANOVA_passed.pkl',
+                  'source': _mua_source},
 }
 OUTDIR = os.path.join(_HERE, 'regenerated_inputs')
 # =====================================================================
@@ -68,9 +84,10 @@ KEY = ['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']
 def _windows_for(list_name):
     """Load a significance-windows pkl and normalize Date/Round No. dtypes so the
     spike-cache label (f'{Date}_round_{Round No.}') matches the cache filenames."""
-    path = os.path.join(PROJECT_BASE_PATH, LISTS[list_name])
+    rel = LISTS[list_name]['pkl']
+    path = os.path.join(PROJECT_BASE_PATH, rel)
     if not os.path.exists(path):                       # fall back to this checkout
-        path = os.path.abspath(os.path.join(_HERE, '..', '..', '..', LISTS[list_name]))
+        path = os.path.abspath(os.path.join(_HERE, '..', '..', '..', rel))
     w = pd.read_pickle(path).copy()
     missing = {'NeuronID', 'WindowStart_ms', 'WindowEnd_ms', 'Date', 'Round No.'} - set(w.columns)
     if missing:
@@ -98,7 +115,7 @@ def extract_per_trial(list_name):
     """Per-trial SpikeCount for every (neuron, window, stimulus monkey) in the
     list, restricted to GROUP. This is the one expensive step; both the long
     (mean) and wide (per-trial lists) builders reuse its output."""
-    source = SISortedSpikeSource(cache_subdir=CACHE_SUBDIR, pre_filtered=True)
+    source = LISTS[list_name]['source']()
     windows = _keep_loadable_sessions(_windows_for(list_name), source)
     per_trial = extract_spike_counts_from_windows(windows, source)
     return per_trial[per_trial['MonkeyGroup'] == GROUP].copy()
