@@ -144,52 +144,51 @@ def detect_mad_spikes(voltage, threshold, refractory_samples):
     return np.array(kept, dtype=int)
 
 
-def read_amplifier_data_robust(file_path, amplifier_channels, round_dir_path=None):
+def read_amplifier_data_robust(file_path, amplifier_channels, round_dir_path):
     """Read an Intan one-file-per-type amplifier file (amplifier.dat /
     preprocessed_data.dat) into {Channel: np.ndarray microvolts}.
 
     Fixes clat.intan.amplifiers.read_amplifier_data_with_mmap, which infers the
     sample count as filesize // (nchannels*2) and so crashes on any trailing bytes.
 
-    info.rhd's amplifier_channels IS the authoritative list of saved channels, so we
-    trust its count (nch): n_samples = total_int16 // nch, and drop the trailing
-    partial sample (total_int16 % nch leftover int16 -- e.g. a crash/stitch artifact).
-    time.dat is NOT required (crash-stitched sessions may lack it). When a
-    one-value-per-sample stream is present (time.dat int32, else digitalin.dat uint16)
-    it is used only to CROSS-CHECK; if it proves the file width genuinely differs from
-    nch (e.g. 32 saved but info.rhd names 21), a clear error is raised rather than
-    silently misreading. Columns map to channels in list order: column i -> amplifier_channels[i]."""
+    Channel count comes from info.rhd (amplifier_channels) -- the authoritative list
+    of saved channels; the file is reshaped by that count, dropping a trailing partial
+    sample. time.dat is NOT used (crash-stitched sessions can lack it). digitalin.dat
+    (one uint16 per sample = recording length) is REQUIRED and is used to validate the
+    channel count against the RAW amplifier.dat -- validating the raw file, not
+    file_path, because preprocessed_data.dat is re-derived and may have a different
+    length. A missing digitalin.dat, or a raw amplifier.dat whose implied channel count
+    grossly disagrees with info.rhd, raises a clear error rather than misreading.
+    Columns map to channels in list order: column i -> amplifier_channels[i]."""
     import os
     from clat.intan.channels import Channel
 
     nch = len(amplifier_channels)                     # trust info.rhd's saved-channel list
-    total_i16 = os.path.getsize(file_path) // 2
-    n_samples = total_i16 // nch                       # samples if the file is nch-wide
-    trailing = total_i16 - n_samples * nch             # leftover int16 (< nch): partial/junk
+    if round_dir_path is None:
+        raise ValueError("read_amplifier_data_robust requires round_dir_path (to find digitalin.dat)")
 
-    # Optional cross-check via a 1-value-per-sample stream, if present.
-    n_ext, src = None, None
-    if round_dir_path is not None:
-        for fname, stride in (("time.dat", 4), ("digitalin.dat", 2)):
-            p = os.path.join(round_dir_path, fname)
-            if os.path.exists(p):
-                n_ext, src = os.path.getsize(p) // stride, fname
-                break
-    if n_ext:
-        # n_ext (a 1-value-per-sample stream) may differ slightly from the amplifier
-        # length after crash-stitching, so compare the IMPLIED channel count, not the
-        # exact sample count. A small discrepancy -> trust info.rhd; a gross one (e.g.
-        # 32 vs 21) would scramble the data, so refuse rather than guess.
-        implied = total_i16 / n_ext
+    # digitalin.dat is required: one uint16 per sample => the recording's sample count.
+    digin = os.path.join(round_dir_path, "digitalin.dat")
+    if not os.path.exists(digin):
+        raise ValueError(f"digitalin.dat missing in {round_dir_path}; cannot verify the channel "
+                         f"count. Every session should have digitalin.dat -- check this one.")
+    n_rec = os.path.getsize(digin) // 2
+
+    # Validate nch against the RAW amplifier.dat (shares the recording length with
+    # digitalin). Small stitch gaps are tolerated; a gross mismatch (e.g. 32 vs 21) is fatal.
+    amp_raw = os.path.join(round_dir_path, "amplifier.dat")
+    if os.path.exists(amp_raw) and n_rec:
+        implied = (os.path.getsize(amp_raw) // 2) / n_rec
         if abs(implied - nch) > 0.05 * nch:
             raise ValueError(
-                f"{os.path.basename(file_path)}: {src} implies ~{implied:.2f} channels "
-                f"({total_i16} int16 / {n_ext} samples) but info.rhd names {nch}. info.rhd "
-                f"disagrees with the recording; fix the header or give me this session's "
-                f"correct channel set/order.")
+                f"amplifier.dat implies ~{implied:.2f} channels (its int16 / digitalin.dat's "
+                f"{n_rec} samples) but info.rhd names {nch}. info.rhd disagrees with the "
+                f"recording; fix the header or give me this session's correct channel set/order.")
 
+    total_i16 = os.path.getsize(file_path) // 2
+    n_samples = total_i16 // nch                       # reshape by nch; drop trailing partial
     mm = np.memmap(file_path, dtype=np.int16, mode='r')
-    data = mm[:n_samples * nch].reshape(n_samples, nch)   # drop trailing partial; memmap view
+    data = mm[:n_samples * nch].reshape(n_samples, nch)
     out = {}
     for i, ch in enumerate(amplifier_channels):
         name = ch.get("native_channel_name", f"Channel_{i}")
