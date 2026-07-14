@@ -179,14 +179,24 @@ def _units_on_channel(session_df, base_channel: str) -> Dict[str, "pd.DataFrame"
     return out
 
 
+def _lane_label(prefix: str, uid: str) -> str:
+    """``(prefix, "…Channel.C_020_Unit 1")`` → ``"{prefix}C_020_Unit 1"`` for the lane.
+
+    The lane prefix names the *source* (e.g. ``"manual: "``, ``"SI: "``,
+    ``"grant: "``, ``"MUA-ANOVA: "``); the tail is the cell/unit token shared
+    across sorts, so the same neuron reads consistently in every panel.
+    """
+    return f"{prefix}{str(uid).split('Channel.')[-1]}"
+
+
 def _short_mixed_label(cell_id: str) -> str:
     """``Channel.C_011_Unit 1`` → ``manual: C_011_Unit 1`` for the overlay lane."""
-    return "manual: " + str(cell_id).split("Channel.")[-1]
+    return _lane_label("manual: ", cell_id)
 
 
 def _short_si_label(neuron_id: str) -> str:
     """``AMG_..._Channel.C_020_Unit 1`` → ``SI: C_020_Unit 1``."""
-    return "SI: " + str(neuron_id).split("Channel.")[-1]
+    return _lane_label("SI: ", neuron_id)
 
 
 def _cell_token(uid: str) -> str:
@@ -240,6 +250,8 @@ def render_overlays_for_units(
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
+    a_prefix: str = "manual: ",
+    b_prefix: str = "SI: ",
 ) -> List[str]:
     """Match two sorts' units by coincidence and render one overlay per group.
 
@@ -252,6 +264,12 @@ def render_overlays_for_units(
     keys of the anchor-window dicts), so every unit shown is from your xlsx/csv.
     With it off (default), a listed cell is matched against *all* units in the
     other sort, so its cross-sort twin is found even if that twin isn't listed.
+
+    ``a_prefix`` / ``b_prefix`` name the two sides in every lane label (legend,
+    probe map, footprint). They default to ``"manual: "`` / ``"SI: "`` (the mixed
+    vs SI overlay); pass e.g. ``"grant: "`` / ``"MUA-ANOVA: "`` for other pairs.
+    ``units_mixed`` / ``mixed_anchor_windows`` are side A, ``units_si`` /
+    ``si_anchor_windows`` side B — the ``mixed``/``si`` names are historical.
     """
     os.makedirs(out_dir, exist_ok=True)
     mixed_anchor_windows = mixed_anchor_windows or {}
@@ -279,16 +297,16 @@ def render_overlays_for_units(
         unit_dfs: Dict[str, "pd.DataFrame"] = {}
         for cid in g.mixed_ids:
             if cid in units_mixed:
-                unit_dfs[_short_mixed_label(cid)] = units_mixed[cid]
+                unit_dfs[_lane_label(a_prefix, cid)] = units_mixed[cid]
         for sid in g.si_ids:
             if sid in units_si:
-                unit_dfs[_short_si_label(sid)] = units_si[sid]
+                unit_dfs[_lane_label(b_prefix, sid)] = units_si[sid]
         if len(unit_dfs) < 2:
             continue  # need at least one unit from each sort to overlay
 
         windows = _group_windows(g, mixed_anchor_windows, si_anchor_windows)
         # per-pair coincidence, in the overlay's lane-label terms, for the probe map
-        pair_coincidences = [(_short_mixed_label(mid), _short_si_label(sid), c)
+        pair_coincidences = [(_lane_label(a_prefix, mid), _lane_label(b_prefix, sid), c)
                              for mid, sid, c in g.pairs]
         # per-unit footprints (if extracted), keyed by the same lane labels
         group_footprints = None
@@ -296,10 +314,10 @@ def render_overlays_for_units(
             group_footprints = {}
             for cid in g.mixed_ids:
                 if cid in units_mixed:
-                    group_footprints[_short_mixed_label(cid)] = footprints_by_id.get(cid)
+                    group_footprints[_lane_label(a_prefix, cid)] = footprints_by_id.get(cid)
             for sid in g.si_ids:
                 if sid in units_si:
-                    group_footprints[_short_si_label(sid)] = footprints_by_id.get(sid)
+                    group_footprints[_lane_label(b_prefix, sid)] = footprints_by_id.get(sid)
         # units are named in the legend and the probe map, so keep the title
         # short — some groups have >10 units and listing them all is unreadable.
         # "best" coincidence here; the probe map shows every pair's value.
