@@ -24,7 +24,7 @@ def load_data_kw_reference(pkl_path):
     return np.array(rows, float), pd.DataFrame(meta)
 
 if LOADER_SOURCE == 'mine':
-    from replicate_analysis import load_data_kw
+    from common import load_data_kw
 else:
     load_data_kw = load_data_kw_reference
 

@@ -74,9 +74,9 @@ import time
 import pandas as pd
 import numpy as np
 from common import (
-    load_data, load_data_kw, build_valid_k_per_source, build_y_per, vec_r2, scalar_r2,
+    load_data, build_valid_k_per_source, build_y_per, vec_r2, scalar_r2,
     NMONKEYS, SUBJECT, MONKEY_NAME, BEH_NAMES, AFF_TO, AFF_FROM,
-    DEFAULT_DATA_FILE,
+    HIS_XLSX,
 )
 
 
@@ -89,9 +89,7 @@ from common import (
 #   'cache_anova'     - SI-sorted ANOVA list, rebuilt from analysis_cache   -> connector
 #   'cache_mua_kw'    - threshold-MUA KW list (MAD/RMS offline detection)   -> connector
 #   'cache_mua_anova' - threshold-MUA ANOVA list                           -> connector
-#   'kw_pkl'          - DEPRECATED: old *_mean_spike_rates pkl (channels not remapped)
 DATA_SOURCE = 'cache_kw'
-DATA_FILE   = DEFAULT_DATA_FILE   # only used by 'grant_xlsx'/'kw_pkl'
 NCELLS      = 74             # 'grant_xlsx' only: his hardcoded value; None/0 for all rows
 CELL_SUBSET = 'all'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
 THRESH      = 0.5             # R^2 cutoff
@@ -103,9 +101,7 @@ RANDOM_SEED = 20251121
 def load_neural_data():
     """Dispatch on DATA_SOURCE. Returns (X_mean (ncells,9), df with 'Cell')."""
     if DATA_SOURCE == 'grant_xlsx':
-        return load_data(DATA_FILE, ncells=NCELLS)
-    if DATA_SOURCE == 'kw_pkl':
-        return load_data_kw(DATA_FILE)
+        return load_data(HIS_XLSX, ncells=NCELLS)
     if DATA_SOURCE in ('cache_kw', 'cache_anova', 'cache_mua_kw', 'cache_mua_anova'):
         from spike_count_connector import load_data_from_cache
         list_name = {'cache_kw': 'KW', 'cache_anova': 'ANOVA',
