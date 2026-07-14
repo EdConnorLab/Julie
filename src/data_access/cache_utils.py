@@ -195,8 +195,7 @@ class ThresholdSpikeCacheManager(GenericCacheManager):
 class ThresholdMUASpikeCacheManager(GenericCacheManager):
     """Cache for multi-unit activity (MUA) from OFFLINE MAD/RMS negative-crossing
     detection on amplifier.dat / preprocessed_data.dat. Mirrors
-    ThresholdSpikeCacheManager but calls detect_mad_spikes_for_recording. Kept as a
-    separate class so the existing threshold pipeline is untouched."""
+    ThresholdSpikeCacheManager but calls detect_mad_spikes_for_recording. """
     def __init__(self, monkey: str = SUBJECT_MONKEY):
         cache_dir = PROJECT_ROOT / monkey / "threshold_mua_spike_cache"
         super().__init__(cache_dir)

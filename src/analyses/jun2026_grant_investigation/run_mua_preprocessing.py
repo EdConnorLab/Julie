@@ -56,10 +56,10 @@ def main():
     )  # pre_filtered=True -> single-unit ISI QC skipped (multiunit)
 
     # same 3 stages as preprocess_and_select_significant_neurons.__main__, MUA source
-    select_all_significant_neurons_using_pANOVA(metadata, cfg, source=source)
+    # select_all_significant_neurons_using_pANOVA(metadata, cfg, source=source)
     windows = detect_all_response_windows_for_all_neurons(metadata, cfg, source=source)
-    detect_significant_windows_using_pKW(windows, cfg, source=source)
-    detect_significant_windows_using_pANOVA(windows, cfg, source=source)
+    detect_significant_windows_using_pKW(windows, cfg, source=source, n_permutations=1000)
+    detect_significant_windows_using_pANOVA(windows, cfg, source=source, n_permutations=1000)
     print(f"Done. Wrote threshold_mua_Zombies_* to {ANALYSIS_CACHE_DIR}")
 
 
