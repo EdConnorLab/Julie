@@ -23,24 +23,28 @@ Two products
 
 How each DATA_SOURCE maps to plottable data
 -------------------------------------------
-* **grant_xlsx** — Ed's grant xlsx (``common.HIS_XLSX``) is in the mixed-manual
-  format (``Date``, ``Round No.``, ``Time Window``, ``Cell`` = ``str(Channel)``),
-  so its cells load through ``MixedManualSpikeSource`` exactly like the
-  ``zombies_raster_review`` "mixed" list. We take the first ``GRANT_NCELLS`` rows
-  to match what ``replicate_analysis`` (``NCELLS=74``) regresses.
-* **cache_kw / cache_anova** — SI-sorted; windows from the
-  ``si_sorted_..._significant_windows_p{KW,ANOVA}_passed.pkl`` files, spikes from
-  ``SISortedSpikeSource(cache_subdir="sorted_spike_cache_filtered", pre_filtered)``.
-* **cache_mua_kw / cache_mua_anova** — threshold-MUA; windows from the
-  ``threshold_mua_..._significant_windows_p{KW,ANOVA}_passed.pkl`` files, spikes
-  from ``ThresholdMUASpikeSource(mad, 4.0, ref 1.0)``.
+Each list only names the *cells*; the actual per-trial spike TIMES needed for
+rasters come from that source's spike cache (the lists carry spike counts, not
+times, so they cannot be plotted directly).
 
-The pkl paths, the exact source instances, and the Date/Round normalisation all
-come from ``spike_count_connector`` (``LISTS`` / ``_windows_for`` / the two source
-factories) — the same objects ``replicate_analysis`` consumes — so the plotted
-units are the analysed units. (Cache lists use the significance-passed windows;
-``replicate_analysis`` additionally drops (neuron, window) combos missing any of
-the 9 stimulus monkeys — a regression-input requirement — so a few plotted units
+* **grant_xlsx** — cells from Ed's grant xlsx (``common.HIS_XLSX``), which is in
+  the mixed-manual format (``Date``, ``Round No.``, ``Time Window``,
+  ``Cell`` = ``str(Channel)``); spike times looked up per cell in the
+  **exploded_spike_cache** via ``MixedManualSpikeSource``. First ``GRANT_NCELLS``
+  rows, to match what ``replicate_analysis`` (``NCELLS=74``) regresses.
+* **cache_kw / cache_anova** — cells from the
+  ``si_sorted_..._significant_windows_p{KW,ANOVA}_passed.pkl`` files; spike times
+  from **sorted_spike_cache** via ``SISortedSpikeSource()``.
+* **cache_mua_kw / cache_mua_anova** — cells from the
+  ``threshold_mua_..._significant_windows_p{KW,ANOVA}_passed.pkl`` files; spike
+  times from **threshold_mua_spike_cache** via
+  ``ThresholdMUASpikeSource(mad, 4.0, ref 1.0)``.
+
+The significance-pkl paths and the Date/Round normalisation come from
+``spike_count_connector`` (``LISTS`` / ``_windows_for``) — the same window lists
+``replicate_analysis`` consumes — so the plotted cells are the analysed cells.
+(``replicate_analysis`` additionally drops (neuron, window) combos missing any of
+the 9 stimulus monkeys — a regression-input requirement — so a few plotted cells
 may not have entered a given fit.)
 
 Waveform footprints need the raw recording (``amplifier.dat`` / info.rhd +
@@ -72,7 +76,7 @@ _SRC = os.path.abspath(os.path.join(_HERE, "..", ".."))            # .../Julie/s
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from data_access.spike_source import MixedManualSpikeSource                    # noqa: E402
+from data_access.spike_source import MixedManualSpikeSource, SISortedSpikeSource  # noqa: E402
 from analyses.zombies_raster_review.zombies_raster import plot_overlay_raster  # noqa: E402
 from analyses.zombies_raster_review.run_zombies_rasters import (               # noqa: E402
     _select_unit_rows, _cell_token, render_overlays_for_units,
@@ -148,12 +152,12 @@ SOURCES: Dict[str, SourceSpec] = {
     ),
     "cache_kw": SourceSpec(
         "cache_kw", "KW: ", "NeuronID",
-        scc._si_sorted_source,
+        lambda: SISortedSpikeSource(),          # spikes from sorted_spike_cache
         lambda: _cache_requests("KW", "cache_kw"),
     ),
     "cache_anova": SourceSpec(
         "cache_anova", "ANOVA: ", "NeuronID",
-        scc._si_sorted_source,
+        lambda: SISortedSpikeSource(),          # spikes from sorted_spike_cache
         lambda: _cache_requests("ANOVA", "cache_anova"),
     ),
     "cache_mua_kw": SourceSpec(
