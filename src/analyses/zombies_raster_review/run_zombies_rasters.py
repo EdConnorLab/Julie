@@ -56,6 +56,30 @@ DEFAULT_LISTS = {
     "si": os.path.join(_HERE, "unit_lists", "zombies_si_sorted_anova_passed.csv"),
 }
 
+# The bundled unit_lists/ spreadsheets were removed (deprecated in R3), so the
+# list-driven modes below (mixed / si / overlay) no longer have a default file.
+# To plot the replicate_analysis DATA_SOURCE lists directly, use
+# analyses.jun2026_grant_investigation.raster_review_by_source instead.
+_DEPRECATED_LIST_HINT = (
+    "\n\nThe bundled unit_lists/ spreadsheets were removed (deprecated in R3), so "
+    "run_zombies_rasters.py's mixed/si/overlay modes no longer have a default list.\n"
+    "To plot the replicate_analysis DATA_SOURCE lists (grant_xlsx, cache_kw, "
+    "cache_anova, cache_mua_kw, cache_mua_anova) with raster + PSTH + waveform "
+    "footprint, and the cross-source overlays, run instead:\n"
+    "    cd src\n"
+    "    python -m analyses.jun2026_grant_investigation.raster_review_by_source --mode all\n"
+    "  (or --mode singles --source cache_kw, "
+    "--mode overlay --pair grant_xlsx cache_mua_anova)\n"
+    "Or pass an explicit --list <path> to use your own spreadsheet."
+)
+
+
+def _require_list(path: str) -> str:
+    """Fail with an actionable message when a list-mode's spreadsheet is missing."""
+    if not path or not os.path.exists(path):
+        raise FileNotFoundError(f"unit list not found: {path}{_DEPRECATED_LIST_HINT}")
+    return path
+
 
 def _make_source(source_kind: str):
     """Build the SpikeSource lazily (imports pull in DB/IO-heavy deps)."""
@@ -131,6 +155,7 @@ def run_from_requests(
 
 
 def run_from_list(source_kind: str, list_path: str, out_dir: str, **kw) -> Dict[str, int]:
+    _require_list(list_path)
     if source_kind == "mixed":
         requests = load_mixed_manual_requests(list_path)
     elif source_kind == "si":
@@ -413,6 +438,8 @@ def run_overlay_from_lists(
     default) it also brings in each listed cell's cross-sort twin even when that
     twin isn't listed — the fuller "all cells" view.
     """
+    _require_list(mixed_list_path)
+    _require_list(si_list_path)
     mixed_reqs = load_mixed_manual_requests(mixed_list_path)
     si_reqs = load_si_sorted_requests(si_list_path)
 
