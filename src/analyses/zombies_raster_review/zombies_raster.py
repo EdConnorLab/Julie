@@ -575,9 +575,21 @@ def _draw_info_panel(ax, labels, colors, footprints_by_label, *, best_coincidenc
     """
     ax.axis("off")
     footprints_by_label = footprints_by_label or {}
+    # best cross-lane footprint cosine similarity (same-neuron evidence), if ≥2
+    fp_sim = None
+    present = [fp for fp in (footprints_by_label.get(l) for l in labels) if fp is not None]
+    if len(present) >= 2:
+        from spikesorting.cross_channel_analysis.waveforms import footprint_similarity
+        sims = [footprint_similarity(present[i], present[j])
+                for i in range(len(present)) for j in range(i + 1, len(present))]
+        fp_sim = max(sims) if sims else None
+
     rows = []  # (text, color, fontsize, weight)
     if best_coincidence is not None:
         rows.append((f"best coincidence  {best_coincidence:.2f}", "0.1", 8.5, "bold"))
+    if fp_sim is not None:
+        rows.append((f"footprint sim  {fp_sim:.2f}", "0.1", 8.5, "bold"))
+    if rows:
         rows.append(("", "0.1", 4, "normal"))            # spacer
     for lab in labels:
         rows.append((lab, colors.get(lab, "0.2"), 8, "bold"))

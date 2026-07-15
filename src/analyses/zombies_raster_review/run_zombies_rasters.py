@@ -279,6 +279,7 @@ def render_overlays_for_units(
     window_ms: float = DEFAULT_WINDOW_MS,
     coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
+    footprint_similarity_threshold: float = 0.0,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
     a_prefix: str = "manual: ",
@@ -301,6 +302,12 @@ def render_overlays_for_units(
     vs SI overlay); pass e.g. ``"grant: "`` / ``"MUA-ANOVA: "`` for other pairs.
     ``units_mixed`` / ``mixed_anchor_windows`` are side A, ``units_si`` /
     ``si_anchor_windows`` side B — the ``mixed``/``si`` names are historical.
+
+    ``footprint_similarity_threshold`` (0 = off) additionally requires a matched
+    pair's cross-channel waveform footprints to be at least this cosine-similar
+    before it is drawn — a stricter "same neuron" gate on top of spike-time
+    coincidence. Only applied when footprints are available; a pair missing a
+    footprint on either side is kept (coincidence already gated it).
     """
     os.makedirs(out_dir, exist_ok=True)
     mixed_anchor_windows = mixed_anchor_windows or {}
@@ -316,6 +323,21 @@ def render_overlays_for_units(
         units_mixed, units_si, window_ms=window_ms,
         coincidence_threshold=coincidence_threshold, ratio_threshold=ratio_threshold,
     )
+    # optional same-neuron gate: drop coincident pairs whose waveform footprints
+    # are too dissimilar (different cells that merely fire together).
+    if footprint_similarity_threshold > 0 and footprints_by_id:
+        from spikesorting.cross_channel_analysis.waveforms import footprint_similarity
+        kept = []
+        for m in matches:
+            fa, fb = footprints_by_id.get(m.mixed_id), footprints_by_id.get(m.si_id)
+            if fa is None or fb is None:
+                kept.append(m)                       # can't gate without both
+            elif footprint_similarity(fa, fb) >= footprint_similarity_threshold:
+                kept.append(m)
+        if len(kept) != len(matches):
+            print(f"[overlay {label}] footprint gate (≥{footprint_similarity_threshold}): "
+                  f"kept {len(kept)}/{len(matches)} coincident pair(s)")
+        matches = kept
     groups = group_matches(matches)
 
     written: List[str] = []
