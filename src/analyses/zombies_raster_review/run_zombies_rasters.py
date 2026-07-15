@@ -211,12 +211,18 @@ def _lane_label(prefix: str, uid: str) -> str:
     ``"grant: "``, ``"MUA-ANOVA: "``); the tail is the cell/unit token shared
     across sorts, so the same neuron reads consistently in every panel.
 
-    A ``" (MU)"`` marker is appended for **multiunit** cells — an unsorted
-    whole-channel cell (no ``_Unit`` in its id) or any threshold-MUA channel — so
-    the legend/probe/footprint make clear it is not a single sorted unit.
+    Whole-channel cells (no ``_Unit`` in the id) are tagged so they don't read as
+    single sorted units: ``" (MU)"`` for a threshold-MUA channel (genuinely
+    multiunit — detected from an ``MUA`` prefix), else ``" (unsorted)"`` (e.g. a
+    grant whole-channel cell that was simply never spike-sorted).
     """
     tail = str(uid).split("Channel.")[-1]
-    suffix = "" if "_Unit" in tail else " (MU)"
+    if "_Unit" in tail:
+        suffix = ""
+    elif "MUA" in prefix.upper():
+        suffix = " (MU)"
+    else:
+        suffix = " (unsorted)"
     return f"{prefix}{tail}{suffix}"
 
 

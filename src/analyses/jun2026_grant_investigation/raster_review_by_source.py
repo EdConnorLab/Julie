@@ -245,14 +245,18 @@ def run_singles(
                 {lab: rr[1] for lab, rr in resolved.items()}, date, round_no)
 
         for label, (req, rows) in resolved.items():
-            is_mu = "_Unit" not in req.match_value      # unsorted whole-channel = multiunit
-            status = "multiunit" if is_mu else "sorted unit"
+            if "_Unit" in req.match_value:
+                status, tag = "sorted unit", "SU"
+            elif source_key.startswith("cache_mua"):
+                status, tag = "multiunit (MUA)", "MUA"    # threshold-MUA channel
+            else:
+                status, tag = "unsorted", "unsorted"      # whole-channel, never sorted
             title = f"{source_key}  ·  {req.label}  ·  {status}"
             if req.p_value is not None:
                 title += f"   ·   p={req.p_value:.3g}"
             save_path = os.path.join(
                 out_dir,
-                f"{source_key}_{_safe(_cell_token(req.match_value))}_{'MU' if is_mu else 'SU'}.png")
+                f"{source_key}_{_safe(_cell_token(req.match_value))}_{tag}.png")
             fig = plot_overlay_raster(
                 {label: rows},
                 title=title,

@@ -165,21 +165,43 @@ def _shade_windows(ax, windows, *, alpha: float = 0.22):
                    alpha=alpha, zorder=1)
 
 
-def _annotate_windows(ax, windows):
-    """List each shaded window in the margin ABOVE the raster (below the title),
+def _annotate_windows(ax, windows) -> int:
+    """List the shaded window(s) in the margin ABOVE the raster (below the title),
     left-aligned and coloured by source list, so the labels never cover the
-    spikes. One row per window (a cell can carry several); the shaded band still
-    marks where in time the window sits."""
-    order = sorted(range(len(windows)), key=lambda k: windows[k][0])
-    for row, idx in enumerate(order):
-        lo, hi, src, label = windows[idx]
+    spikes. Windows are consolidated to ONE row per (source, cell) — a cell with
+    several significant windows lists them on one line — so many-window groups
+    don't stack into the title. Capped with a "+N more" row. The shaded bands
+    still mark every window's time. Returns the number of rows drawn (for pad)."""
+    from collections import OrderedDict
+    groups: "OrderedDict[tuple, list]" = OrderedDict()
+    for lo, hi, src, label in sorted(windows, key=lambda w: (str(w[2] or ""),
+                                                             str(w[3] or ""), w[0])):
+        groups.setdefault((src, label), []).append((lo, hi))
+
+    items = list(groups.items())
+    MAX_ROWS = 5
+    overflow = 0
+    if len(items) > MAX_ROWS:
+        overflow = len(items) - (MAX_ROWS - 1)
+        items = items[:MAX_ROWS - 1]
+
+    row = 0
+    for (src, label), ranges in items:
         color = _WINDOW_SRC_COLORS.get(src, "#F2C94C")
         head = f"{src} {label}  " if src else ""
-        ax.text(0.0, 1.015 + row * 0.075,
-                f"{head}{lo * 1000:.0f}–{hi * 1000:.0f} ms",
+        ranges_txt = ", ".join(f"{lo * 1000:.0f}–{hi * 1000:.0f}"
+                               for lo, hi in sorted(ranges)) + " ms"
+        ax.text(0.0, 1.015 + row * 0.075, f"{head}{ranges_txt}",
                 transform=ax.transAxes, ha="left", va="bottom",
                 fontsize=7.5, color="0.1", clip_on=False,
                 bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=color, lw=1.1, alpha=0.95))
+        row += 1
+    if overflow:
+        ax.text(0.0, 1.015 + row * 0.075, f"+{overflow} more cell(s) with windows",
+                transform=ax.transAxes, ha="left", va="bottom",
+                fontsize=7, color="0.4", clip_on=False)
+        row += 1
+    return row
 
 
 def plot_zombies_raster(
@@ -345,15 +367,13 @@ def _draw_probe_map(ax, unit_dfs, colors, pair_coincidences=None):
         ax.text(x0 + x_step * (len(units) - 1) + 0.22, depth, units[0][1],
                 va="center", ha="left", fontsize=7, color="0.25", clip_on=False)
 
-    # per-pair coincidence: a line between the two units' markers, labelled
-    for la, lb, coinc in (pair_coincidences or []):
+    # per-pair link: a line between the two units' markers. The coincidence VALUE
+    # is listed in the info panel instead of here — when units cluster on one or
+    # two contacts (the common case) the on-probe labels overlapped illegibly.
+    for la, lb, _coinc in (pair_coincidences or []):
         if la in pos and lb in pos:
             (xa, da), (xb, db) = pos[la], pos[lb]
             ax.plot([xa, xb], [da, db], color="0.45", lw=0.9, zorder=2)
-            ax.text((xa + xb) / 2 + 0.06, (da + db) / 2, f"{coinc:.2f}",
-                    fontsize=6.5, ha="left", va="center", color="0.1", zorder=4,
-                    bbox=dict(boxstyle="round,pad=0.12", fc="white", ec="0.55",
-                              lw=0.3, alpha=0.92))
 
     ax.set_xlim(-0.25, 1.4)
     ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
@@ -425,7 +445,7 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
     amp = 0.6 * pitch  # a full-scale (normalised = 1) deflection spans ~0.6 contacts
 
     drawn_contacts = set()
-    any_mu = False
+    dashed_kinds = set()          # "unsorted" / "MUA" — for the panel note
     for label, fp in (footprints_by_label or {}).items():
         if fp is None:
             continue
@@ -444,7 +464,8 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
         # over mixed units on the channel, not one neuron — draw them dashed so
         # they read as a caveated, not a clean single-unit, waveform.
         is_mu = "_Unit" not in label
-        any_mu = any_mu or is_mu
+        if is_mu:
+            dashed_kinds.add("MUA" if "(MU)" in label else "unsorted")
         line_style = (0, (3, 1.5)) if is_mu else "solid"
         # centre the window: named channel, or the actual peak contact
         p2p = w.max(axis=1) - w.min(axis=1)
@@ -481,8 +502,8 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
         ax.set_yticks([])
     tag = "peak" if center_on == "peak" else "named ch"
     title = f"footprint\n(norm., ±{n_contacts} ch @ {tag})"
-    if any_mu:
-        title += "\ndashed = multiunit"
+    if dashed_kinds:
+        title += "\ndashed = " + " / ".join(sorted(dashed_kinds))
     ax.set_title(title, fontsize=9)
     if not drawn_contacts:
         ax.text(0.5, 0.5, "waveforms\nunavailable", transform=ax.transAxes,
@@ -565,7 +586,8 @@ def _unit_wave_stats(fp):
     return str(fp.peak_channel), float(p2p[pk]), width_ms
 
 
-def _draw_info_panel(ax, labels, colors, footprints_by_label, *, best_coincidence=None):
+def _draw_info_panel(ax, labels, colors, footprints_by_label, *, best_coincidence=None,
+                     pair_coincidences=None):
     """Legend + per-unit stats in the space under the peak-waveform panel.
 
     Moves the lane legend off the raster (it used to overlap the spikes) and adds,
@@ -600,6 +622,17 @@ def _draw_info_panel(ax, labels, colors, footprints_by_label, *, best_coincidenc
             rows.append((f"    {ch} · {amp:.0f} µV · {width_txt}", "0.4", 7, "normal"))
         else:
             rows.append(("    waveform n/a", "0.55", 7, "italic"))
+    # per-pair coincidences (moved off the probe map, where they overlapped)
+    if pair_coincidences:
+        def _tok(l):
+            return str(l).split(":")[-1].strip().split(" (")[0]
+        ranked = sorted(pair_coincidences, key=lambda p: -p[2])
+        rows.append(("", "0.1", 4, "normal"))                # spacer
+        rows.append(("matched pairs (coincidence)", "0.2", 7, "bold"))
+        for la, lb, c in ranked[:8]:
+            rows.append((f"    {_tok(la)} ↔ {_tok(lb)}  {c:.2f}", "0.45", 6.5, "normal"))
+        if len(ranked) > 8:
+            rows.append((f"    …and {len(ranked) - 8} more", "0.55", 6.5, "italic"))
     if not rows:
         return
     # start below the top so the first line clears the peak panel's "time (ms)"
@@ -770,7 +803,7 @@ def plot_overlay_raster(
 
     ax.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7)
     _shade_windows(ax, windows, alpha=0.25)
-    _annotate_windows(ax, windows)
+    n_win_rows = _annotate_windows(ax, windows)
     ax.set_ylim(-0.5, total_rows - 0.5)
     ax.set_xlim(0, xlim)
     ax.invert_yaxis()
@@ -780,8 +813,8 @@ def plot_overlay_raster(
     ax.tick_params(labelbottom=False)
     for s in ("top", "right", "left"):
         ax.spines[s].set_visible(False)
-    # extra top pad so the window callout(s) fit between the title and the raster
-    ax.set_title(title, fontsize=11, loc="left", pad=16 + 15 * max(1, len(windows)))
+    # extra top pad so the window callout row(s) fit between the title and raster
+    ax.set_title(title, fontsize=11, loc="left", pad=20 + 30 * max(1, n_win_rows))
 
     # legend for the sorts — only in-raster when there's no info panel to hold it
     # (the info panel version doesn't overlap the spikes).
@@ -817,7 +850,8 @@ def plot_overlay_raster(
     if ax_info is not None:
         best_coinc = max((c for *_, c in pair_coincidences), default=None) \
             if pair_coincidences else None
-        _draw_info_panel(ax_info, labels, colors, footprints, best_coincidence=best_coinc)
+        _draw_info_panel(ax_info, labels, colors, footprints, best_coincidence=best_coinc,
+                         pair_coincidences=pair_coincidences)
 
     _save_or_keep(fig, save_path)
     return fig
