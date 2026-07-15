@@ -166,23 +166,20 @@ def _shade_windows(ax, windows, *, alpha: float = 0.22):
 
 
 def _annotate_windows(ax, windows):
-    """Callout each window at the top of ``ax``, coloured by its source list.
-
-    Callouts are staggered by left-edge order so several windows (e.g. one from
-    the mixed list and one from the SI list, or a cell with multiple windows) do
-    not stack on the same line. Each says which list it came from and its ms
-    extent; the outline colour also encodes the source.
-    """
-    y_levels = [0.985, 0.90, 0.815, 0.73]
-    for rank, idx in enumerate(sorted(range(len(windows)), key=lambda k: windows[k][0])):
+    """List each shaded window in the margin ABOVE the raster (below the title),
+    left-aligned and coloured by source list, so the labels never cover the
+    spikes. One row per window (a cell can carry several); the shaded band still
+    marks where in time the window sits."""
+    order = sorted(range(len(windows)), key=lambda k: windows[k][0])
+    for row, idx in enumerate(order):
         lo, hi, src, label = windows[idx]
         color = _WINDOW_SRC_COLORS.get(src, "#F2C94C")
-        head = f"{src} {label}\n" if src else ""
-        ax.text((lo + hi) / 2.0, y_levels[rank % len(y_levels)],
+        head = f"{src} {label}  " if src else ""
+        ax.text(0.0, 1.015 + row * 0.075,
                 f"{head}{lo * 1000:.0f}–{hi * 1000:.0f} ms",
-                transform=ax.get_xaxis_transform(), ha="center", va="top",
-                fontsize=7, color="0.1", clip_on=False,
-                bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=color, lw=1.1, alpha=0.92))
+                transform=ax.transAxes, ha="left", va="bottom",
+                fontsize=7.5, color="0.1", clip_on=False,
+                bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=color, lw=1.1, alpha=0.95))
 
 
 def plot_zombies_raster(
@@ -676,9 +673,9 @@ def plot_overlay_raster(
 
     ax_probe = ax_wave = ax_peak = ax_info = None
     if show_probe and footprints is not None:
-        fig = plt.figure(figsize=(14.5, 9))
-        gs = GridSpec(2, 4, width_ratios=[5.0, 1.0, 1.5, 1.7], height_ratios=[3.2, 1.0],
-                      hspace=0.08, wspace=0.13, figure=fig)
+        fig = plt.figure(figsize=(15.5, 9))
+        gs = GridSpec(2, 4, width_ratios=[4.8, 1.15, 1.5, 1.7], height_ratios=[3.2, 1.0],
+                      hspace=0.08, wspace=0.32, figure=fig)
         ax = fig.add_subplot(gs[0, 0])
         ax_psth = fig.add_subplot(gs[1, 0], sharex=ax)
         ax_probe = fig.add_subplot(gs[:, 1])
@@ -771,7 +768,8 @@ def plot_overlay_raster(
     ax.tick_params(labelbottom=False)
     for s in ("top", "right", "left"):
         ax.spines[s].set_visible(False)
-    ax.set_title(title, fontsize=11, loc="left")
+    # extra top pad so the window callout(s) fit between the title and the raster
+    ax.set_title(title, fontsize=11, loc="left", pad=16 + 15 * max(1, len(windows)))
 
     # legend for the sorts — only in-raster when there's no info panel to hold it
     # (the info panel version doesn't overlap the spikes).
