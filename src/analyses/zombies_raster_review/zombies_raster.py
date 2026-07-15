@@ -246,11 +246,9 @@ def plot_zombies_raster(
                      colors="black", linewidths=0.9, linelengths=0.9)
         center = y + n / 2 - 0.5
         tick_pos.append(center)
-        tick_labels.append(str(m.monkey))
-        # rank number on the right edge (axes-fraction x, data-coord y)
-        rank_txt = f"#{m.rank}" if m.rank else "unranked"
-        ax.text(1.01, center, rank_txt, transform=ax.get_yaxis_transform(),
-                ha="left", va="center", fontsize=8, color="0.4", clip_on=False)
+        # monkeys are already in rank order top→bottom, so label with the trial
+        # count (raster rows) rather than a redundant rank number.
+        tick_labels.append(f"{m.monkey}   {n} tr")
         all_trials.extend(m.trials)
         y += n
 
@@ -564,12 +562,42 @@ def _draw_peak_waveforms(ax, footprints_by_label, colors):
               handlelength=1.2, title="peak ch", title_fontsize=6)
 
 
-def _unit_wave_stats(fp):
-    """``(peak_channel, peak-to-peak µV, trough-to-peak width ms)`` for a footprint.
+def _trough_to_peak_ms(wave, sr):
+    """Trough-to-peak width (ms), but ONLY for a biphasic, negative-going spike
+    with a clear positive rebound after the trough; otherwise ``None``.
 
-    Amplitude is peak-to-peak on the unit's peak channel; width is the time from
-    the waveform trough to the following positive peak (the standard narrow-vs-
-    broad spike measure). Returns ``None`` when the footprint is missing/empty.
+    The trough-to-peak time is only meaningful for that canonical shape, so it is
+    gated: the trough must be an interior minimum AND the dominant excursion
+    (negative-going), and the post-trough maximum must be an interior peak the
+    waveform actually turns back down from AND rises above baseline. A monophasic
+    or positive-going waveform (or one still rising at the window edge) returns
+    ``None`` rather than an edge-pinned, meaningless number.
+    """
+    wave = np.asarray(wave, dtype=float)
+    n = wave.size
+    if n < 3:
+        return None
+    trough = int(np.argmin(wave))
+    if not (0 < trough < n - 1):                  # a real, interior trough
+        return None
+    if abs(wave[trough]) < wave.max():            # the negative deflection must dominate
+        return None
+    seg = wave[trough:]
+    pk_rel = int(np.argmax(seg))
+    if pk_rel == 0 or pk_rel == seg.size - 1:     # no interior rebound peak captured
+        return None
+    if wave[trough + pk_rel] <= 0:                # rebound must rise above baseline
+        return None
+    return pk_rel / sr * 1000.0
+
+
+def _unit_wave_stats(fp):
+    """``(peak_channel, peak-to-peak µV, trough-to-peak width ms | None)``.
+
+    Amplitude is peak-to-peak on the unit's peak channel. Width is the trough-to-
+    peak time, returned only for a clean biphasic negative spike (see
+    :func:`_trough_to_peak_ms`) and ``None`` otherwise. Whole result is ``None``
+    when the footprint is missing/empty.
     """
     if fp is None:
         return None
@@ -578,11 +606,8 @@ def _unit_wave_stats(fp):
         return None
     p2p = w.max(axis=1) - w.min(axis=1)
     pk = int(np.argmax(p2p))
-    wave = w[pk]
     sr = getattr(fp, "sample_rate", None) or _FALLBACK_SAMPLE_RATE
-    trough = int(np.argmin(wave))
-    seg = wave[trough:]
-    width_ms = (int(np.argmax(seg)) / sr * 1000.0) if seg.size > 1 else float("nan")
+    width_ms = _trough_to_peak_ms(w[pk], sr)       # None unless a clean biphasic spike
     return str(fp.peak_channel), float(p2p[pk]), width_ms
 
 
@@ -618,7 +643,7 @@ def _draw_info_panel(ax, labels, colors, footprints_by_label, *, best_coincidenc
         st = _unit_wave_stats(footprints_by_label.get(lab))
         if st:
             ch, amp, width = st
-            width_txt = f"{width:.2f} ms" if np.isfinite(width) else "– ms"
+            width_txt = f"{width:.2f} ms" if (width is not None and np.isfinite(width)) else "– ms"
             rows.append((f"    {ch} · {amp:.0f} µV · {width_txt}", "0.4", 7, "normal"))
         else:
             rows.append(("    waveform n/a", "0.55", 7, "italic"))
@@ -791,8 +816,9 @@ def plot_overlay_raster(
                 psth_trials[lab].append(sp)
 
         tick_pos.append(y + n_rows / 2 - 0.5)
-        rank = rank_by_monkey[monkey]
-        tick_labels.append(f"{monkey}" + (f"  #{rank}" if rank else ""))
+        # monkeys are already in rank order top→bottom, so show the trial count
+        # (raster rows) for each instead of a redundant rank number.
+        tick_labels.append(f"{monkey}   {n_rows} tr")
         y += n_rows
 
     total_rows = y
