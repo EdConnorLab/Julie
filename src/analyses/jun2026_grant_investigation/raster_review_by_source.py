@@ -81,7 +81,7 @@ if _SRC not in sys.path:
 from data_access.spike_source import MixedManualSpikeSource                    # noqa: E402
 from analyses.zombies_raster_review.zombies_raster import plot_overlay_raster  # noqa: E402
 from analyses.zombies_raster_review.run_zombies_rasters import (               # noqa: E402
-    _select_unit_rows, _cell_token, render_overlays_for_units,
+    _select_unit_rows, _cell_token, _lane_label, render_overlays_for_units,
 )
 from analyses.zombies_raster_review.unit_lists import (                        # noqa: E402
     RasterRequest, load_mixed_manual_requests, dedup_by_unit,
@@ -236,7 +236,7 @@ def run_singles(
                 print(f"[{req.label}] no matching rows in session")
                 stats["skipped_no_rows"] += 1
                 continue
-            resolved[spec.prefix + _cell_token(req.match_value)] = (req, rows)
+            resolved[_lane_label(spec.prefix, req.match_value)] = (req, rows)
 
         # footprints for the whole session's units, cut once from the recording
         footprints: dict = {}
@@ -245,10 +245,14 @@ def run_singles(
                 {lab: rr[1] for lab, rr in resolved.items()}, date, round_no)
 
         for label, (req, rows) in resolved.items():
-            title = f"{source_key}  ·  {req.label}"
+            is_mu = "_Unit" not in req.match_value      # unsorted whole-channel = multiunit
+            status = "multiunit" if is_mu else "sorted unit"
+            title = f"{source_key}  ·  {req.label}  ·  {status}"
             if req.p_value is not None:
                 title += f"   ·   p={req.p_value:.3g}"
-            save_path = os.path.join(out_dir, f"{source_key}_{_safe(label)}.png")
+            save_path = os.path.join(
+                out_dir,
+                f"{source_key}_{_safe(_cell_token(req.match_value))}_{'MU' if is_mu else 'SU'}.png")
             fig = plot_overlay_raster(
                 {label: rows},
                 title=title,

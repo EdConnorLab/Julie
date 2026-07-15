@@ -402,7 +402,7 @@ def _channel_name_of_contact(geom, ci: int) -> str:
 
 def _named_contact_of_label(geom, label: str):
     """Contact index of the channel named in a lane label (``"SI: C_002…"``→C_002)."""
-    tok = label.split(":")[-1].strip().split("_Unit")[0].strip()
+    tok = label.split(":")[-1].strip().split("_Unit")[0].split("(MU)")[0].strip()
     return geom.contact_index_of(tok)
 
 
@@ -428,6 +428,7 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
     amp = 0.6 * pitch  # a full-scale (normalised = 1) deflection spans ~0.6 contacts
 
     drawn_contacts = set()
+    any_mu = False
     for label, fp in (footprints_by_label or {}).items():
         if fp is None:
             continue
@@ -442,6 +443,12 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
         mapped = [r for r, ci in enumerate(contacts) if ci is not None]
         if not mapped:
             continue
+        # multiunit (unsorted whole-channel / threshold-MUA) footprints average
+        # over mixed units on the channel, not one neuron — draw them dashed so
+        # they read as a caveated, not a clean single-unit, waveform.
+        is_mu = "_Unit" not in label
+        any_mu = any_mu or is_mu
+        line_style = (0, (3, 1.5)) if is_mu else "solid"
         # centre the window: named channel, or the actual peak contact
         p2p = w.max(axis=1) - w.min(axis=1)
         peak_ci = contacts[max(mapped, key=lambda r: p2p[r])]
@@ -456,7 +463,8 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
             depth = ci * pitch
             # +w so a negative-going spike still deflects downward now that the
             # axis is no longer inverted (contact 0 = tip at the bottom).
-            ax.plot(xs, depth + w[row] * amp, color=color, lw=0.7, alpha=0.85, zorder=3)
+            ax.plot(xs, depth + w[row] * amp, color=color, lw=0.7, alpha=0.85,
+                    linestyle=line_style, zorder=3)
             drawn_contacts.add(ci)
 
     ax.set_xlim(0, 1)
@@ -475,7 +483,10 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
     else:
         ax.set_yticks([])
     tag = "peak" if center_on == "peak" else "named ch"
-    ax.set_title(f"footprint\n(norm., ±{n_contacts} ch @ {tag})", fontsize=9)
+    title = f"footprint\n(norm., ±{n_contacts} ch @ {tag})"
+    if any_mu:
+        title += "\ndashed = multiunit"
+    ax.set_title(title, fontsize=9)
     if not drawn_contacts:
         ax.text(0.5, 0.5, "waveforms\nunavailable", transform=ax.transAxes,
                 ha="center", va="center", fontsize=8, color="0.55")

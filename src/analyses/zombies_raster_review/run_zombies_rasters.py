@@ -210,8 +210,14 @@ def _lane_label(prefix: str, uid: str) -> str:
     The lane prefix names the *source* (e.g. ``"manual: "``, ``"SI: "``,
     ``"grant: "``, ``"MUA-ANOVA: "``); the tail is the cell/unit token shared
     across sorts, so the same neuron reads consistently in every panel.
+
+    A ``" (MU)"`` marker is appended for **multiunit** cells — an unsorted
+    whole-channel cell (no ``_Unit`` in its id) or any threshold-MUA channel — so
+    the legend/probe/footprint make clear it is not a single sorted unit.
     """
-    return f"{prefix}{str(uid).split('Channel.')[-1]}"
+    tail = str(uid).split("Channel.")[-1]
+    suffix = "" if "_Unit" in tail else " (MU)"
+    return f"{prefix}{tail}{suffix}"
 
 
 def _short_mixed_label(cell_id: str) -> str:
