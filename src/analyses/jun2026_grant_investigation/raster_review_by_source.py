@@ -34,7 +34,9 @@ times, so they cannot be plotted directly).
   rows, to match what ``replicate_analysis`` (``NCELLS=74``) regresses.
 * **cache_kw / cache_anova** — cells from the
   ``si_sorted_..._significant_windows_p{KW,ANOVA}_passed.pkl`` files; spike times
-  from **sorted_spike_cache** via ``SISortedSpikeSource()``.
+  from **sorted_spike_cache_filtered** via
+  ``SISortedSpikeSource(cache_subdir="sorted_spike_cache_filtered", pre_filtered)``
+  (``spike_count_connector._si_sorted_source``).
 * **cache_mua_kw / cache_mua_anova** — cells from the
   ``threshold_mua_..._significant_windows_p{KW,ANOVA}_passed.pkl`` files; spike
   times from **threshold_mua_spike_cache** via
@@ -76,7 +78,7 @@ _SRC = os.path.abspath(os.path.join(_HERE, "..", ".."))            # .../Julie/s
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from data_access.spike_source import MixedManualSpikeSource, SISortedSpikeSource  # noqa: E402
+from data_access.spike_source import MixedManualSpikeSource                    # noqa: E402
 from analyses.zombies_raster_review.zombies_raster import plot_overlay_raster  # noqa: E402
 from analyses.zombies_raster_review.run_zombies_rasters import (               # noqa: E402
     _select_unit_rows, _cell_token, render_overlays_for_units,
@@ -152,12 +154,12 @@ SOURCES: Dict[str, SourceSpec] = {
     ),
     "cache_kw": SourceSpec(
         "cache_kw", "KW: ", "NeuronID",
-        lambda: SISortedSpikeSource(),          # spikes from sorted_spike_cache
+        scc._si_sorted_source,                  # spikes from sorted_spike_cache_filtered
         lambda: _cache_requests("KW", "cache_kw"),
     ),
     "cache_anova": SourceSpec(
         "cache_anova", "ANOVA: ", "NeuronID",
-        lambda: SISortedSpikeSource(),          # spikes from sorted_spike_cache
+        scc._si_sorted_source,                  # spikes from sorted_spike_cache_filtered
         lambda: _cache_requests("ANOVA", "cache_anova"),
     ),
     "cache_mua_kw": SourceSpec(
