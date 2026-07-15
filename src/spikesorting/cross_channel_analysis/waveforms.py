@@ -81,6 +81,7 @@ class Footprint:
     waveforms: np.ndarray               # (n_channels, 2*radius)
     peak_channel: str
     peak_amplitude: float               # peak-to-peak on the peak channel
+    sample_rate: Optional[float] = None  # Hz, so a real time axis can be labelled
 
 
 def compute_footprint(
@@ -90,6 +91,7 @@ def compute_footprint(
     *,
     radius: int = DEFAULT_RADIUS,
     max_spikes: int = 500,
+    sample_rate: Optional[float] = None,
 ) -> Footprint:
     """Average this unit's spikes across *all* channels to get its footprint.
 
@@ -109,7 +111,8 @@ def compute_footprint(
     p2p = waveforms.max(axis=1) - waveforms.min(axis=1)
     peak_i = int(np.argmax(p2p))
     return Footprint(uid=uid, channels=channels, waveforms=waveforms,
-                     peak_channel=channels[peak_i], peak_amplitude=float(p2p[peak_i]))
+                     peak_channel=channels[peak_i], peak_amplitude=float(p2p[peak_i]),
+                     sample_rate=sample_rate)
 
 
 def footprint_similarity(fa: Footprint, fb: Footprint) -> float:

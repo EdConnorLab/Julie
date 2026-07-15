@@ -492,6 +492,60 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
                 ha="center", va="center", fontsize=8, color="0.55")
 
 
+# Fallback sample rate (Intan default) when a footprint carries none — used only
+# to label the time axis; the waveform shape itself is unaffected.
+_FALLBACK_SAMPLE_RATE = 30_000.0
+
+
+def _draw_peak_waveforms(ax, footprints_by_label, colors):
+    """Each unit's mean waveform on its own PEAK channel, on real axes.
+
+    The footprint panel is normalised (per unit) and spatial, so it can't show
+    how wide or how tall a spike actually is. This panel plots the single largest
+    (peak-channel) waveform per unit against real time (ms, from the recording's
+    sample rate) and amplitude (µV), triggered at t=0 — so spike width and height
+    are directly legible and comparable across sorts. Multiunit units are dashed.
+    """
+    any_drawn = False
+    handles = []
+    for label, fp in (footprints_by_label or {}).items():
+        if fp is None:
+            continue
+        w = np.asarray(fp.waveforms, dtype=float)
+        if w.size == 0:
+            continue
+        p2p = w.max(axis=1) - w.min(axis=1)
+        pk = int(np.argmax(p2p))            # the unit's biggest-amplitude channel
+        wave = w[pk]
+        n = wave.size
+        sr = getattr(fp, "sample_rate", None) or _FALLBACK_SAMPLE_RATE
+        t_ms = (np.arange(n) - n / 2.0) / sr * 1000.0   # t=0 at the spike trigger
+        is_mu = "_Unit" not in label
+        (line,) = ax.plot(t_ms, wave, color=colors.get(label, "0.3"), lw=1.1,
+                          linestyle=(0, (3, 1.5)) if is_mu else "solid",
+                          label=str(fp.peak_channel))
+        handles.append(line)
+        any_drawn = True
+
+    if not any_drawn:
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.text(0.5, 0.5, "waveforms\nunavailable", transform=ax.transAxes,
+                ha="center", va="center", fontsize=8, color="0.55")
+        ax.set_title("peak-ch waveform", fontsize=9)
+        return
+
+    ax.axvline(0, color="0.7", lw=0.6, ls=":", zorder=1)
+    ax.set_xlabel("time (ms)", fontsize=8)
+    ax.set_ylabel("amplitude (µV)", fontsize=8)
+    ax.set_title("peak-channel\nwaveform", fontsize=9)
+    ax.tick_params(labelsize=6.5)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.legend(handles=handles, fontsize=6, loc="lower right", framealpha=0.85,
+              handlelength=1.2, title="peak ch", title_fontsize=6)
+
+
 # --------------------------------------------------------------------------- #
 # Overlay mode — compare two sorts of the same channel on one raster
 # --------------------------------------------------------------------------- #
@@ -561,15 +615,16 @@ def plot_overlay_raster(
         present.update(z["MonkeyName"].dropna().unique())
     ordered, rank_by_monkey = zombies_monkey_order(present)
 
-    ax_probe = ax_wave = None
+    ax_probe = ax_wave = ax_peak = None
     if show_probe and footprints is not None:
-        fig = plt.figure(figsize=(12.5, 9))
-        gs = GridSpec(2, 3, width_ratios=[5.2, 1.05, 1.5], height_ratios=[3.2, 1.0],
-                      hspace=0.08, wspace=0.10, figure=fig)
+        fig = plt.figure(figsize=(14.5, 9))
+        gs = GridSpec(2, 4, width_ratios=[5.0, 1.0, 1.5, 1.7], height_ratios=[3.2, 1.0],
+                      hspace=0.08, wspace=0.13, figure=fig)
         ax = fig.add_subplot(gs[0, 0])
         ax_psth = fig.add_subplot(gs[1, 0], sharex=ax)
         ax_probe = fig.add_subplot(gs[:, 1])
         ax_wave = fig.add_subplot(gs[:, 2])
+        ax_peak = fig.add_subplot(gs[:, 3])
     elif show_probe:
         fig = plt.figure(figsize=(11, 9))
         gs = GridSpec(2, 2, width_ratios=[5.5, 1.15], height_ratios=[3.2, 1.0],
@@ -680,6 +735,9 @@ def plot_overlay_raster(
     # --- footprint: each unit's normalised waveform along the probe ---
     if ax_wave is not None:
         _draw_footprints(ax_wave, footprints, colors)
+    # --- peak-channel waveform: real time (ms) & amplitude (µV) axes ---
+    if ax_peak is not None:
+        _draw_peak_waveforms(ax_peak, footprints, colors)
 
     _save_or_keep(fig, save_path)
     return fig

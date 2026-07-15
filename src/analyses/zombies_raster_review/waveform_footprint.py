@@ -86,7 +86,8 @@ def unit_footprint(
     idx = np.round(times * sample_rate).astype(np.int64)
     try:
         return compute_footprint(uid, idx, voltages_by_channel,
-                                 radius=radius, max_spikes=max_spikes)
+                                 radius=radius, max_spikes=max_spikes,
+                                 sample_rate=sample_rate)
     except Exception as e:  # bad channel keys, empty voltages, …
         print(f"[waveforms] footprint failed for {uid}: {e}")
         return None
