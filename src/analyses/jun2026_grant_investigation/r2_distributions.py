@@ -69,7 +69,8 @@ def load_lists():
     from spike_count_connector import load_data_from_cache  # heavy import (clat); lazy
 
     Xg, dfg = load_data(HIS_XLSX, ncells=GRANT_NCELLS)
-    mg = dfg.reset_index(drop=True)[['Cell']].copy()
+    keep = ['Cell'] + [c for c in ('Date', 'Round No.') if c in dfg.columns]
+    mg = dfg.reset_index(drop=True)[keep].copy()
 
     Xkw, mkw = load_data_from_cache('KW', value='count')
     Xan, man = load_data_from_cache('ANOVA', value='count')

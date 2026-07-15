@@ -15,8 +15,10 @@ Reuses the same loaders as r2_distributions.py:
   GRANT -> xlsx (common.load_data);  KW/ANOVA -> connector (analysis_cache).
 
 Run (PyCharm: hit Run). Outputs -> ./investigation_outputs/
-  linear_fits_<LIST>.png     grid of the top-N above-threshold fits
-  linear_fits_<LIST>.csv     their (cell, source, behavior, R^2, slope) table
+  linear_fits_<LIST>.png     grid of the top TOP_N above-threshold fits (session-
+                             qualified titles, e.g. 2023-09-29_1_C_025_U3)
+  linear_fits_<LIST>.csv     top CSV_TOP_N fits: list, full_name, cell, location,
+                             date, round, source, behavior, R^2
 """
 
 import os
@@ -35,19 +37,51 @@ from r2_distributions import ALL_BEH, BEH_NAMES, COLORS, OUTDIR, load_lists
 # =====================================================================
 LIST = 'all'                 # 'GRANT' | 'KW' | 'ANOVA' | 'all'
 THRESH = 0.50                # only plot fits with R^2 > THRESH
-TOP_N = 16                   # show the TOP_N highest-R^2 fits per list
+TOP_N = 16                   # how many highest-R^2 fits to PLOT per list
+CSV_TOP_N = 30               # how many highest-R^2 fits to write to the CSV per list
 SOURCES = 'allocentric'      # 'allocentric' (drop 81G as a source) | 'all'
 BEHAVIORS = 'all'            # 'all' (6) or a list of indices into BEH_NAMES
 NCOLS = 4                    # grid columns
 # =====================================================================
 
 
-def _short_cell(nid):
-    """AMG_2023-09-26_2_Channel.C_003_Unit 3 -> C_003_U3 (fallback: last token)."""
-    s = str(nid)
+def _short_channel(cell):
+    """Channel.C_003_Unit 3 -> C_003_U3."""
+    s = str(cell)
     if 'Channel.' in s:
         s = s.split('Channel.', 1)[1]
     return s.replace('Unit ', 'U').replace(' ', '')
+
+
+def _fmt_date(v):
+    try:
+        return pd.to_datetime(v).strftime('%Y-%m-%d')
+    except Exception:
+        return str(v)
+
+
+def _session_info(lab, row):
+    """Return (location, date, round, full_name) for one cell.
+
+    GRANT: from the xlsx 'Cell'/'Date'/'Round No.' columns (no location available).
+    KW/ANOVA: parsed from the NeuronID 'LOC_DATE_ROUND_Channel.C_xxx_Unit y'.
+    full_name is a session-qualified label, e.g. 2023-09-29_1_C_025_U3 (GRANT) or
+    AMG_2023-09-29_1_C_025_U3 (KW/ANOVA)."""
+    cell = str(row['Cell'])
+    if lab == 'GRANT':
+        date = _fmt_date(row['Date']) if 'Date' in row else ''
+        rnd = row['Round No.'] if 'Round No.' in row else ''
+        try:
+            rnd = str(int(rnd))
+        except (ValueError, TypeError):
+            rnd = str(rnd)
+        full = '_'.join(p for p in (date, rnd, _short_channel(cell)) if p)
+        return '', date, rnd, full
+    parts = cell.split('_', 3)                       # LOC, DATE, ROUND, Channel.C_xxx_Unit y
+    if len(parts) == 4:
+        loc, date, rnd, chan = parts
+        return loc, date, rnd, f"{loc}_{date}_{rnd}_{_short_channel(chan)}"
+    return '', '', '', _short_channel(cell)
 
 
 def collect_fits(lab, X, meta):
@@ -65,8 +99,11 @@ def collect_fits(lab, X, meta):
             y = np.array([ALL_BEH[ib][s, f] for f in fulls], float)
             r2 = vec_r2(Xs, y)
             for ci in range(X.shape[0]):
+                row = meta.iloc[ci]
+                loc, date, rnd, full = _session_info(lab, row)
                 fits.append(dict(
-                    list=lab, cell=str(meta.iloc[ci]['Cell']), source=MONKEY_NAME[s],
+                    list=lab, cell=str(row['Cell']), location=loc, date=date, round=rnd,
+                    full_name=full, source=MONKEY_NAME[s],
                     behavior=BEH_NAMES[ib], r2=float(r2[ci]),
                     x=Xs[ci].astype(float).copy(), y=y.copy(), sinks=sinks,
                 ))
@@ -95,8 +132,8 @@ def plot_grid(fits, lab):
         for xi, yi, nm in zip(x, y, f['sinks']):
             ax.annotate(nm, (xi, yi), fontsize=6, alpha=0.7,
                         xytext=(2, 2), textcoords='offset points')
-        ax.set_title(f"{_short_cell(f['cell'])}\n{f['source']}·{f['behavior']}  R²={f['r2']:.2f}",
-                     fontsize=7.5)
+        ax.set_title(f"{f['full_name']}\n{f['source']}·{f['behavior']}  R²={f['r2']:.2f}",
+                     fontsize=7)
         ax.tick_params(labelsize=6)
     for ax in axes[n:]:
         ax.axis('off')
@@ -120,14 +157,16 @@ def main():
             continue
         fits = [f for f in collect_fits(lab, X, meta) if f['r2'] > THRESH]
         fits.sort(key=lambda f: f['r2'], reverse=True)
-        print(f"{lab}: {len(fits)} fits > {THRESH}; showing top {min(TOP_N, len(fits))}")
-        top = fits[:TOP_N]
-        # save the selected fits' metadata (arrays dropped)
-        if top:
-            pd.DataFrame([{k: f[k] for k in ('list', 'cell', 'source', 'behavior', 'r2')}
-                          for f in top]).to_csv(
+        print(f"{lab}: {len(fits)} fits > {THRESH}; plotting top {min(TOP_N, len(fits))}, "
+              f"CSV top {min(CSV_TOP_N, len(fits))}")
+        # CSV: top CSV_TOP_N fits with full session-qualified identity (arrays dropped)
+        csv_rows = fits[:CSV_TOP_N]
+        if csv_rows:
+            cols = ('list', 'full_name', 'cell', 'location', 'date', 'round',
+                    'source', 'behavior', 'r2')
+            pd.DataFrame([{k: f[k] for k in cols} for f in csv_rows]).to_csv(
                 os.path.join(OUTDIR, f'linear_fits_{lab}.csv'), index=False)
-        plot_grid(top, lab)
+        plot_grid(fits[:TOP_N], lab)
     plt.show()
 
 
