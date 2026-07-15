@@ -624,7 +624,10 @@ def plot_overlay_raster(
         ax_psth = fig.add_subplot(gs[1, 0], sharex=ax)
         ax_probe = fig.add_subplot(gs[:, 1])
         ax_wave = fig.add_subplot(gs[:, 2])
-        ax_peak = fig.add_subplot(gs[:, 3])
+        # peak-waveform panel: only the TOP third of its column, so it reads
+        # roughly square instead of a full-height ribbon (the rest stays empty).
+        peak_col = gs[:, 3].subgridspec(3, 1, height_ratios=[1, 1, 1], hspace=0.0)
+        ax_peak = fig.add_subplot(peak_col[0])
     elif show_probe:
         fig = plt.figure(figsize=(11, 9))
         gs = GridSpec(2, 2, width_ratios=[5.5, 1.15], height_ratios=[3.2, 1.0],
