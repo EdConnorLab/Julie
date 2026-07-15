@@ -165,24 +165,43 @@ def _shade_windows(ax, windows, *, alpha: float = 0.22):
                    alpha=alpha, zorder=1)
 
 
-def _annotate_windows(ax, windows):
-    """Callout each window at the top of ``ax``, coloured by its source list.
+def _annotate_windows(ax, windows) -> int:
+    """List the shaded window(s) in the margin ABOVE the raster (below the title),
+    left-aligned and coloured by source list, so the labels never cover the
+    spikes. Windows are consolidated to ONE row per (source, cell) — a cell with
+    several significant windows lists them on one line — so many-window groups
+    don't stack into the title. Capped with a "+N more" row. The shaded bands
+    still mark every window's time. Returns the number of rows drawn (for pad)."""
+    from collections import OrderedDict
+    groups: "OrderedDict[tuple, list]" = OrderedDict()
+    for lo, hi, src, label in sorted(windows, key=lambda w: (str(w[2] or ""),
+                                                             str(w[3] or ""), w[0])):
+        groups.setdefault((src, label), []).append((lo, hi))
 
-    Callouts are staggered by left-edge order so several windows (e.g. one from
-    the mixed list and one from the SI list, or a cell with multiple windows) do
-    not stack on the same line. Each says which list it came from and its ms
-    extent; the outline colour also encodes the source.
-    """
-    y_levels = [0.985, 0.90, 0.815, 0.73]
-    for rank, idx in enumerate(sorted(range(len(windows)), key=lambda k: windows[k][0])):
-        lo, hi, src, label = windows[idx]
+    items = list(groups.items())
+    MAX_ROWS = 5
+    overflow = 0
+    if len(items) > MAX_ROWS:
+        overflow = len(items) - (MAX_ROWS - 1)
+        items = items[:MAX_ROWS - 1]
+
+    row = 0
+    for (src, label), ranges in items:
         color = _WINDOW_SRC_COLORS.get(src, "#F2C94C")
-        head = f"{src} {label}\n" if src else ""
-        ax.text((lo + hi) / 2.0, y_levels[rank % len(y_levels)],
-                f"{head}{lo * 1000:.0f}–{hi * 1000:.0f} ms",
-                transform=ax.get_xaxis_transform(), ha="center", va="top",
-                fontsize=7, color="0.1", clip_on=False,
-                bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=color, lw=1.1, alpha=0.92))
+        head = f"{src} {label}  " if src else ""
+        ranges_txt = ", ".join(f"{lo * 1000:.0f}–{hi * 1000:.0f}"
+                               for lo, hi in sorted(ranges)) + " ms"
+        ax.text(0.0, 1.015 + row * 0.075, f"{head}{ranges_txt}",
+                transform=ax.transAxes, ha="left", va="bottom",
+                fontsize=7.5, color="0.1", clip_on=False,
+                bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=color, lw=1.1, alpha=0.95))
+        row += 1
+    if overflow:
+        ax.text(0.0, 1.015 + row * 0.075, f"+{overflow} more cell(s) with windows",
+                transform=ax.transAxes, ha="left", va="bottom",
+                fontsize=7, color="0.4", clip_on=False)
+        row += 1
+    return row
 
 
 def plot_zombies_raster(
@@ -227,11 +246,9 @@ def plot_zombies_raster(
                      colors="black", linewidths=0.9, linelengths=0.9)
         center = y + n / 2 - 0.5
         tick_pos.append(center)
-        tick_labels.append(str(m.monkey))
-        # rank number on the right edge (axes-fraction x, data-coord y)
-        rank_txt = f"#{m.rank}" if m.rank else "unranked"
-        ax.text(1.01, center, rank_txt, transform=ax.get_yaxis_transform(),
-                ha="left", va="center", fontsize=8, color="0.4", clip_on=False)
+        # monkeys are already in rank order top→bottom, so label with the trial
+        # count (raster rows) rather than a redundant rank number.
+        tick_labels.append(f"{m.monkey}   {n} tr")
         all_trials.extend(m.trials)
         y += n
 
@@ -348,15 +365,13 @@ def _draw_probe_map(ax, unit_dfs, colors, pair_coincidences=None):
         ax.text(x0 + x_step * (len(units) - 1) + 0.22, depth, units[0][1],
                 va="center", ha="left", fontsize=7, color="0.25", clip_on=False)
 
-    # per-pair coincidence: a line between the two units' markers, labelled
-    for la, lb, coinc in (pair_coincidences or []):
+    # per-pair link: a line between the two units' markers. The coincidence VALUE
+    # is listed in the info panel instead of here — when units cluster on one or
+    # two contacts (the common case) the on-probe labels overlapped illegibly.
+    for la, lb, _coinc in (pair_coincidences or []):
         if la in pos and lb in pos:
             (xa, da), (xb, db) = pos[la], pos[lb]
             ax.plot([xa, xb], [da, db], color="0.45", lw=0.9, zorder=2)
-            ax.text((xa + xb) / 2 + 0.06, (da + db) / 2, f"{coinc:.2f}",
-                    fontsize=6.5, ha="left", va="center", color="0.1", zorder=4,
-                    bbox=dict(boxstyle="round,pad=0.12", fc="white", ec="0.55",
-                              lw=0.3, alpha=0.92))
 
     ax.set_xlim(-0.25, 1.4)
     ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
@@ -428,7 +443,7 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
     amp = 0.6 * pitch  # a full-scale (normalised = 1) deflection spans ~0.6 contacts
 
     drawn_contacts = set()
-    any_mu = False
+    dashed_kinds = set()          # "unsorted" / "MUA" — for the panel note
     for label, fp in (footprints_by_label or {}).items():
         if fp is None:
             continue
@@ -447,7 +462,8 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
         # over mixed units on the channel, not one neuron — draw them dashed so
         # they read as a caveated, not a clean single-unit, waveform.
         is_mu = "_Unit" not in label
-        any_mu = any_mu or is_mu
+        if is_mu:
+            dashed_kinds.add("MUA" if "(MU)" in label else "unsorted")
         line_style = (0, (3, 1.5)) if is_mu else "solid"
         # centre the window: named channel, or the actual peak contact
         p2p = w.max(axis=1) - w.min(axis=1)
@@ -484,12 +500,176 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
         ax.set_yticks([])
     tag = "peak" if center_on == "peak" else "named ch"
     title = f"footprint\n(norm., ±{n_contacts} ch @ {tag})"
-    if any_mu:
-        title += "\ndashed = multiunit"
+    if dashed_kinds:
+        title += "\ndashed = " + " / ".join(sorted(dashed_kinds))
     ax.set_title(title, fontsize=9)
     if not drawn_contacts:
         ax.text(0.5, 0.5, "waveforms\nunavailable", transform=ax.transAxes,
                 ha="center", va="center", fontsize=8, color="0.55")
+
+
+# Fallback sample rate (Intan default) when a footprint carries none — used only
+# to label the time axis; the waveform shape itself is unaffected.
+_FALLBACK_SAMPLE_RATE = 30_000.0
+
+
+def _draw_peak_waveforms(ax, footprints_by_label, colors):
+    """Each unit's mean waveform on its own PEAK channel, on real axes.
+
+    The footprint panel is normalised (per unit) and spatial, so it can't show
+    how wide or how tall a spike actually is. This panel plots the single largest
+    (peak-channel) waveform per unit against real time (ms, from the recording's
+    sample rate) and amplitude (µV), triggered at t=0 — so spike width and height
+    are directly legible and comparable across sorts. Multiunit units are dashed.
+    """
+    any_drawn = False
+    handles = []
+    for label, fp in (footprints_by_label or {}).items():
+        if fp is None:
+            continue
+        w = np.asarray(fp.waveforms, dtype=float)
+        if w.size == 0:
+            continue
+        p2p = w.max(axis=1) - w.min(axis=1)
+        pk = int(np.argmax(p2p))            # the unit's biggest-amplitude channel
+        wave = w[pk]
+        n = wave.size
+        sr = getattr(fp, "sample_rate", None) or _FALLBACK_SAMPLE_RATE
+        t_ms = (np.arange(n) - n / 2.0) / sr * 1000.0   # t=0 at the spike trigger
+        is_mu = "_Unit" not in label
+        (line,) = ax.plot(t_ms, wave, color=colors.get(label, "0.3"), lw=1.1,
+                          linestyle=(0, (3, 1.5)) if is_mu else "solid",
+                          label=str(fp.peak_channel))
+        handles.append(line)
+        any_drawn = True
+
+    if not any_drawn:
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.text(0.5, 0.5, "waveforms\nunavailable", transform=ax.transAxes,
+                ha="center", va="center", fontsize=8, color="0.55")
+        ax.set_title("peak-ch waveform", fontsize=9)
+        return
+
+    ax.axvline(0, color="0.7", lw=0.6, ls=":", zorder=1)
+    ax.set_xlabel("time (ms)", fontsize=8)
+    ax.set_ylabel("amplitude (µV)", fontsize=8)
+    ax.set_title("peak-channel\nwaveform", fontsize=9)
+    ax.tick_params(labelsize=6.5)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.legend(handles=handles, fontsize=6, loc="lower right", framealpha=0.85,
+              handlelength=1.2, title="peak ch", title_fontsize=6)
+
+
+def _trough_to_peak_ms(wave, sr):
+    """Trough-to-peak width (ms), but ONLY for a biphasic, negative-going spike
+    with a clear positive rebound after the trough; otherwise ``None``.
+
+    The trough-to-peak time is only meaningful for that canonical shape, so it is
+    gated: the trough must be an interior minimum AND the dominant excursion
+    (negative-going), and the post-trough maximum must be an interior peak the
+    waveform actually turns back down from AND rises above baseline. A monophasic
+    or positive-going waveform (or one still rising at the window edge) returns
+    ``None`` rather than an edge-pinned, meaningless number.
+    """
+    wave = np.asarray(wave, dtype=float)
+    n = wave.size
+    if n < 3:
+        return None
+    trough = int(np.argmin(wave))
+    if not (0 < trough < n - 1):                  # a real, interior trough
+        return None
+    if abs(wave[trough]) < wave.max():            # the negative deflection must dominate
+        return None
+    seg = wave[trough:]
+    pk_rel = int(np.argmax(seg))
+    if pk_rel == 0 or pk_rel == seg.size - 1:     # no interior rebound peak captured
+        return None
+    if wave[trough + pk_rel] <= 0:                # rebound must rise above baseline
+        return None
+    return pk_rel / sr * 1000.0
+
+
+def _unit_wave_stats(fp):
+    """``(peak_channel, peak-to-peak µV, trough-to-peak width ms | None)``.
+
+    Amplitude is peak-to-peak on the unit's peak channel. Width is the trough-to-
+    peak time, returned only for a clean biphasic negative spike (see
+    :func:`_trough_to_peak_ms`) and ``None`` otherwise. Whole result is ``None``
+    when the footprint is missing/empty.
+    """
+    if fp is None:
+        return None
+    w = np.asarray(fp.waveforms, dtype=float)
+    if w.size == 0:
+        return None
+    p2p = w.max(axis=1) - w.min(axis=1)
+    pk = int(np.argmax(p2p))
+    sr = getattr(fp, "sample_rate", None) or _FALLBACK_SAMPLE_RATE
+    width_ms = _trough_to_peak_ms(w[pk], sr)       # None unless a clean biphasic spike
+    return str(fp.peak_channel), float(p2p[pk]), width_ms
+
+
+def _draw_info_panel(ax, labels, colors, footprints_by_label, *, best_coincidence=None,
+                     pair_coincidences=None):
+    """Legend + per-unit stats in the space under the peak-waveform panel.
+
+    Moves the lane legend off the raster (it used to overlap the spikes) and adds,
+    per unit, its peak channel, peak-to-peak amplitude (µV) and trough-to-peak
+    width (ms). For overlays the best cross-sort coincidence is shown at the top
+    (it used to collide with the probe-map title). Singles pass no coincidence.
+    """
+    ax.axis("off")
+    footprints_by_label = footprints_by_label or {}
+    # best cross-lane footprint cosine similarity (same-neuron evidence), if ≥2
+    fp_sim = None
+    present = [fp for fp in (footprints_by_label.get(l) for l in labels) if fp is not None]
+    if len(present) >= 2:
+        from spikesorting.cross_channel_analysis.waveforms import footprint_similarity
+        sims = [footprint_similarity(present[i], present[j])
+                for i in range(len(present)) for j in range(i + 1, len(present))]
+        fp_sim = max(sims) if sims else None
+
+    rows = []  # (text, color, fontsize, weight)
+    if best_coincidence is not None:
+        rows.append((f"best coincidence  {best_coincidence:.2f}", "0.1", 8.5, "bold"))
+    if fp_sim is not None:
+        rows.append((f"footprint sim  {fp_sim:.2f}", "0.1", 8.5, "bold"))
+    if rows:
+        rows.append(("", "0.1", 4, "normal"))            # spacer
+    for lab in labels:
+        rows.append((lab, colors.get(lab, "0.2"), 8, "bold"))
+        st = _unit_wave_stats(footprints_by_label.get(lab))
+        if st:
+            ch, amp, width = st
+            width_txt = f"{width:.2f} ms" if (width is not None and np.isfinite(width)) else "– ms"
+            rows.append((f"    {ch} · {amp:.0f} µV · {width_txt}", "0.4", 7, "normal"))
+        else:
+            rows.append(("    waveform n/a", "0.55", 7, "italic"))
+    # per-pair coincidences (moved off the probe map, where they overlapped)
+    if pair_coincidences:
+        def _tok(l):
+            return str(l).split(":")[-1].strip().split(" (")[0]
+        ranked = sorted(pair_coincidences, key=lambda p: -p[2])
+        rows.append(("", "0.1", 4, "normal"))                # spacer
+        rows.append(("matched pairs (coincidence)", "0.2", 7, "bold"))
+        for la, lb, c in ranked[:8]:
+            rows.append((f"    {_tok(la)} ↔ {_tok(lb)}  {c:.2f}", "0.45", 6.5, "normal"))
+        if len(ranked) > 8:
+            rows.append((f"    …and {len(ranked) - 8} more", "0.55", 6.5, "italic"))
+    if not rows:
+        return
+    # start below the top so the first line clears the peak panel's "time (ms)"
+    # x-label, which sits just above this panel.
+    step = min(0.075, 0.82 / (len(rows) + 0.5))
+    y = 0.86
+    for text, color, fs, weight in rows:
+        ax.text(0.02, y, text, transform=ax.transAxes, va="top", ha="left",
+                color=color, fontsize=fs,
+                fontweight="bold" if weight == "bold" else "normal",
+                fontstyle="italic" if weight == "italic" else "normal")
+        y -= step
 
 
 # --------------------------------------------------------------------------- #
@@ -561,15 +741,20 @@ def plot_overlay_raster(
         present.update(z["MonkeyName"].dropna().unique())
     ordered, rank_by_monkey = zombies_monkey_order(present)
 
-    ax_probe = ax_wave = None
+    ax_probe = ax_wave = ax_peak = ax_info = None
     if show_probe and footprints is not None:
-        fig = plt.figure(figsize=(12.5, 9))
-        gs = GridSpec(2, 3, width_ratios=[5.2, 1.05, 1.5], height_ratios=[3.2, 1.0],
-                      hspace=0.08, wspace=0.10, figure=fig)
+        fig = plt.figure(figsize=(15.5, 9))
+        gs = GridSpec(2, 4, width_ratios=[4.8, 1.15, 1.5, 1.7], height_ratios=[3.2, 1.0],
+                      hspace=0.08, wspace=0.32, figure=fig)
         ax = fig.add_subplot(gs[0, 0])
         ax_psth = fig.add_subplot(gs[1, 0], sharex=ax)
         ax_probe = fig.add_subplot(gs[:, 1])
         ax_wave = fig.add_subplot(gs[:, 2])
+        # rightmost column: the peak-waveform panel in the top third (≈ square),
+        # and a legend + per-unit stats panel filling the space below it.
+        peak_col = gs[:, 3].subgridspec(3, 1, height_ratios=[1, 1, 1], hspace=0.12)
+        ax_peak = fig.add_subplot(peak_col[0, 0])
+        ax_info = fig.add_subplot(peak_col[1:, 0])
     elif show_probe:
         fig = plt.figure(figsize=(11, 9))
         gs = GridSpec(2, 2, width_ratios=[5.5, 1.15], height_ratios=[3.2, 1.0],
@@ -631,8 +816,9 @@ def plot_overlay_raster(
                 psth_trials[lab].append(sp)
 
         tick_pos.append(y + n_rows / 2 - 0.5)
-        rank = rank_by_monkey[monkey]
-        tick_labels.append(f"{monkey}" + (f"  #{rank}" if rank else ""))
+        # monkeys are already in rank order top→bottom, so show the trial count
+        # (raster rows) for each instead of a redundant rank number.
+        tick_labels.append(f"{monkey}   {n_rows} tr")
         y += n_rows
 
     total_rows = y
@@ -643,7 +829,7 @@ def plot_overlay_raster(
 
     ax.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7)
     _shade_windows(ax, windows, alpha=0.25)
-    _annotate_windows(ax, windows)
+    n_win_rows = _annotate_windows(ax, windows)
     ax.set_ylim(-0.5, total_rows - 0.5)
     ax.set_xlim(0, xlim)
     ax.invert_yaxis()
@@ -653,12 +839,15 @@ def plot_overlay_raster(
     ax.tick_params(labelbottom=False)
     for s in ("top", "right", "left"):
         ax.spines[s].set_visible(False)
-    ax.set_title(title, fontsize=11, loc="left")
+    # extra top pad so the window callout row(s) fit between the title and raster
+    ax.set_title(title, fontsize=11, loc="left", pad=20 + 30 * max(1, n_win_rows))
 
-    # legend for the sorts
-    from matplotlib.lines import Line2D
-    handles = [Line2D([0], [0], color=colors[lab], lw=2.2, label=lab) for lab in labels]
-    ax.legend(handles=handles, loc="upper right", fontsize=9, framealpha=0.9)
+    # legend for the sorts — only in-raster when there's no info panel to hold it
+    # (the info panel version doesn't overlap the spikes).
+    if ax_info is None:
+        from matplotlib.lines import Line2D
+        handles = [Line2D([0], [0], color=colors[lab], lw=2.2, label=lab) for lab in labels]
+        ax.legend(handles=handles, loc="upper right", fontsize=9, framealpha=0.9)
 
     # --- overlaid PSTHs ---
     for lab in labels:
@@ -680,6 +869,15 @@ def plot_overlay_raster(
     # --- footprint: each unit's normalised waveform along the probe ---
     if ax_wave is not None:
         _draw_footprints(ax_wave, footprints, colors)
+    # --- peak-channel waveform: real time (ms) & amplitude (µV) axes ---
+    if ax_peak is not None:
+        _draw_peak_waveforms(ax_peak, footprints, colors)
+    # --- legend + per-unit stats (and best coincidence, for overlays) ---
+    if ax_info is not None:
+        best_coinc = max((c for *_, c in pair_coincidences), default=None) \
+            if pair_coincidences else None
+        _draw_info_panel(ax_info, labels, colors, footprints, best_coincidence=best_coinc,
+                         pair_coincidences=pair_coincidences)
 
     _save_or_keep(fig, save_path)
     return fig

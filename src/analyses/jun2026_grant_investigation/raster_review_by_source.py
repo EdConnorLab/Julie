@@ -245,14 +245,18 @@ def run_singles(
                 {lab: rr[1] for lab, rr in resolved.items()}, date, round_no)
 
         for label, (req, rows) in resolved.items():
-            is_mu = "_Unit" not in req.match_value      # unsorted whole-channel = multiunit
-            status = "multiunit" if is_mu else "sorted unit"
+            if "_Unit" in req.match_value:
+                status, tag = "sorted unit", "SU"
+            elif source_key.startswith("cache_mua"):
+                status, tag = "multiunit (MUA)", "MUA"    # threshold-MUA channel
+            else:
+                status, tag = "unsorted", "unsorted"      # whole-channel, never sorted
             title = f"{source_key}  ·  {req.label}  ·  {status}"
             if req.p_value is not None:
                 title += f"   ·   p={req.p_value:.3g}"
             save_path = os.path.join(
                 out_dir,
-                f"{source_key}_{_safe(_cell_token(req.match_value))}_{'MU' if is_mu else 'SU'}.png")
+                f"{source_key}_{_safe(_cell_token(req.match_value))}_{tag}.png")
             fig = plot_overlay_raster(
                 {label: rows},
                 title=title,
@@ -281,8 +285,9 @@ def run_overlay(
     show_waveforms: bool = True,
     only_date: Optional[str] = None,
     only_round: Optional[int] = None,
-    coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
+    coincidence_threshold: float = 0.4,
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
+    footprint_similarity_threshold: float = 0.6,
     window_ms: float = DEFAULT_WINDOW_MS,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
@@ -295,6 +300,12 @@ def run_overlay(
     (side-A) anchors, ``source_b``'s the violet (side-B) anchors; each anchor's
     significant window is shaded. ``listed_only`` restricts to cells in both
     lists; off (default) it also pulls in each listed cell's cross-sort twin.
+
+    A pair is only overlaid if it is a confident *same neuron* match: spike-time
+    coincidence ≥ ``coincidence_threshold`` (default 0.4, up from the module's
+    permissive 0.2) AND — when ``show_waveforms`` is on — footprint cosine
+    similarity ≥ ``footprint_similarity_threshold`` (default 0.6; set 0 to skip).
+    Both are printed per session so you can see how many pairs survive and retune.
     """
     a, b = SOURCES[source_a], SOURCES[source_b]
     os.makedirs(out_dir, exist_ok=True)
@@ -349,6 +360,7 @@ def run_overlay(
             si_anchor_windows=b_windows.get((date, round_no)),
             listed_only=listed_only, footprints_by_id=footprints_by_id,
             coincidence_threshold=coincidence_threshold, ratio_threshold=ratio_threshold,
+            footprint_similarity_threshold=footprint_similarity_threshold,
             window_ms=window_ms, xlim=xlim, psth_bin_ms=psth_bin_ms,
             a_prefix=a.prefix, b_prefix=b.prefix,
         )
@@ -381,15 +393,21 @@ def _cli(argv=None):
     p.add_argument("--out", default=os.path.join(_HERE, "output"))
     p.add_argument("--no-waveforms", action="store_true", help="skip the footprint panel")
     p.add_argument("--listed-only", action="store_true", help="overlay: cells in both lists only")
+    p.add_argument("--coincidence", type=float, default=0.4,
+                   help="overlay: spike-time coincidence floor for a cross-sort match")
+    p.add_argument("--footprint-sim", type=float, default=0.6,
+                   help="overlay: waveform-footprint cosine floor (0 = off)")
     p.add_argument("--xlim", type=float, default=2.4)
     p.add_argument("--psth-bin-ms", type=float, default=50.0)
     args = p.parse_args(argv)
 
     show_wf = not args.no_waveforms
+    overlay_kw = dict(coincidence_threshold=args.coincidence,
+                      footprint_similarity_threshold=args.footprint_sim)
     if args.mode == "all":
         run_all_singles(args.out, show_waveforms=show_wf, xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
         run_all_overlays(args.out, show_waveforms=show_wf, listed_only=args.listed_only,
-                         xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
+                         xlim=args.xlim, psth_bin_ms=args.psth_bin_ms, **overlay_kw)
     elif args.mode == "singles":
         src = args.source or "grant_xlsx"
         run_singles(src, os.path.join(args.out, "singles", src),
@@ -398,7 +416,7 @@ def _cli(argv=None):
         a, b = tuple(args.pair) if args.pair else OVERLAY_PAIRS[0]
         run_overlay(a, b, os.path.join(args.out, "overlay", f"{a}_vs_{b}"),
                     listed_only=args.listed_only, show_waveforms=show_wf,
-                    xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
+                    xlim=args.xlim, psth_bin_ms=args.psth_bin_ms, **overlay_kw)
 
 
 if __name__ == "__main__":
@@ -422,15 +440,26 @@ if __name__ == "__main__":
     OVERLAY_PAIR = ("grant_xlsx", "cache_kw")   # or (.., "cache_anova"),
     #                                             (.., "cache_mua_anova")
     LISTED_ONLY = False                    # True → only cells in BOTH lists
+    #  Same-neuron matching gates (overlay only). A cross-sort pair is drawn only
+    #  if its spike trains are coincident AND (when waveforms are on) its footprints
+    #  are similar enough. Raise to be stricter, lower if too many real pairs drop.
+    #  Watch the console: it prints how many pairs each gate keeps.
+    COINCIDENCE_THRESHOLD = 0.4            # spike-time coincidence floor (was 0.2)
+    FOOTPRINT_SIM_THRESHOLD = 0.6          # waveform-footprint cosine floor (0 = off)
 
     # -- applies to all modes --
-    SHOW_WAVEFORMS = True                  # False → drop the footprint panel (faster)
+    SHOW_WAVEFORMS = True                  # False → drop the footprint panel (faster);
+    #                                        also disables the footprint gate
     ONLY_DATE = None                       # e.g. "2023-09-26" to restrict (overlay)
     ONLY_ROUND = None                      # e.g. 2 (only used with ONLY_DATE)
     XLIM_S = 2.4
     PSTH_BIN_MS = 50.0
     # ========================================================================
 
+    _overlay_kw = dict(
+        coincidence_threshold=COINCIDENCE_THRESHOLD,
+        footprint_similarity_threshold=FOOTPRINT_SIM_THRESHOLD,
+    )
     if MODE == "singles":
         run_singles(SINGLES_SOURCE, os.path.join(OUT_DIR, "singles", SINGLES_SOURCE),
                     show_waveforms=SHOW_WAVEFORMS, xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
@@ -439,11 +468,11 @@ if __name__ == "__main__":
         run_overlay(_a, _b, os.path.join(OUT_DIR, "overlay", f"{_a}_vs_{_b}"),
                     listed_only=LISTED_ONLY, show_waveforms=SHOW_WAVEFORMS,
                     only_date=ONLY_DATE, only_round=ONLY_ROUND,
-                    xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
+                    xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS, **_overlay_kw)
     elif MODE == "all":
         run_all_singles(OUT_DIR, show_waveforms=SHOW_WAVEFORMS,
                         xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
         run_all_overlays(OUT_DIR, show_waveforms=SHOW_WAVEFORMS, listed_only=LISTED_ONLY,
-                         xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
+                         xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS, **_overlay_kw)
     else:
         raise ValueError(f"unknown MODE {MODE!r}")

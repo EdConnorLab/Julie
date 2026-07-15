@@ -211,12 +211,18 @@ def _lane_label(prefix: str, uid: str) -> str:
     ``"grant: "``, ``"MUA-ANOVA: "``); the tail is the cell/unit token shared
     across sorts, so the same neuron reads consistently in every panel.
 
-    A ``" (MU)"`` marker is appended for **multiunit** cells — an unsorted
-    whole-channel cell (no ``_Unit`` in its id) or any threshold-MUA channel — so
-    the legend/probe/footprint make clear it is not a single sorted unit.
+    Whole-channel cells (no ``_Unit`` in the id) are tagged so they don't read as
+    single sorted units: ``" (MU)"`` for a threshold-MUA channel (genuinely
+    multiunit — detected from an ``MUA`` prefix), else ``" (unsorted)"`` (e.g. a
+    grant whole-channel cell that was simply never spike-sorted).
     """
     tail = str(uid).split("Channel.")[-1]
-    suffix = "" if "_Unit" in tail else " (MU)"
+    if "_Unit" in tail:
+        suffix = ""
+    elif "MUA" in prefix.upper():
+        suffix = " (MU)"
+    else:
+        suffix = " (unsorted)"
     return f"{prefix}{tail}{suffix}"
 
 
@@ -279,6 +285,7 @@ def render_overlays_for_units(
     window_ms: float = DEFAULT_WINDOW_MS,
     coincidence_threshold: float = DEFAULT_COINCIDENCE_THRESHOLD,
     ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
+    footprint_similarity_threshold: float = 0.0,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
     a_prefix: str = "manual: ",
@@ -301,6 +308,12 @@ def render_overlays_for_units(
     vs SI overlay); pass e.g. ``"grant: "`` / ``"MUA-ANOVA: "`` for other pairs.
     ``units_mixed`` / ``mixed_anchor_windows`` are side A, ``units_si`` /
     ``si_anchor_windows`` side B — the ``mixed``/``si`` names are historical.
+
+    ``footprint_similarity_threshold`` (0 = off) additionally requires a matched
+    pair's cross-channel waveform footprints to be at least this cosine-similar
+    before it is drawn — a stricter "same neuron" gate on top of spike-time
+    coincidence. Only applied when footprints are available; a pair missing a
+    footprint on either side is kept (coincidence already gated it).
     """
     os.makedirs(out_dir, exist_ok=True)
     mixed_anchor_windows = mixed_anchor_windows or {}
@@ -316,6 +329,21 @@ def render_overlays_for_units(
         units_mixed, units_si, window_ms=window_ms,
         coincidence_threshold=coincidence_threshold, ratio_threshold=ratio_threshold,
     )
+    # optional same-neuron gate: drop coincident pairs whose waveform footprints
+    # are too dissimilar (different cells that merely fire together).
+    if footprint_similarity_threshold > 0 and footprints_by_id:
+        from spikesorting.cross_channel_analysis.waveforms import footprint_similarity
+        kept = []
+        for m in matches:
+            fa, fb = footprints_by_id.get(m.mixed_id), footprints_by_id.get(m.si_id)
+            if fa is None or fb is None:
+                kept.append(m)                       # can't gate without both
+            elif footprint_similarity(fa, fb) >= footprint_similarity_threshold:
+                kept.append(m)
+        if len(kept) != len(matches):
+            print(f"[overlay {label}] footprint gate (≥{footprint_similarity_threshold}): "
+                  f"kept {len(kept)}/{len(matches)} coincident pair(s)")
+        matches = kept
     groups = group_matches(matches)
 
     written: List[str] = []
@@ -349,13 +377,15 @@ def render_overlays_for_units(
             for sid in g.si_ids:
                 if sid in units_si:
                     group_footprints[_lane_label(b_prefix, sid)] = footprints_by_id.get(sid)
-        # units are named in the legend and the probe map, so keep the title
-        # short — some groups have >10 units and listing them all is unreadable.
-        # "best" coincidence here; the probe map shows every pair's value.
+        # units are named in the legend/stats panel and the probe map, so keep the
+        # title short — some groups have >10 units and listing them all is
+        # unreadable. Best coincidence now lives in the info panel (it used to
+        # collide with the probe-map title); the probe map shows every pair's value.
         n_mixed, n_si = len(g.mixed_ids), len(g.si_ids)
+        a_name = a_prefix.strip().rstrip(":").strip() or "A"
+        b_name = b_prefix.strip().rstrip(":").strip() or "B"
         title = (f"Sort match #{i} — {label}   ·   "
-                 f"{n_mixed} manual + {n_si} SI units   ·   "
-                 f"best coincidence {g.best_coincidence:.2f}")
+                 f"{n_mixed} {a_name} + {n_si} {b_name} units")
         save_path = os.path.join(out_dir, f"overlay_{label}_group{i:02d}.png")
         fig = plot_overlay_raster(
             unit_dfs, title=title, windows=windows, pair_coincidences=pair_coincidences,
