@@ -349,13 +349,15 @@ def render_overlays_for_units(
             for sid in g.si_ids:
                 if sid in units_si:
                     group_footprints[_lane_label(b_prefix, sid)] = footprints_by_id.get(sid)
-        # units are named in the legend and the probe map, so keep the title
-        # short — some groups have >10 units and listing them all is unreadable.
-        # "best" coincidence here; the probe map shows every pair's value.
+        # units are named in the legend/stats panel and the probe map, so keep the
+        # title short — some groups have >10 units and listing them all is
+        # unreadable. Best coincidence now lives in the info panel (it used to
+        # collide with the probe-map title); the probe map shows every pair's value.
         n_mixed, n_si = len(g.mixed_ids), len(g.si_ids)
+        a_name = a_prefix.strip().rstrip(":").strip() or "A"
+        b_name = b_prefix.strip().rstrip(":").strip() or "B"
         title = (f"Sort match #{i} — {label}   ·   "
-                 f"{n_mixed} manual + {n_si} SI units   ·   "
-                 f"best coincidence {g.best_coincidence:.2f}")
+                 f"{n_mixed} {a_name} + {n_si} {b_name} units")
         save_path = os.path.join(out_dir, f"overlay_{label}_group{i:02d}.png")
         fig = plot_overlay_raster(
             unit_dfs, title=title, windows=windows, pair_coincidences=pair_coincidences,

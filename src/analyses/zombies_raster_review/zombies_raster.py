@@ -546,6 +546,65 @@ def _draw_peak_waveforms(ax, footprints_by_label, colors):
               handlelength=1.2, title="peak ch", title_fontsize=6)
 
 
+def _unit_wave_stats(fp):
+    """``(peak_channel, peak-to-peak µV, trough-to-peak width ms)`` for a footprint.
+
+    Amplitude is peak-to-peak on the unit's peak channel; width is the time from
+    the waveform trough to the following positive peak (the standard narrow-vs-
+    broad spike measure). Returns ``None`` when the footprint is missing/empty.
+    """
+    if fp is None:
+        return None
+    w = np.asarray(fp.waveforms, dtype=float)
+    if w.size == 0:
+        return None
+    p2p = w.max(axis=1) - w.min(axis=1)
+    pk = int(np.argmax(p2p))
+    wave = w[pk]
+    sr = getattr(fp, "sample_rate", None) or _FALLBACK_SAMPLE_RATE
+    trough = int(np.argmin(wave))
+    seg = wave[trough:]
+    width_ms = (int(np.argmax(seg)) / sr * 1000.0) if seg.size > 1 else float("nan")
+    return str(fp.peak_channel), float(p2p[pk]), width_ms
+
+
+def _draw_info_panel(ax, labels, colors, footprints_by_label, *, best_coincidence=None):
+    """Legend + per-unit stats in the space under the peak-waveform panel.
+
+    Moves the lane legend off the raster (it used to overlap the spikes) and adds,
+    per unit, its peak channel, peak-to-peak amplitude (µV) and trough-to-peak
+    width (ms). For overlays the best cross-sort coincidence is shown at the top
+    (it used to collide with the probe-map title). Singles pass no coincidence.
+    """
+    ax.axis("off")
+    footprints_by_label = footprints_by_label or {}
+    rows = []  # (text, color, fontsize, weight)
+    if best_coincidence is not None:
+        rows.append((f"best coincidence  {best_coincidence:.2f}", "0.1", 8.5, "bold"))
+        rows.append(("", "0.1", 4, "normal"))            # spacer
+    for lab in labels:
+        rows.append((lab, colors.get(lab, "0.2"), 8, "bold"))
+        st = _unit_wave_stats(footprints_by_label.get(lab))
+        if st:
+            ch, amp, width = st
+            width_txt = f"{width:.2f} ms" if np.isfinite(width) else "– ms"
+            rows.append((f"    {ch} · {amp:.0f} µV · {width_txt}", "0.4", 7, "normal"))
+        else:
+            rows.append(("    waveform n/a", "0.55", 7, "italic"))
+    if not rows:
+        return
+    # start below the top so the first line clears the peak panel's "time (ms)"
+    # x-label, which sits just above this panel.
+    step = min(0.075, 0.82 / (len(rows) + 0.5))
+    y = 0.86
+    for text, color, fs, weight in rows:
+        ax.text(0.02, y, text, transform=ax.transAxes, va="top", ha="left",
+                color=color, fontsize=fs,
+                fontweight="bold" if weight == "bold" else "normal",
+                fontstyle="italic" if weight == "italic" else "normal")
+        y -= step
+
+
 # --------------------------------------------------------------------------- #
 # Overlay mode — compare two sorts of the same channel on one raster
 # --------------------------------------------------------------------------- #
@@ -615,7 +674,7 @@ def plot_overlay_raster(
         present.update(z["MonkeyName"].dropna().unique())
     ordered, rank_by_monkey = zombies_monkey_order(present)
 
-    ax_probe = ax_wave = ax_peak = None
+    ax_probe = ax_wave = ax_peak = ax_info = None
     if show_probe and footprints is not None:
         fig = plt.figure(figsize=(14.5, 9))
         gs = GridSpec(2, 4, width_ratios=[5.0, 1.0, 1.5, 1.7], height_ratios=[3.2, 1.0],
@@ -624,10 +683,11 @@ def plot_overlay_raster(
         ax_psth = fig.add_subplot(gs[1, 0], sharex=ax)
         ax_probe = fig.add_subplot(gs[:, 1])
         ax_wave = fig.add_subplot(gs[:, 2])
-        # peak-waveform panel: only the TOP third of its column, so it reads
-        # roughly square instead of a full-height ribbon (the rest stays empty).
-        peak_col = gs[:, 3].subgridspec(3, 1, height_ratios=[1, 1, 1], hspace=0.0)
-        ax_peak = fig.add_subplot(peak_col[0])
+        # rightmost column: the peak-waveform panel in the top third (≈ square),
+        # and a legend + per-unit stats panel filling the space below it.
+        peak_col = gs[:, 3].subgridspec(3, 1, height_ratios=[1, 1, 1], hspace=0.12)
+        ax_peak = fig.add_subplot(peak_col[0, 0])
+        ax_info = fig.add_subplot(peak_col[1:, 0])
     elif show_probe:
         fig = plt.figure(figsize=(11, 9))
         gs = GridSpec(2, 2, width_ratios=[5.5, 1.15], height_ratios=[3.2, 1.0],
@@ -713,10 +773,12 @@ def plot_overlay_raster(
         ax.spines[s].set_visible(False)
     ax.set_title(title, fontsize=11, loc="left")
 
-    # legend for the sorts
-    from matplotlib.lines import Line2D
-    handles = [Line2D([0], [0], color=colors[lab], lw=2.2, label=lab) for lab in labels]
-    ax.legend(handles=handles, loc="upper right", fontsize=9, framealpha=0.9)
+    # legend for the sorts — only in-raster when there's no info panel to hold it
+    # (the info panel version doesn't overlap the spikes).
+    if ax_info is None:
+        from matplotlib.lines import Line2D
+        handles = [Line2D([0], [0], color=colors[lab], lw=2.2, label=lab) for lab in labels]
+        ax.legend(handles=handles, loc="upper right", fontsize=9, framealpha=0.9)
 
     # --- overlaid PSTHs ---
     for lab in labels:
@@ -741,6 +803,11 @@ def plot_overlay_raster(
     # --- peak-channel waveform: real time (ms) & amplitude (µV) axes ---
     if ax_peak is not None:
         _draw_peak_waveforms(ax_peak, footprints, colors)
+    # --- legend + per-unit stats (and best coincidence, for overlays) ---
+    if ax_info is not None:
+        best_coinc = max((c for *_, c in pair_coincidences), default=None) \
+            if pair_coincidences else None
+        _draw_info_panel(ax_info, labels, colors, footprints, best_coincidence=best_coinc)
 
     _save_or_keep(fig, save_path)
     return fig
