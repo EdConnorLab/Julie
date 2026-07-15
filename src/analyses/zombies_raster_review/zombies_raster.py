@@ -360,8 +360,10 @@ def _draw_probe_map(ax, unit_dfs, colors, pair_coincidences=None):
 
     ax.set_xlim(-0.25, 1.4)
     ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
-    ax.invert_yaxis()  # contact 0 at the top, deeper contacts downward
-    ax.set_ylabel("depth on probe (µm)", fontsize=8)
+    # Contact index 0 is channel 25 — the probe TIP, deepest in the brain — so it
+    # belongs at the BOTTOM; higher contacts (toward the base/surface) go upward.
+    # (No invert: y grows upward, contact 0 sits at y=0 at the bottom.)
+    ax.set_ylabel("distance from tip (µm)", fontsize=8)
     ax.set_xticks([])
     ax.tick_params(axis="y", labelsize=7)
     for s in ("top", "right", "bottom"):
@@ -452,12 +454,14 @@ def _draw_footprints(ax, footprints_by_label, colors, n_contacts=FOOTPRINT_CONTA
             if ci is None or abs(ci - center_ci) > n_contacts:
                 continue
             depth = ci * pitch
-            ax.plot(xs, depth - w[row] * amp, color=color, lw=0.7, alpha=0.85, zorder=3)
+            # +w so a negative-going spike still deflects downward now that the
+            # axis is no longer inverted (contact 0 = tip at the bottom).
+            ax.plot(xs, depth + w[row] * amp, color=color, lw=0.7, alpha=0.85, zorder=3)
             drawn_contacts.add(ci)
 
     ax.set_xlim(0, 1)
     ax.set_ylim(-pitch, (n - 1) * pitch + pitch)
-    ax.invert_yaxis()
+    # match the probe map: contact 0 (tip, channel 25) at the bottom, no invert.
     ax.set_xticks([])
     for s in ("top", "right", "bottom", "left"):
         ax.spines[s].set_visible(False)
