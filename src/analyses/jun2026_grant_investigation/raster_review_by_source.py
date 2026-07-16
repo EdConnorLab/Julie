@@ -428,16 +428,16 @@ if __name__ == "__main__":
     #    "overlay"  overlay ONE pair of sources, coincidence-matched per session.
     #    "all"      every source's singles + all three overlay pairs.
     # ========================================================================
-    MODE = "singles"                       # "singles" | "overlay" | "all"
+    MODE = "overlay"                       # "singles" | "overlay" | "all"
 
     OUT_DIR = os.path.join(_HERE, "output")
 
     # -- MODE == "singles" --  (one of SOURCES)
-    SINGLES_SOURCE = "cache_kw"            # grant_xlsx | cache_kw | cache_anova
+    SINGLES_SOURCE = "grant_xlsx"            # grant_xlsx | cache_kw | cache_anova
     #                                       | cache_mua_kw | cache_mua_anova
 
     # -- MODE == "overlay" --  (side A = grant, side B = a cache list)
-    OVERLAY_PAIR = ("grant_xlsx", "cache_kw")   # or (.., "cache_anova"),
+    OVERLAY_PAIR = ("grant_xlsx", "cache_anova")   # or (.., "cache_anova"),
     #                                             (.., "cache_mua_anova")
     LISTED_ONLY = False                    # True → only cells in BOTH lists
     #  Same-neuron matching gates (overlay only). A cross-sort pair is drawn only
