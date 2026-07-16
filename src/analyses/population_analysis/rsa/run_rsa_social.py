@@ -448,21 +448,15 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
             title=f"Neural + Social RDMs ({condition_label})",
             save_path=f"{save_dir}/{prefix}all_rdms.png")
 
-        plot_rsa_by_group(group_comp, cfg.group_colors,
-                          title=f"RSA by group ({condition_label})",
-                          save_path=f"{save_dir}/{prefix}rsa_by_group.png")
-
-        if cfg.n_bootstrap > 0:
-            plot_rsa_ci(group_comp, cfg.group_colors,
-                        title=f"RSA 95% CI ({condition_label})",
-                        save_path=f"{save_dir}/{prefix}rsa_ci.png")
-
+        # Scatter shows ρ and the permutation p-value already computed in
+        # group_comp (compare_neural_to_social_by_group, cfg.n_permutations).
         plot_scatter_multi(
             neural_rdm, social_rdms, identities, info_df,
             cfg.group_colors,
             neural_label='Neural dissimilarity (1 - r)',
             social_label_prefix='Social dissimilarity',
             title=f"Neural vs Social dissimilarity ({condition_label})",
+            group_comp=group_comp,
             save_path=f"{save_dir}/{prefix}scatter.png")
 
     return group_comp, between_comp, social_rdms
