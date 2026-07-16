@@ -641,6 +641,17 @@ def build_combined_profile_rdm(identities, interactions,
             exclude_ids=exclude_ids)
         all_lookups[btype] = (monkey_to_group, group_matrices)
 
+    # Per-(group, behavior) standardization stats so behaviors with larger raw
+    # magnitudes don't dominate the concatenated-profile correlation. Skipped
+    # when rank_transform is on (ranks are already on a common scale).
+    behavior_stats = {}
+    for btype in behavior_types:
+        _, gm = all_lookups[btype]
+        for gname, (matrix, _ids) in gm.items():
+            mu = float(np.mean(matrix))
+            sigma = float(np.std(matrix))
+            behavior_stats[(gname, btype)] = (mu, sigma if sigma > 1e-10 else 1.0)
+
     for i in range(n):
         for j in range(i + 1, n):
             id_i, id_j = identities[i], identities[j]
@@ -684,6 +695,11 @@ def build_combined_profile_rdm(identities, interactions,
                 if rank_transform:
                     pi = rankdata(pi).astype(float)
                     pj = rankdata(pj).astype(float)
+                else:
+                    # standardize this behavior block to a comparable scale
+                    mu, sigma = behavior_stats[(group_name, btype)]
+                    pi = (pi - mu) / sigma
+                    pj = (pj - mu) / sigma
 
                 profile_i_parts.append(pi)
                 profile_j_parts.append(pj)
