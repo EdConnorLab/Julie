@@ -448,7 +448,7 @@ def main():
         between_group_permutations=2000,
         n_bootstrap=2000,
         save_plots=True,
-        save_dir='rsa_social_hypothesis_testing',
+        save_dir='rsa_social',
         visual_responsiveness_filter=False,
         partial_out_rank=False,
         # exclude_identities=['7124','G942'],
@@ -533,7 +533,7 @@ def main():
         win_start = int(cfg.window[0] * 1000)
         win_end   = int(cfg.window[1] * 1000)
         tx_tag    = cfg.transform_social_behavior or 'raw'
-        save_dir_base = f"{cfg.save_dir}/H1_soft_normalization/{cfg.region}_{win_start}_{win_end}_{tx_tag}"
+        save_dir_base = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{tx_tag}"
         save_config_summary(cfg, save_dir_base)
 
         print(f"\n{'='*60}")
@@ -554,7 +554,7 @@ def main():
         # ── Dissimilarity RSA: neural 1-r vs social behavioral profile RDMs ──
         conditions = [
             (False, "asymmetric",  "asym_"),
-            (True,  "symmetrized", "sym_"),
+            # (True,  "symmetrized", "sym_"),
         ]
 
         dissim_results = {}
