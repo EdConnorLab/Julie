@@ -806,58 +806,64 @@ def run_rsa_pseudopop(df, info_df, cfg):
     sessions = sorted(df['session'].unique())
     min_reps = cfg.min_reps_per_monkey
 
-    # An identity must appear in EVERY session (the pseudo-population hstacks
-    # neurons across sessions, so each kept identity needs a rate in every
-    # session's block). Among those, keep identities whose POOLED trial count
-    # across sessions is >= min_reps.
-    #
-    # This is a pooled (total) sufficiency floor, not a per-session one:
-    # requiring >= min_reps in *every* session is an intersection that
-    # collapses under sparse data (e.g. ER), so per-neuron rates from a thin
-    # session are still possible — those identities are warned about below.
+    # Per-session, per-identity trial counts (a trial = one distinct TaskField).
     known = set(info_df['Name'].astype(str))
-    per_session_present = []
     sess_counts = {}   # sess -> {monkey -> n_trials}
     for sess in sessions:
         sess_df = df[df['session'] == sess]
-        counts = sess_df.groupby('MonkeyName')['TaskField'].nunique().to_dict()
-        sess_counts[sess] = counts
-        per_session_present.append(set(counts) & known)
-    present_all = (set.intersection(*per_session_present)
-                   if per_session_present else set())
+        sess_counts[sess] = (sess_df.groupby('MonkeyName')['TaskField']
+                             .nunique().to_dict())
 
-    common_ids, thin = [], []
-    for m in sorted(present_all):
-        per_sess = [sess_counts[s].get(m, 0) for s in sessions]
-        if sum(per_sess) >= min_reps:
-            common_ids.append(m)
-            if min(per_sess) < min_reps:
-                thin.append((m, min(per_sess)))
-
-    if len(common_ids) < 3:
+    # Candidate identities: present (>=1 trial) in EVERY session, so the
+    # pseudo-population hstack has a value for them in every kept session block.
+    present_all = sorted(
+        set.intersection(*[set(c) & known for c in sess_counts.values()])
+        if sess_counts else set())
+    if len(present_all) < 3:
         raise ValueError(
-            f"Only {len(common_ids)} identities present in all sessions with "
-            f">= {min_reps} pooled reps. Lower cfg.min_reps_per_monkey, or "
-            f"widen the region/session selection.")
+            f"Only {len(present_all)} identities present in all sessions "
+            f"(region={cfg.region}). Widen the region/session selection.")
 
-    if thin:
-        preview = ', '.join(f"{m}(min {c}/session)" for m, c in thin[:8])
-        print(f"  Note: {len(thin)}/{len(common_ids)} identities have a session "
-              f"with < {min_reps} reps (rates there rest on few trials): "
-              f"{preview}{' ...' if len(thin) > 8 else ''}")
+    # Session-dropping: keep only sessions where EVERY candidate identity has
+    # >= min_reps trials. This makes min_reps a true PER-SESSION floor -- every
+    # (identity, session) cell in the pseudopop is backed by >= min_reps trials,
+    # and every identity uses the same neurons within a kept session (no ragged
+    # neuron sets). An aborted/thin session drops out whole rather than silently
+    # contributing 2-trial rate estimates.
+    common_ids = present_all
+    kept_sessions, dropped = [], []
+    for sess in sessions:
+        worst = min(sess_counts[sess].get(m, 0) for m in common_ids)
+        if worst >= min_reps:
+            kept_sessions.append(sess)
+        else:
+            offenders = sorted((sess_counts[sess].get(m, 0), m)
+                               for m in common_ids
+                               if sess_counts[sess].get(m, 0) < min_reps)
+            dropped.append((sess, offenders))
 
-    # Build rate matrix per session, then hstack
+    if dropped:
+        print(f"  Session-dropping (min_reps={min_reps}/session): dropping "
+              f"{len(dropped)}/{len(sessions)} session(s) with a thin identity:")
+        for sess, offenders in dropped:
+            tag = ', '.join(f"{m}={c}" for c, m in offenders[:6])
+            print(f"    - {sess}: {tag}{' ...' if len(offenders) > 6 else ''}")
+
+    if len(kept_sessions) < 1:
+        raise ValueError(
+            f"No sessions survive min_reps={min_reps}/session for all "
+            f"{len(common_ids)} identities. Lower cfg.min_reps_per_monkey.")
+
+    # Build rate matrix per KEPT session, then hstack
     session_matrices = []
     all_neuron_ids = []
 
-    for sess in sessions:
+    for sess in kept_sessions:
         sess_df = df[df['session'] == sess]
-        # min_reps=1 here: identity sufficiency is handled above via the pooled
-        # filter, so don't let a thin session drop an identity (which would
-        # misalign the hstack).
+        # min_reps=1: identities are guaranteed >= min_reps in kept sessions,
+        # so don't re-filter here (that would misalign the hstack).
         rate_mat, valid_ids, neuron_ids = compute_firing_rates(
             sess_df, common_ids, cfg.window, min_reps=1)
-        # common_ids are present in every session, so none should drop here.
         if valid_ids != common_ids:
             print(f"  Warning: session {sess} dropped some common identities")
             continue
@@ -865,7 +871,9 @@ def run_rsa_pseudopop(df, info_df, cfg):
         all_neuron_ids.extend(f"{sess}__{nid}" for nid in neuron_ids)
 
     combined_matrix = np.hstack(session_matrices)  # (n_identities, n_neurons_total)
-    print(f"Pseudo-population matrix: {combined_matrix.shape}")
+    print(f"Pseudo-population matrix: {combined_matrix.shape} "
+          f"({len(kept_sessions)}/{len(sessions)} sessions kept, "
+          f"{len(common_ids)} identities)")
 
     # Optional normalization
     raw_combined_matrix = combined_matrix.copy()
