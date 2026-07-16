@@ -612,7 +612,7 @@ def _unit_wave_stats(fp):
 
 
 def _draw_info_panel(ax, labels, colors, footprints_by_label, *, best_coincidence=None,
-                     pair_coincidences=None):
+                     pair_coincidences=None, locations=None):
     """Legend + per-unit stats in the space under the peak-waveform panel.
 
     Moves the lane legend off the raster (it used to overlap the spikes) and adds,
@@ -638,15 +638,18 @@ def _draw_info_panel(ax, labels, colors, footprints_by_label, *, best_coincidenc
         rows.append((f"footprint sim  {fp_sim:.2f}", "0.1", 8.5, "bold"))
     if rows:
         rows.append(("", "0.1", 4, "normal"))            # spacer
+    locations = locations or {}
     for lab in labels:
         rows.append((lab, colors.get(lab, "0.2"), 8, "bold"))
+        loc = locations.get(lab)
+        pre = f"{loc} · " if loc else ""              # brain-region location, if known
         st = _unit_wave_stats(footprints_by_label.get(lab))
         if st:
             ch, amp, width = st
             width_txt = f"{width:.2f} ms" if (width is not None and np.isfinite(width)) else "– ms"
-            rows.append((f"    {ch} · {amp:.0f} µV · {width_txt}", "0.4", 7, "normal"))
+            rows.append((f"    {pre}{ch} · {amp:.0f} µV · {width_txt}", "0.4", 7, "normal"))
         else:
-            rows.append(("    waveform n/a", "0.55", 7, "italic"))
+            rows.append((f"    {pre}waveform n/a", "0.55", 7, "italic"))
     # per-pair coincidences (moved off the probe map, where they overlapped)
     if pair_coincidences:
         def _tok(l):
@@ -700,6 +703,7 @@ def plot_overlay_raster(
     windows: Optional[list] = None,
     pair_coincidences: Optional[list] = None,
     footprints: Optional[dict] = None,
+    locations: Optional[dict] = None,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
     show_probe: bool = True,
@@ -877,7 +881,7 @@ def plot_overlay_raster(
         best_coinc = max((c for *_, c in pair_coincidences), default=None) \
             if pair_coincidences else None
         _draw_info_panel(ax_info, labels, colors, footprints, best_coincidence=best_coinc,
-                         pair_coincidences=pair_coincidences)
+                         pair_coincidences=pair_coincidences, locations=locations)
 
     _save_or_keep(fig, save_path)
     return fig

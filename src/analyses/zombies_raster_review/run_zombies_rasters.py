@@ -204,6 +204,27 @@ def _units_on_channel(session_df, base_channel: str) -> Dict[str, "pd.DataFrame"
     return out
 
 
+def _unit_location(rows) -> Optional[str]:
+    """Brain-region location for a unit's rows, or ``None``.
+
+    Uses the ``Location`` column (added by ``explode_spike_data`` from the
+    recording metadata), falling back to the leading token of the ``NeuronID``
+    (``Location_Date_Round_Channel``, e.g. ``AMG_…``). Location is a per-session
+    attribute, so every unit in one figure normally shares it.
+    """
+    try:
+        if "Location" in rows.columns:
+            vals = [v for v in rows["Location"].dropna().unique() if str(v) != "Unknown"]
+            if vals:
+                return str(vals[0])
+        if "NeuronID" in rows.columns:
+            head = str(rows["NeuronID"].iloc[0]).split("_", 1)[0]
+            return head or None
+    except Exception:
+        return None
+    return None
+
+
 def _lane_label(prefix: str, uid: str) -> str:
     """``(prefix, "…Channel.C_020_Unit 1")`` → ``"{prefix}C_020_Unit 1"`` for the lane.
 
@@ -367,7 +388,7 @@ def render_overlays_for_units(
         # per-pair coincidence, in the overlay's lane-label terms, for the probe map
         pair_coincidences = [(_lane_label(a_prefix, mid), _lane_label(b_prefix, sid), c)
                              for mid, sid, c in g.pairs]
-        # per-unit footprints (if extracted), keyed by the same lane labels
+        # per-unit footprints (if extracted) and locations, keyed by lane label
         group_footprints = None
         if footprints_by_id is not None:
             group_footprints = {}
@@ -377,6 +398,13 @@ def render_overlays_for_units(
             for sid in g.si_ids:
                 if sid in units_si:
                     group_footprints[_lane_label(b_prefix, sid)] = footprints_by_id.get(sid)
+        group_locations = {}
+        for cid in g.mixed_ids:
+            if cid in units_mixed:
+                group_locations[_lane_label(a_prefix, cid)] = _unit_location(units_mixed[cid])
+        for sid in g.si_ids:
+            if sid in units_si:
+                group_locations[_lane_label(b_prefix, sid)] = _unit_location(units_si[sid])
         # units are named in the legend/stats panel and the probe map, so keep the
         # title short — some groups have >10 units and listing them all is
         # unreadable. Best coincidence now lives in the info panel (it used to
@@ -389,7 +417,7 @@ def render_overlays_for_units(
         save_path = os.path.join(out_dir, f"overlay_{label}_group{i:02d}.png")
         fig = plot_overlay_raster(
             unit_dfs, title=title, windows=windows, pair_coincidences=pair_coincidences,
-            footprints=group_footprints,
+            footprints=group_footprints, locations=group_locations,
             xlim=xlim, psth_bin_ms=psth_bin_ms, save_path=save_path,
         )
         if fig is not None:
