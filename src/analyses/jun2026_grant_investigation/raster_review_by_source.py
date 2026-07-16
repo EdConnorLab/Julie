@@ -81,7 +81,8 @@ if _SRC not in sys.path:
 from data_access.spike_source import MixedManualSpikeSource                    # noqa: E402
 from analyses.zombies_raster_review.zombies_raster import plot_overlay_raster  # noqa: E402
 from analyses.zombies_raster_review.run_zombies_rasters import (               # noqa: E402
-    _select_unit_rows, _cell_token, _lane_label, render_overlays_for_units,
+    _select_unit_rows, _cell_token, _lane_label, _unit_location,
+    render_overlays_for_units,
 )
 from analyses.zombies_raster_review.unit_lists import (                        # noqa: E402
     RasterRequest, load_mixed_manual_requests, dedup_by_unit,
@@ -251,7 +252,10 @@ def run_singles(
                 status, tag = "multiunit (MUA)", "MUA"    # threshold-MUA channel
             else:
                 status, tag = "unsorted", "unsorted"      # whole-channel, never sorted
+            loc = _unit_location(rows)
             title = f"{source_key}  ·  {req.label}  ·  {status}"
+            if loc:
+                title += f"   ·   {loc}"
             if req.p_value is not None:
                 title += f"   ·   p={req.p_value:.3g}"
             save_path = os.path.join(
@@ -262,6 +266,7 @@ def run_singles(
                 title=title,
                 window_s=req.window_s,
                 footprints=({label: footprints.get(label)} if show_waveforms else None),
+                locations={label: loc},
                 show_probe=True,
                 xlim=xlim,
                 psth_bin_ms=psth_bin_ms,
