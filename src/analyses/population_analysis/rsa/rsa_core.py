@@ -802,39 +802,76 @@ def run_rsa_pseudopop(df, info_df, cfg):
     result : dict (same structure as run_rsa_session, but session='pseudo_pop')
     """
     sessions = sorted(df['session'].unique())
+    min_reps = cfg.min_reps_per_monkey
 
-    # Find common identities across all sessions
+    # Per-session, per-identity trial counts (a trial = one distinct TaskField).
     known = set(info_df['Name'].astype(str))
-    per_session_ids = []
+    sess_counts = {}   # sess -> {monkey -> n_trials}
     for sess in sessions:
         sess_df = df[df['session'] == sess]
-        monkeys = set(sess_df['MonkeyName'].unique()) & known
-        per_session_ids.append(monkeys)
-    common_ids = sorted(set.intersection(*per_session_ids))
+        sess_counts[sess] = (sess_df.groupby('MonkeyName')['TaskField']
+                             .nunique().to_dict())
 
-    if len(common_ids) < 3:
-        raise ValueError(f"Only {len(common_ids)} common identities across sessions")
+    # Candidate identities: present (>=1 trial) in EVERY session, so the
+    # pseudo-population hstack has a value for them in every kept session block.
+    present_all = sorted(
+        set.intersection(*[set(c) & known for c in sess_counts.values()])
+        if sess_counts else set())
+    if len(present_all) < 3:
+        raise ValueError(
+            f"Only {len(present_all)} identities present in all sessions "
+            f"(region={cfg.region}). Widen the region/session selection.")
 
-    # Build rate matrix per session, then hstack
+    # Session-dropping: keep only sessions where EVERY candidate identity has
+    # >= min_reps trials. This makes min_reps a true PER-SESSION floor -- every
+    # (identity, session) cell in the pseudopop is backed by >= min_reps trials,
+    # and every identity uses the same neurons within a kept session (no ragged
+    # neuron sets). An aborted/thin session drops out whole rather than silently
+    # contributing 2-trial rate estimates.
+    common_ids = present_all
+    kept_sessions, dropped = [], []
+    for sess in sessions:
+        worst = min(sess_counts[sess].get(m, 0) for m in common_ids)
+        if worst >= min_reps:
+            kept_sessions.append(sess)
+        else:
+            offenders = sorted((sess_counts[sess].get(m, 0), m)
+                               for m in common_ids
+                               if sess_counts[sess].get(m, 0) < min_reps)
+            dropped.append((sess, offenders))
+
+    if dropped:
+        print(f"  Session-dropping (min_reps={min_reps}/session): dropping "
+              f"{len(dropped)}/{len(sessions)} session(s) with a thin identity:")
+        for sess, offenders in dropped:
+            tag = ', '.join(f"{m}={c}" for c, m in offenders[:6])
+            print(f"    - {sess}: {tag}{' ...' if len(offenders) > 6 else ''}")
+
+    if len(kept_sessions) < 1:
+        raise ValueError(
+            f"No sessions survive min_reps={min_reps}/session for all "
+            f"{len(common_ids)} identities. Lower cfg.min_reps_per_monkey.")
+
+    # Build rate matrix per KEPT session, then hstack
     session_matrices = []
     all_neuron_ids = []
 
-    for sess in sessions:
+    for sess in kept_sessions:
         sess_df = df[df['session'] == sess]
+        # min_reps=1: identities are guaranteed >= min_reps in kept sessions,
+        # so don't re-filter here (that would misalign the hstack).
         rate_mat, valid_ids, neuron_ids = compute_firing_rates(
             sess_df, common_ids, cfg.window, min_reps=1)
-        # valid_ids should == common_ids since they were present
-        # Reorder to match common_ids if needed
         if valid_ids != common_ids:
-            # Some identities may have been dropped for min_reps in this session
-            # For pseudo-pop we use min_reps=1 above, so this shouldn't happen
             print(f"  Warning: session {sess} dropped some common identities")
             continue
         session_matrices.append(rate_mat)
         all_neuron_ids.extend(f"{sess}__{nid}" for nid in neuron_ids)
 
     combined_matrix = np.hstack(session_matrices)  # (n_identities, n_neurons_total)
-    print(f"Pseudo-population matrix: {combined_matrix.shape}")
+    print(f"Pseudo-population matrix: {combined_matrix.shape} "
+          f"({len(kept_sessions)}/{len(sessions)} sessions kept, "
+          f"{len(common_ids)} identities)")
 
     # Optional normalization
     raw_combined_matrix = combined_matrix.copy()

@@ -311,6 +311,69 @@ def plot_rsa_ci(group_comparisons, group_colors, title, save_path=None):
     return fig
 
 
+def plot_rdm_grid(neural_rdm, social_rdms, identities, info_df, group_colors,
+                  title, save_path=None):
+    """
+    Plot the neural RDM and every social RDM in one figure (shared identity
+    ordering, sorted by group) so they can be compared side by side.
+    Each panel keeps its own colour scale.
+    """
+    info = info_df.set_index(info_df['Name'].astype(str))
+    groups = [info.loc[m, 'Group Name'] if m in info.index else 'Unknown'
+              for m in identities]
+    sort_idx = np.array(sorted(range(len(identities)),
+                               key=lambda i: (groups[i], identities[i])))
+    ids_sorted = [identities[i] for i in sort_idx]
+    groups_sorted = [groups[i] for i in sort_idx]
+
+    panels = [('Neural RDM (1 - r)', neural_rdm)]
+    panels += list(social_rdms.items())
+
+    n_panels = len(panels)
+    ncols = 4
+    nrows = int(np.ceil(n_panels / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 4.0, nrows * 4.0))
+    axes = np.atleast_1d(axes).ravel()
+
+    cmap = plt.cm.RdYlBu_r.copy()
+    cmap.set_bad(color='lightgray')
+
+    for ax_idx, (name, mat) in enumerate(panels):
+        ax = axes[ax_idx]
+        mat_sorted = mat[np.ix_(sort_idx, sort_idx)]
+        masked = np.ma.masked_where(np.isnan(mat_sorted), mat_sorted)
+        im = ax.imshow(masked, cmap=cmap, aspect='equal')
+        fig.colorbar(im, ax=ax, shrink=0.7)
+        ax.set_title(name, fontsize=9)
+        ax.set_xticks(range(len(ids_sorted)))
+        ax.set_yticks(range(len(ids_sorted)))
+        ax.set_xticklabels(ids_sorted, rotation=90, fontsize=5)
+        ax.set_yticklabels(ids_sorted, fontsize=5)
+        for i, (tx, ty) in enumerate(zip(ax.get_xticklabels(),
+                                          ax.get_yticklabels())):
+            g = groups_sorted[i]
+            if g in group_colors:
+                tx.set_color(group_colors[g])
+                ty.set_color(group_colors[g])
+        prev = groups_sorted[0]
+        for i, g in enumerate(groups_sorted):
+            if g != prev:
+                ax.axhline(i - 0.5, color='k', lw=0.8, alpha=0.6)
+                ax.axvline(i - 0.5, color='k', lw=0.8, alpha=0.6)
+                prev = g
+
+    for ax_idx in range(n_panels, len(axes)):
+        axes[ax_idx].axis('off')
+
+    fig.suptitle(title, fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.98))
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+    return fig
+
+
 # ──────────────────────────────────────────────────────────
 # Run one dissimilarity condition
 # ──────────────────────────────────────────────────────────
@@ -378,29 +441,22 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
 
     # Plots
     if cfg.save_plots:
-        for name, rdm in social_rdms.items():
-            plot_social_matrix(
-                rdm, identities, info_df,
-                title=f"Social RDM: {name} ({condition_label})",
-                group_colors=cfg.group_colors,
-                cbar_label='Dissimilarity',
-                save_path=f"{save_dir}/{prefix}social_rdm_{name}.png")
+        # One combined figure: neural RDM + all social RDMs, same identity
+        # ordering, for direct visual comparison (replaces the per-RDM PNGs).
+        plot_rdm_grid(
+            neural_rdm, social_rdms, identities, info_df, cfg.group_colors,
+            title=f"Neural + Social RDMs ({condition_label})",
+            save_path=f"{save_dir}/{prefix}all_rdms.png")
 
-        plot_rsa_by_group(group_comp, cfg.group_colors,
-                          title=f"RSA by group ({condition_label})",
-                          save_path=f"{save_dir}/{prefix}rsa_by_group.png")
-
-        if cfg.n_bootstrap > 0:
-            plot_rsa_ci(group_comp, cfg.group_colors,
-                        title=f"RSA 95% CI ({condition_label})",
-                        save_path=f"{save_dir}/{prefix}rsa_ci.png")
-
+        # Scatter shows ρ and the permutation p-value already computed in
+        # group_comp (compare_neural_to_social_by_group, cfg.n_permutations).
         plot_scatter_multi(
             neural_rdm, social_rdms, identities, info_df,
             cfg.group_colors,
             neural_label='Neural dissimilarity (1 - r)',
             social_label_prefix='Social dissimilarity',
             title=f"Neural vs Social dissimilarity ({condition_label})",
+            group_comp=group_comp,
             save_path=f"{save_dir}/{prefix}scatter.png")
 
     return group_comp, between_comp, social_rdms
@@ -434,12 +490,12 @@ def save_config_summary(cfg, save_dir):
 
 def main():
     cfg = SocialRSAConfig(
-        region='AMG',
+        region='ER',
         session=None,                          # None = pseudo-population; 'session_id' = single session
-        window=(0.300, 0.500),
+        window=(0.300, 0.600),
         min_epoch_duration=1.3,
-        min_reps_per_monkey=7,
-        neural_metric='correlation',
+        min_reps_per_monkey=5,
+        neural_metric='euclidean',  #correlation, euclidean, cosine, mahalanobis
         model_factors=[],
         exclude_groups=['Stranger Things', 'Best Frans', 'Instigators'],
         normalization='soft',
@@ -521,9 +577,6 @@ def main():
             rate_matrix = rate_matrix[keep_mask, :]
             print(f"\n  [Sensitivity] Excluded: {removed}  →  {len(identities)} identities remaining")
 
-        # Build neural similarity matrix (Pearson r, not 1-r)
-        neural_sim = build_neural_similarity_matrix(rate_matrix)
-
         # Build rank distance confound matrix if requested
         rank_confound = None
         if cfg.partial_out_rank:
@@ -533,7 +586,7 @@ def main():
         win_start = int(cfg.window[0] * 1000)
         win_end   = int(cfg.window[1] * 1000)
         tx_tag    = cfg.transform_social_behavior or 'raw'
-        save_dir_base = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_{tx_tag}"
+        save_dir_base = f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_beh_{tx_tag}_neur_{cfg.neural_metric}_{cfg.normalization}"
         save_config_summary(cfg, save_dir_base)
 
         print(f"\n{'='*60}")
@@ -544,17 +597,11 @@ def main():
         # Neural reference plots (condition-independent, no prefix)
         if cfg.save_plots:
             plot_neural_rdm(result, cfg, save_dir=save_dir_base)
-            plot_social_matrix(
-                neural_sim, identities, info_df,
-                title=f"Neural Similarity (Pearson r) | {cfg.region} {win_start}–{win_end} ms",
-                group_colors=cfg.group_colors,
-                cbar_label='Pearson r',
-                save_path=f"{save_dir_base}/neural_similarity.png")
 
         # ── Dissimilarity RSA: neural 1-r vs social behavioral profile RDMs ──
         conditions = [
             (False, "asymmetric",  "asym_"),
-            # (True,  "symmetrized", "sym_"),
+            # (True,  "symmetrized", "sym_"),   # symmetric runs disabled for now
         ]
 
         dissim_results = {}

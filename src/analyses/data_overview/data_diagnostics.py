@@ -8,6 +8,9 @@ Generates summary statistics and visualizations:
   3. Neuron counts per session per region
   4. Firing rate distributions per identity / per group
   5. Session-level balance check (identity × session heatmap)
+  6. Session firing-rate audit (baseline / selectivity / hot-cell provenance)
+  7. Pseudopop session-dropping preview (which sessions run_rsa_pseudopop keeps
+     at a given per-session min_reps floor)
 
 Run from the same directory as run_rsa.py.
 """
@@ -745,6 +748,80 @@ def report_neuron_selectivity(trial_rate_df, info_df, region, save_dir,
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# 7. Pseudo-population session-dropping preview
+# ═══════════════════════════════════════════════════════════════════════
+
+def report_pseudopop_session_drop(trial_counts, info_df, region, save_dir,
+                                  floors=(3, 5, 7, 10), highlight=7):
+    """
+    Preview run_rsa_pseudopop's session-dropping.
+
+    run_rsa_pseudopop keeps only sessions in which EVERY candidate identity
+    (present in all sessions) has >= min_reps_per_monkey trials, so every cell
+    of the pseudo-population is backed by >= min_reps trials and all identities
+    share the same neurons within a session.  This reports, per group, how many
+    sessions survive at each floor and which sessions the `highlight` floor
+    drops (and why).
+    """
+    ntg = _name_to_group(info_df)
+    pivot = trial_counts.pivot_table(index='MonkeyName', columns='session',
+                                     values='n_trials', fill_value=0)
+    sessions = list(pivot.columns)
+    n_sess = len(sessions)
+
+    print(f"\n{'='*80}")
+    print(f"7. PSEUDOPOP SESSION-DROPPING PREVIEW | {region}  "
+          f"(min_reps highlighted = {highlight})")
+    print(f"{'='*80}")
+    print("Rule: keep sessions where every candidate identity (present in all "
+          "sessions)\n      has >= min_reps trials.")
+
+    groups = sorted({ntg.get(m, 'Unknown') for m in pivot.index})
+    kept_curve = {}   # group -> {floor: n_kept}
+    for group in groups:
+        ids = [m for m in pivot.index if ntg.get(m) == group]
+        present_all = [m for m in ids if (pivot.loc[m] > 0).all()]
+        if len(present_all) < 3:
+            print(f"\n  {group}: only {len(present_all)} identities present in "
+                  f"all sessions — skipped.")
+            continue
+        sub = pivot.loc[present_all]
+        print(f"\n  {group}: {len(present_all)} identities present in all "
+              f"{n_sess} sessions")
+        kept_curve[group] = {}
+        for f in floors:
+            keep_mask = (sub >= f).all(axis=0)
+            kept_curve[group][f] = int(keep_mask.sum())
+            marker = '   <-- min_reps' if f == highlight else ''
+            print(f"      floor {f:>2}/session -> keep "
+                  f"{int(keep_mask.sum()):>2}/{n_sess} sessions{marker}")
+            if f == highlight:
+                for s in sessions:
+                    if not keep_mask[s]:
+                        thin = {m: int(sub.loc[m, s]) for m in present_all
+                                if sub.loc[m, s] < f}
+                        print(f"          drop {s}: " +
+                              ", ".join(f"{m}={c}" for m, c in sorted(thin.items())))
+
+    # sessions-kept-vs-floor curve per group
+    if kept_curve:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        for group, curve in kept_curve.items():
+            xs = sorted(curve)
+            ax.plot(xs, [curve[f] for f in xs], 'o-',
+                    color=GROUP_COLORS.get(group, 'gray'), label=group)
+        ax.axvline(highlight, ls=':', color='k', alpha=0.6)
+        ax.set_xlabel('per-session trial floor (min_reps_per_monkey)')
+        ax.set_ylabel('# sessions kept')
+        ax.set_title(f'Pseudopop sessions kept vs floor | {region}')
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        os.makedirs(save_dir, exist_ok=True)
+        fig.savefig(os.path.join(save_dir, f'pseudopop_session_drop_{region}.png'),
+                    dpi=150, bbox_inches='tight')
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Monkey info summary
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -781,6 +858,7 @@ def main():
             session=None,
             window=(0.300, 0.500),
             min_epoch_duration=1.0,
+            min_reps_per_monkey=7,   # per-session floor previewed in section 7
             normalization=None,
             visual_responsiveness_filter=False,
             peak_latency_filter=False,
@@ -816,6 +894,10 @@ def main():
         trial_rate_df = _build_trial_rate_df(df, identities, cfg.window)
         report_session_fr_baseline(trial_rate_df, info_df, region, save_dir)
         report_neuron_selectivity(trial_rate_df, info_df, region, save_dir)
+
+        # 7. Pseudopop session-dropping preview (matches run_rsa_pseudopop)
+        report_pseudopop_session_drop(trial_counts, info_df, region, save_dir,
+                                      highlight=cfg.min_reps_per_monkey)
 
     plt.show()
     print(f"\nAll figures saved to {SAVE_DIR}/")

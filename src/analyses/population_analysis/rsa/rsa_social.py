@@ -641,6 +641,17 @@ def build_combined_profile_rdm(identities, interactions,
             exclude_ids=exclude_ids)
         all_lookups[btype] = (monkey_to_group, group_matrices)
 
+    # Per-(group, behavior) standardization stats so behaviors with larger raw
+    # magnitudes don't dominate the concatenated-profile correlation. Skipped
+    # when rank_transform is on (ranks are already on a common scale).
+    behavior_stats = {}
+    for btype in behavior_types:
+        _, gm = all_lookups[btype]
+        for gname, (matrix, _ids) in gm.items():
+            mu = float(np.mean(matrix))
+            sigma = float(np.std(matrix))
+            behavior_stats[(gname, btype)] = (mu, sigma if sigma > 1e-10 else 1.0)
+
     for i in range(n):
         for j in range(i + 1, n):
             id_i, id_j = identities[i], identities[j]
@@ -684,6 +695,11 @@ def build_combined_profile_rdm(identities, interactions,
                 if rank_transform:
                     pi = rankdata(pi).astype(float)
                     pj = rankdata(pj).astype(float)
+                else:
+                    # standardize this behavior block to a comparable scale
+                    mu, sigma = behavior_stats[(group_name, btype)]
+                    pi = (pi - mu) / sigma
+                    pj = (pj - mu) / sigma
 
                 profile_i_parts.append(pi)
                 profile_j_parts.append(pj)
@@ -1041,7 +1057,8 @@ def print_group_comparisons(group_comparisons):
 def plot_scatter_multi(neural_mat, social_mats, identities, info_df,
                         group_colors, neural_label='Neural similarity (r)',
                         social_label_prefix='Social',
-                        title='Neural vs Social', save_path=None):
+                        title='Neural vs Social', save_path=None,
+                        group_comp=None):
     """
     Multi-panel scatter plot. Works for both similarity and dissimilarity matrices.
 
@@ -1051,6 +1068,11 @@ def plot_scatter_multi(neural_mat, social_mats, identities, info_df,
     social_mats : dict {name: ndarray (n, n)}
     neural_label : str — y-axis label
     social_label_prefix : str — prefix for x-axis
+    group_comp : dict or None
+        Output of compare_neural_to_social_by_group / _per_group_correlate:
+        {mat_name: {group: {rho, p_val, ...}}}. When provided, the panel
+        subtitle shows the ρ and the permutation p-value from that test
+        (instead of a freshly recomputed ρ with no p-value).
     """
     mat_names = list(social_mats.keys())
     n_panels = len(mat_names)
@@ -1101,12 +1123,26 @@ def plot_scatter_multi(neural_mat, social_mats, identities, info_df,
             mask = ~(np.isnan(vn) | np.isnan(vs))
             if mask.sum() < 3:
                 continue
-            rho_g, _ = spearmanr(vs[mask], vn[mask])
             color = group_colors.get(group_name, 'gray')
             b, m = polyfit(vs[mask], vn[mask], 1)
             x_range = np.array([np.nanmin(vs[mask]), np.nanmax(vs[mask])])
             ax.plot(x_range, b + m * x_range, '--', color=color, alpha=0.7, lw=1.5)
-            rho_strs.append(f"{group_name}: ρ={rho_g:.3f}")
+
+            # Prefer the ρ + permutation p-value from the per-group test so the
+            # scatter annotation matches the reported statistics exactly.
+            entry = None
+            if group_comp is not None:
+                entry = group_comp.get(mat_name, {}).get(group_name)
+            if entry is not None:
+                rho_g = entry.get('rho', np.nan)
+                p_g = entry.get('p_val', None)
+                if p_g is not None and not np.isnan(p_g):
+                    rho_strs.append(f"{group_name}: ρ={rho_g:.3f}, p={p_g:.3f}")
+                else:
+                    rho_strs.append(f"{group_name}: ρ={rho_g:.3f}")
+            else:
+                rho_g, _ = spearmanr(vs[mask], vn[mask])
+                rho_strs.append(f"{group_name}: ρ={rho_g:.3f}")
 
         subtitle = ', '.join(rho_strs) if rho_strs else ''
         ax.set_title(f"{mat_name}\n{subtitle}", fontsize=9)
