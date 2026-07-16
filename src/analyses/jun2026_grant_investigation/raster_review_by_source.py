@@ -140,36 +140,42 @@ def _cache_requests(list_name: str, source_key: str) -> List[RasterRequest]:
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class SourceSpec:
-    key: str                                   # DATA_SOURCE value
-    prefix: str                                # lane-label prefix, e.g. "grant: "
+    key: str                                   # DATA_SOURCE value (internal id)
+    display: str                               # friendly name for titles/filenames/
+    #                                            dirs/lane prefix (grant → "original",
+    #                                            cache_* → "updated_*")
     id_col: str                                # "Channel" (mixed) or "NeuronID"
     make_source: Callable[[], object]          # fresh spike-source instance
     load_requests: Callable[[], List[RasterRequest]]
 
+    @property
+    def prefix(self) -> str:                   # lane-label prefix, e.g. "original: "
+        return f"{self.display}: "
+
 
 SOURCES: Dict[str, SourceSpec] = {
     "grant_xlsx": SourceSpec(
-        "grant_xlsx", "grant: ", "Channel",
+        "grant_xlsx", "original", "Channel",
         lambda: MixedManualSpikeSource(),
         _grant_requests,
     ),
     "cache_kw": SourceSpec(
-        "cache_kw", "KW: ", "NeuronID",
+        "cache_kw", "updated_kw", "NeuronID",
         scc._si_sorted_source,                  # spikes from sorted_spike_cache_filtered
         lambda: _cache_requests("KW", "cache_kw"),
     ),
     "cache_anova": SourceSpec(
-        "cache_anova", "ANOVA: ", "NeuronID",
+        "cache_anova", "updated_anova", "NeuronID",
         scc._si_sorted_source,                  # spikes from sorted_spike_cache_filtered
         lambda: _cache_requests("ANOVA", "cache_anova"),
     ),
     "cache_mua_kw": SourceSpec(
-        "cache_mua_kw", "MUA-KW: ", "NeuronID",
+        "cache_mua_kw", "updated_mua_kw", "NeuronID",
         scc._mua_source,
         lambda: _cache_requests("MUA_KW", "cache_mua_kw"),
     ),
     "cache_mua_anova": SourceSpec(
-        "cache_mua_anova", "MUA-ANOVA: ", "NeuronID",
+        "cache_mua_anova", "updated_mua_anova", "NeuronID",
         scc._mua_source,
         lambda: _cache_requests("MUA_ANOVA", "cache_mua_anova"),
     ),
@@ -253,14 +259,17 @@ def run_singles(
             else:
                 status, tag = "unsorted", "unsorted"      # whole-channel, never sorted
             loc = _unit_location(rows)
-            title = f"{source_key}  ·  {req.label}  ·  {status}"
+            title = f"{spec.display}  ·  {req.label}  ·  {status}"
             if loc:
                 title += f"   ·   {loc}"
             if req.p_value is not None:
                 title += f"   ·   p={req.p_value:.3g}"
+            # include the session (date_round) so same-named cells from different
+            # sessions can't overwrite each other
+            sess = f"{req.date}_{req.round_no}"
             save_path = os.path.join(
                 out_dir,
-                f"{source_key}_{_safe(_cell_token(req.match_value))}_{tag}.png")
+                f"{spec.display}_{sess}_{_safe(_cell_token(req.match_value))}_{tag}.png")
             fig = plot_overlay_raster(
                 {label: rows},
                 title=title,
@@ -377,16 +386,24 @@ def run_overlay(
 # --------------------------------------------------------------------------- #
 # Batch helpers
 # --------------------------------------------------------------------------- #
+def _singles_dir(out_dir: str, key: str) -> str:
+    return os.path.join(out_dir, "singles", SOURCES[key].display)
+
+
+def _overlay_dir(out_dir: str, a: str, b: str) -> str:
+    return os.path.join(out_dir, "overlay", f"{SOURCES[a].display}_vs_{SOURCES[b].display}")
+
+
 def run_all_singles(out_dir: str, **kw) -> None:
-    """Singles for all five DATA_SOURCE lists into ``out_dir/singles/<source>/``."""
+    """Singles for all five DATA_SOURCE lists into ``out_dir/singles/<display>/``."""
     for key in SOURCES:
-        run_singles(key, os.path.join(out_dir, "singles", key), **kw)
+        run_singles(key, _singles_dir(out_dir, key), **kw)
 
 
 def run_all_overlays(out_dir: str, **kw) -> None:
     """Overlays for all three requested pairs into ``out_dir/overlay/<a>_vs_<b>/``."""
     for a, b in OVERLAY_PAIRS:
-        run_overlay(a, b, os.path.join(out_dir, "overlay", f"{a}_vs_{b}"), **kw)
+        run_overlay(a, b, _overlay_dir(out_dir, a, b), **kw)
 
 
 def _cli(argv=None):
@@ -415,11 +432,11 @@ def _cli(argv=None):
                          xlim=args.xlim, psth_bin_ms=args.psth_bin_ms, **overlay_kw)
     elif args.mode == "singles":
         src = args.source or "grant_xlsx"
-        run_singles(src, os.path.join(args.out, "singles", src),
+        run_singles(src, _singles_dir(args.out, src),
                     show_waveforms=show_wf, xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
     else:  # overlay
         a, b = tuple(args.pair) if args.pair else OVERLAY_PAIRS[0]
-        run_overlay(a, b, os.path.join(args.out, "overlay", f"{a}_vs_{b}"),
+        run_overlay(a, b, _overlay_dir(args.out, a, b),
                     listed_only=args.listed_only, show_waveforms=show_wf,
                     xlim=args.xlim, psth_bin_ms=args.psth_bin_ms, **overlay_kw)
 
@@ -466,11 +483,11 @@ if __name__ == "__main__":
         footprint_similarity_threshold=FOOTPRINT_SIM_THRESHOLD,
     )
     if MODE == "singles":
-        run_singles(SINGLES_SOURCE, os.path.join(OUT_DIR, "singles", SINGLES_SOURCE),
+        run_singles(SINGLES_SOURCE, _singles_dir(OUT_DIR, SINGLES_SOURCE),
                     show_waveforms=SHOW_WAVEFORMS, xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
     elif MODE == "overlay":
         _a, _b = OVERLAY_PAIR
-        run_overlay(_a, _b, os.path.join(OUT_DIR, "overlay", f"{_a}_vs_{_b}"),
+        run_overlay(_a, _b, _overlay_dir(OUT_DIR, _a, _b),
                     listed_only=LISTED_ONLY, show_waveforms=SHOW_WAVEFORMS,
                     only_date=ONLY_DATE, only_round=ONLY_ROUND,
                     xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS, **_overlay_kw)
