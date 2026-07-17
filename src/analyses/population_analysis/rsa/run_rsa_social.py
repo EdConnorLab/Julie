@@ -415,6 +415,82 @@ def plot_rdm_grid(neural_rdm, social_rdms, identities, info_df, group_colors,
     return fig
 
 
+def plot_rho_heatmap(group_comp, group_colors, title, save_path=None):
+    """
+    Summary heatmap of RSA Spearman ρ: social RDMs (rows) × groups (columns).
+
+    Cell colour = ρ (diverging, centred at 0); annotation = ρ and permutation
+    stars (* p<.05, ** p<.01, *** p<.001); significant cells are outlined.
+    Handles 1..N groups (designed for up to 3), so it's the multi-group
+    companion to plot_rdm_grid — each group gets its own column instead of
+    being crammed into a panel title.
+    """
+    def _stars(p):
+        if p is None or (isinstance(p, float) and np.isnan(p)):
+            return ''
+        if p < 0.001:
+            return '***'
+        if p < 0.01:
+            return '**'
+        if p < 0.05:
+            return '*'
+        return ''
+
+    rdm_names = list(group_comp.keys())
+    groups = sorted({g for gd in group_comp.values() for g in gd})
+    if not rdm_names or not groups:
+        return None
+
+    R = np.full((len(rdm_names), len(groups)), np.nan)
+    P = np.empty((len(rdm_names), len(groups)), dtype=object)
+    for i, name in enumerate(rdm_names):
+        for j, g in enumerate(groups):
+            d = group_comp.get(name, {}).get(g)
+            if d and not (isinstance(d.get('rho'), float)
+                          and np.isnan(d.get('rho', np.nan))):
+                R[i, j] = d['rho']
+            P[i, j] = d.get('p_val') if d else None
+
+    vmax = np.nanmax(np.abs(R)) if np.isfinite(R).any() else 1.0
+    vmax = max(vmax, 1e-6)
+
+    fig, ax = plt.subplots(figsize=(max(4.5, len(groups) * 1.7 + 2.0),
+                                    max(5.0, len(rdm_names) * 0.5 + 1.0)))
+    cmap = plt.cm.RdBu_r.copy()
+    cmap.set_bad(color='lightgray')
+    im = ax.imshow(np.ma.masked_invalid(R), cmap=cmap,
+                   vmin=-vmax, vmax=vmax, aspect='auto')
+    cbar = fig.colorbar(im, ax=ax, shrink=0.8)
+    cbar.set_label('Spearman ρ (neural vs social)')
+
+    ax.set_xticks(range(len(groups)))
+    ax.set_xticklabels(groups, fontsize=10)
+    for tick, g in zip(ax.get_xticklabels(), groups):
+        tick.set_color(group_colors.get(g, 'black'))
+    ax.set_yticks(range(len(rdm_names)))
+    ax.set_yticklabels(rdm_names, fontsize=8)
+
+    for i in range(len(rdm_names)):
+        for j in range(len(groups)):
+            if np.isnan(R[i, j]):
+                continue
+            s = _stars(P[i, j])
+            txt = f"{R[i, j]:+.2f}\n{s}" if s else f"{R[i, j]:+.2f}"
+            col = 'white' if abs(R[i, j]) > 0.6 * vmax else 'black'
+            ax.text(j, i, txt, ha='center', va='center', fontsize=8,
+                    color=col, fontweight='bold' if s else 'normal')
+            if s:
+                ax.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
+                                           edgecolor='k', lw=2.0))
+
+    ax.set_title(title, fontsize=12)
+    fig.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+    return fig
+
+
 # ──────────────────────────────────────────────────────────
 # Run one dissimilarity condition
 # ──────────────────────────────────────────────────────────
@@ -489,6 +565,12 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
             title=f"Neural + Social RDMs ({condition_label})",
             group_comp=group_comp,
             save_path=f"{save_dir}/{prefix}all_rdms.png")
+
+        # Multi-group summary: ρ heatmap (social RDMs × groups), stars + outlines
+        plot_rho_heatmap(
+            group_comp, cfg.group_colors,
+            title=f"RSA ρ: social RDM × group ({condition_label})",
+            save_path=f"{save_dir}/{prefix}rsa_rho_heatmap.png")
 
         # Scatter shows ρ and the permutation p-value already computed in
         # group_comp (compare_neural_to_social_by_group, cfg.n_permutations).
