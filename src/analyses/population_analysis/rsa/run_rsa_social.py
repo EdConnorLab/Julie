@@ -312,12 +312,50 @@ def plot_rsa_ci(group_comparisons, group_colors, title, save_path=None):
 
 
 def plot_rdm_grid(neural_rdm, social_rdms, identities, info_df, group_colors,
-                  title, save_path=None):
+                  title, save_path=None, group_comp=None):
     """
     Plot the neural RDM and every social RDM in one figure (shared identity
     ordering, sorted by group) so they can be compared side by side.
     Each panel keeps its own colour scale.
+
+    If group_comp (output of compare_neural_to_social_by_group) is given, each
+    social panel's title shows the RSA Spearman ρ against the neural RDM and its
+    permutation significance (* p<.05, ** p<.01, *** p<.001). Panels significant
+    at p<.05 are drawn in bold red so the significant RDMs stand out. Cleanest
+    with a single group (one ρ per panel); with multiple groups the per-group ρ
+    values are listed compactly.
     """
+    def _stars(p):
+        if p is None or (isinstance(p, float) and np.isnan(p)):
+            return ''
+        if p < 0.001:
+            return '***'
+        if p < 0.01:
+            return '**'
+        if p < 0.05:
+            return '*'
+        return ''
+
+    def _annot(name):
+        """Return (subtitle, is_significant) for a social panel from group_comp."""
+        if not group_comp or name not in group_comp:
+            return '', False
+        items = [(g, d) for g, d in group_comp[name].items()
+                 if d and not (isinstance(d.get('rho'), float)
+                               and np.isnan(d.get('rho', np.nan)))]
+        if not items:
+            return '', False
+        if len(items) == 1:
+            d = items[0][1]
+            s = _stars(d.get('p_val'))
+            return f"ρ = {d.get('rho', np.nan):+.2f} {s}".rstrip(), bool(s)
+        parts, any_sig = [], False
+        for g, d in items:
+            s = _stars(d.get('p_val'))
+            any_sig = any_sig or bool(s)
+            parts.append(f"{g[:4]} {d.get('rho', np.nan):+.2f}{s}")
+        return "  ".join(parts), any_sig
+
     info = info_df.set_index(info_df['Name'].astype(str))
     groups = [info.loc[m, 'Group Name'] if m in info.index else 'Unknown'
               for m in identities]
@@ -344,7 +382,10 @@ def plot_rdm_grid(neural_rdm, social_rdms, identities, info_df, group_colors,
         masked = np.ma.masked_where(np.isnan(mat_sorted), mat_sorted)
         im = ax.imshow(masked, cmap=cmap, aspect='equal')
         fig.colorbar(im, ax=ax, shrink=0.7)
-        ax.set_title(name, fontsize=9)
+        sub, sig = _annot(name)
+        ax.set_title(f"{name}\n{sub}" if sub else name, fontsize=9,
+                     color='crimson' if sig else 'black',
+                     fontweight='bold' if sig else 'normal')
         ax.set_xticks(range(len(ids_sorted)))
         ax.set_yticks(range(len(ids_sorted)))
         ax.set_xticklabels(ids_sorted, rotation=90, fontsize=5)
@@ -446,6 +487,7 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
         plot_rdm_grid(
             neural_rdm, social_rdms, identities, info_df, cfg.group_colors,
             title=f"Neural + Social RDMs ({condition_label})",
+            group_comp=group_comp,
             save_path=f"{save_dir}/{prefix}all_rdms.png")
 
         # Scatter shows ρ and the permutation p-value already computed in
