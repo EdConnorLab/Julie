@@ -1,9 +1,9 @@
 RSA ANALYSIS CONFIG
 ============================================================
 
-Timestamp: 2026-07-17 12:25:41.700835
-Region: AMG
-Window: (0.3, 0.6)
+Timestamp: 2026-07-17 12:48:54.896747
+Region: ER
+Window: (0.3, 0.5)
 Mode: pseudo-population
 
 Full config:
@@ -29,7 +29,7 @@ peak_latency_range: (0.2, 0.7)
 peak_latency_search_window: (0.0, 1.0)
 peak_latency_smooth_sigma: 0.02
 rdm_sort_mode: by_factor
-region: AMG
+region: ER
 rng_seed: 42
 save_dir: rsa_social
 save_plots: True
@@ -41,4 +41,4 @@ vr_alpha: 0.2
 vr_baseline_window: (0.0, 0.1)
 vr_require_increase: True
 vr_response_window: (0.15, 0.6)
-window: (0.3, 0.6)
+window: (0.3, 0.5)

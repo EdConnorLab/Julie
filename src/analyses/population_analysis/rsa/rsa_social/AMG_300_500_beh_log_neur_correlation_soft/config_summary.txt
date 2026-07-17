@@ -1,9 +1,9 @@
 RSA ANALYSIS CONFIG
 ============================================================
 
-Timestamp: 2026-07-17 12:25:41.700835
+Timestamp: 2026-07-17 12:39:21.753190
 Region: AMG
-Window: (0.3, 0.6)
+Window: (0.3, 0.5)
 Mode: pseudo-population
 
 Full config:
@@ -41,4 +41,4 @@ vr_alpha: 0.2
 vr_baseline_window: (0.0, 0.1)
 vr_require_increase: True
 vr_response_window: (0.15, 0.6)
-window: (0.3, 0.6)
+window: (0.3, 0.5)
