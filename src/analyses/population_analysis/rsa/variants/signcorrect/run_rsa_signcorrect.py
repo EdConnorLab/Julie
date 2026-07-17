@@ -13,10 +13,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
-from visual_responsiveness_filter import filter_visually_responsive
-from rsa_config import SocialRSAConfig
-from rsa_social import load_all_interaction_matrices
-from rsa_sign_corrected import (
+from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
+from analyses.population_analysis.rsa.core.rsa_config import SocialRSAConfig
+from analyses.population_analysis.rsa.social.rsa_social import load_all_interaction_matrices
+from analyses.population_analysis.rsa.variants.signcorrect.rsa_sign_corrected import (
     run_sign_corrected_pseudopop,
     print_sign_corrected_results,
 )

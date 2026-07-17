@@ -14,11 +14,11 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
-from visual_responsiveness_filter import filter_visually_responsive
+from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
 from analyses.population_analysis.neuron_filters import apply_neuron_filters
-from rsa_config import SocialRSAConfig
-from rsa_core import run_rsa_session, run_rsa_pseudopop
-from rsa_social import (
+from analyses.population_analysis.rsa.core.rsa_config import SocialRSAConfig
+from analyses.population_analysis.rsa.core.rsa_core import run_rsa_session, run_rsa_pseudopop
+from analyses.population_analysis.rsa.social.rsa_social import (
     load_all_interaction_matrices,
     build_neural_similarity_matrix,
     build_social_rdms,
@@ -30,7 +30,7 @@ from rsa_social import (
     plot_scatter_multi,
     build_rank_distance_matrix,
 )
-from rsa_plotting import plot_neural_rdm
+from analyses.population_analysis.rsa.core.rsa_plotting import plot_neural_rdm
 
 # ──────────────────────────────────────────────────────────
 # Paths

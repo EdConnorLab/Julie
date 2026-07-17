@@ -17,14 +17,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
-from visual_responsiveness_filter import filter_visually_responsive
-from rsa_config import SocialRSAConfig
-from rsa_core import run_rsa_pseudopop
-from rsa_social import (
+from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
+from analyses.population_analysis.rsa.core.rsa_config import SocialRSAConfig
+from analyses.population_analysis.rsa.core.rsa_core import run_rsa_pseudopop
+from analyses.population_analysis.rsa.social.rsa_social import (
     load_all_interaction_matrices,
     build_rank_distance_matrix,
 )
-from rsa_subset import (
+from analyses.population_analysis.rsa.variants.subset.rsa_subset import (
     run_subsampled_dissimilarity_rsa,
     print_subsample_summary,
     print_subsample_between_groups,

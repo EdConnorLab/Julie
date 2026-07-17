@@ -32,9 +32,9 @@ import numpy as np
 from itertools import combinations
 from scipy.stats import spearmanr
 
-from rsa_core import build_neural_rdm
-from rsa_social import build_social_rdms, _get_group_indices
-from rsa_utils import (
+from analyses.population_analysis.rsa.core.rsa_core import build_neural_rdm
+from analyses.population_analysis.rsa.social.rsa_social import build_social_rdms, _get_group_indices
+from analyses.population_analysis.rsa.core.rsa_utils import (
     upper_triangle as _upper_triangle,
     partial_spearman as _partial_spearman,
     finite_mask,

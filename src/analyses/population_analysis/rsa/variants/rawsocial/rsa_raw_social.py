@@ -30,7 +30,7 @@ Both work per-group (cross-group entries are NaN).
 import numpy as np
 from scipy.stats import rankdata
 
-from rsa_social import (
+from analyses.population_analysis.rsa.social.rsa_social import (
     _build_monkey_lookup,
     _compute_pairwise_distance,
 )

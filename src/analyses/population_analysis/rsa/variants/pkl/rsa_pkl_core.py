@@ -13,7 +13,7 @@ pipelines work unchanged.
 import numpy as np
 import pandas as pd
 
-from rsa_core import (
+from analyses.population_analysis.rsa.core.rsa_core import (
     normalize_rates,
     build_neural_rdm,
     build_model_rdms,

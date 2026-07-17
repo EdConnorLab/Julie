@@ -28,7 +28,7 @@ import statsmodels.formula.api as smf
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
 from social_encoding_config import SocialEncodingConfig
-from analyses.population_analysis.rsa.rsa_social import load_interaction_matrix
+from analyses.population_analysis.rsa.social.rsa_social import load_interaction_matrix
 
 
 # ──────────────────────────────────────────────────────────

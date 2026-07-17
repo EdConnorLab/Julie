@@ -13,7 +13,7 @@ import pandas as pd
 from scipy.spatial.distance import squareform, pdist
 from scipy.stats import spearmanr
 
-from analyses.population_analysis.rsa.rsa_utils import upper_triangle as _upper_triangle, partial_spearman, finite_mask
+from analyses.population_analysis.rsa.core.rsa_utils import upper_triangle as _upper_triangle, partial_spearman, finite_mask
 
 
 # ──────────────────────────────────────────────────────────
