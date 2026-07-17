@@ -437,14 +437,6 @@ def build_neural_rdm(rate_matrix, metric='correlation'):
         dists = pdist(rate_matrix, metric='euclidean')
     elif metric == 'cosine':
         dists = pdist(rate_matrix, metric='cosine')
-    elif metric == 'mahalanobis':
-        # Covariance across neurons
-        cov = np.cov(rate_matrix, rowvar=False)
-        # Small regularization for numerical stability
-        cov += np.eye(cov.shape[0]) * 1e-6
-        # Inverse covariance matrix
-        VI = np.linalg.inv(cov)
-        dists = pdist(rate_matrix, metric='mahalanobis', VI=VI)
     else:
         raise ValueError(f"Unknown metric: {metric}")
     rdm = squareform(dists)

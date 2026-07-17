@@ -29,7 +29,7 @@ class RSAConfig:
     exclude_groups: List[str] = field(default_factory=list)  # e.g. ['Stranger Things']
 
     # ── Neural RDM ──
-    neural_metric: str = 'correlation'   # 'correlation' (1-pearson_r) or 'euclidean' or 'cosine' or 'mahalanobis'
+    neural_metric: str = 'correlation'   # 'correlation' (1-pearson_r) or 'euclidean' or 'cosine'
 
     # ── Normalization (applied per neuron before building RDM) ──
     normalization: str = None            # None   = raw firing rates
