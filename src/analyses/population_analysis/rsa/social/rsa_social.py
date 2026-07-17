@@ -31,12 +31,12 @@ from scipy.stats import spearmanr, rankdata
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
-from analyses.population_analysis.rsa.rsa_utils import (
+from analyses.population_analysis.rsa.core.rsa_utils import (
     upper_triangle as _upper_triangle,
     partial_spearman as _partial_spearman,
     finite_mask,
 )
-from analyses.population_analysis.rsa.rsa_core import compare_rdms
+from analyses.population_analysis.rsa.core.rsa_core import compare_rdms
 
 
 # ──────────────────────────────────────────────────────────

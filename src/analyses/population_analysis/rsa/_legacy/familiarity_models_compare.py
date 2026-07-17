@@ -32,14 +32,14 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # reuse the exact pipeline + helpers already in your v2 script
-from rsa_group_separation_v2 import (
+from analyses.population_analysis.rsa._legacy.rsa_group_separation_v2 import (
     MONKEY_INFO_PATH, FAMILIARITY_LEVEL, METRICS,
     absdiff_rdm, categorical_rdm, _star,
 )
-from rsa_config import RSAConfig
-from rsa_core import run_rsa_pseudopop, build_neural_rdm, compare_rdms
+from analyses.population_analysis.rsa.core.rsa_config import RSAConfig
+from analyses.population_analysis.rsa.core.rsa_core import run_rsa_pseudopop, build_neural_rdm, compare_rdms
 from analyses.population_analysis.state_space.data_loading import load_and_filter
-from visual_responsiveness_filter import filter_visually_responsive
+from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
 from analyses.population_analysis.neuron_filters import apply_neuron_filters
 
 # ── models ──────────────────────────────────────────────────────────────

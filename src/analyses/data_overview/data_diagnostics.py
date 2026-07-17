@@ -23,8 +23,8 @@ from scipy import stats as sps
 import os
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
-from analyses.population_analysis.rsa.rsa_core import compute_firing_rates
-from  analyses.population_analysis.rsa.rsa_config import RSAConfig
+from analyses.population_analysis.rsa.core.rsa_core import compute_firing_rates
+from  analyses.population_analysis.rsa.core.rsa_config import RSAConfig
 
 MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv"
 SAVE_DIR = "data_diagnostics"

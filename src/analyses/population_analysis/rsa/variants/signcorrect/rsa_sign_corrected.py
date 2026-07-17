@@ -35,12 +35,12 @@ import pandas as pd
 from scipy.stats import spearmanr
 from scipy.spatial.distance import squareform
 
-from rsa_core import (
+from analyses.population_analysis.rsa.core.rsa_core import (
     compute_firing_rates,
     build_neural_rdm,
     normalize_rates,
 )
-from rsa_utils import upper_triangle as _upper_triangle, stars as _stars
+from analyses.population_analysis.rsa.core.rsa_utils import upper_triangle as _upper_triangle, stars as _stars
 
 
 # ──────────────────────────────────────────────────────────
@@ -433,7 +433,7 @@ def run_sign_corrected_pseudopop(df, info_df, interactions, cfg,
         exclude_ids=list(exclude_ids) if exclude_ids else None)
 
     # ── Build social RDMs to test against ──
-    from rsa_social import build_social_rdms, build_dominance_interactions
+    from analyses.population_analysis.rsa.social.rsa_social import build_social_rdms, build_dominance_interactions
     tx = getattr(cfg, 'transform_social_behavior', None)
     social_rdms = build_social_rdms(
         common_ids, interactions,

@@ -15,11 +15,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
-from visual_responsiveness_filter import filter_visually_responsive
+from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
 from analyses.population_analysis.neuron_filters import apply_neuron_filters
-from rsa_pkl_config import PklRSAConfig
-from rsa_pkl_core import load_pkl_windows, run_rsa_pkl_pseudopop
-from rsa_plotting import (plot_neural_rdm, plot_model_rdms, plot_rsa_bar,
+from analyses.population_analysis.rsa.variants.pkl.rsa_pkl_config import PklRSAConfig
+from analyses.population_analysis.rsa.variants.pkl.rsa_pkl_core import load_pkl_windows, run_rsa_pkl_pseudopop
+from analyses.population_analysis.rsa.core.rsa_plotting import (plot_neural_rdm, plot_model_rdms, plot_rsa_bar,
                           plot_mds, plot_neural_rdm_multi_sort)
 
 MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv"

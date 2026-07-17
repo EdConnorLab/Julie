@@ -7,7 +7,7 @@ firing rates in a post-stimulus response window to an early baseline window
 (0–100 ms post-stimulus onset, before visual responses reach MTL).
 
 Usage:
-    from visual_responsiveness_filter import filter_visually_responsive
+    from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
 
     # After load_and_filter(cfg), before compute_firing_rates:
     df = filter_visually_responsive(df, cfg)

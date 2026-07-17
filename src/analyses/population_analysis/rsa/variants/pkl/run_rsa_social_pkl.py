@@ -13,21 +13,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from analyses.population_analysis.state_space.data_loading import load_and_filter
-from visual_responsiveness_filter import filter_visually_responsive
+from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
 from analyses.population_analysis.neuron_filters import apply_neuron_filters
-from rsa_pkl_config import PklSocialRSAConfig
-from rsa_pkl_core import load_pkl_windows, run_rsa_pkl_pseudopop
-from rsa_social import (
+from analyses.population_analysis.rsa.variants.pkl.rsa_pkl_config import PklSocialRSAConfig
+from analyses.population_analysis.rsa.variants.pkl.rsa_pkl_core import load_pkl_windows, run_rsa_pkl_pseudopop
+from analyses.population_analysis.rsa.social.rsa_social import (
     load_all_interaction_matrices,
     build_neural_similarity_matrix,
     build_rank_distance_matrix,
 )
-from rsa_plotting import plot_neural_rdm
+from analyses.population_analysis.rsa.core.rsa_plotting import plot_neural_rdm
 
 # Re-use the helpers defined in run_rsa_social.py instead of duplicating them.
 # (If your project layout doesn't put run_rsa_social.py on the import path,
 # inline the two functions below or copy run_rsa_social into a module.)
-from run_rsa_social import (
+from analyses.population_analysis.rsa.social.run_rsa_social import (
     BEHAVIOR_FILES,
     plot_social_matrix,
     run_dissimilarity_condition,
