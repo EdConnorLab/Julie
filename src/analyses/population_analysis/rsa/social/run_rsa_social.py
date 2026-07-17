@@ -710,7 +710,7 @@ def main():
         win_start = int(cfg.window[0] * 1000)
         win_end   = int(cfg.window[1] * 1000)
         tx_tag    = cfg.transform_social_behavior or 'raw'
-        save_dir_base = (f"/home/connorlab/Documents/GitHub/Julie/src/analyses/population_analysis/rsa/outputs/"
+        save_dir_base = (f"/home/connorlab/Documents/GitHub/Julie/src/analyses/population_analysis/rsa/social/output/"
                          f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_beh_{tx_tag}_neur_{cfg.neural_metric}_{cfg.normalization}")
         save_config_summary(cfg, save_dir_base)
 
