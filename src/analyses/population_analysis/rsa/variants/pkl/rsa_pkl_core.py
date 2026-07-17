@@ -217,7 +217,7 @@ def compute_firing_rates_pkl(df, identities, neuron_windows, min_reps,
 def run_rsa_pkl_pseudopop(df, info_df, cfg, neuron_windows):
     """
     Pool the selected neurons across sessions into one pseudo-population,
-    compute one neural RDM, and run RSA against cfg.model_factors.
+    compute one neural RDM, and run RSA against getattr(cfg, 'model_factors', []).
 
     The selection of neurons and their windows is provided in
     ``neuron_windows`` (from load_pkl_windows).
@@ -295,7 +295,7 @@ def run_rsa_pkl_pseudopop(df, info_df, cfg, neuron_windows):
 
     neural_rdm = build_neural_rdm(combined_matrix, metric=cfg.neural_metric)
 
-    all_factors = list(cfg.model_factors)
+    all_factors = list(getattr(cfg, 'model_factors', []))
     for pf in getattr(cfg, 'partial_out', []):
         if pf not in all_factors:
             all_factors.append(pf)
@@ -303,7 +303,7 @@ def run_rsa_pkl_pseudopop(df, info_df, cfg, neuron_windows):
 
     partial_out = getattr(cfg, 'partial_out', [])
     comparisons = {}
-    for factor in cfg.model_factors:
+    for factor in getattr(cfg, 'model_factors', []):
         confound_factors = [p for p in partial_out if p != factor]
         if confound_factors:
             confound_rdms = [model_rdms[p] for p in confound_factors]

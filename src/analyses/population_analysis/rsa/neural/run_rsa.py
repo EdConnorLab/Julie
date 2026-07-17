@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from analyses.population_analysis.state_space.data_loading import load_and_filter
 from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
 from analyses.population_analysis.neuron_filters import apply_neuron_filters
-from analyses.population_analysis.rsa.core.rsa_config import RSAConfig
+from analyses.population_analysis.rsa.core.rsa_config import ModelRSAConfig
 from analyses.population_analysis.rsa.core.rsa_core import (run_rsa_session, run_rsa_pseudopop,
                       variance_quartile_diagnostic,
                       random_subset_diagnostic, compute_containment_metric)
@@ -23,7 +23,7 @@ MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinf
 
 
 def main():
-    cfg = RSAConfig(
+    cfg = ModelRSAConfig(
         region='AMG',                          # 'AMG', 'ER', or 'ALL'
         session=None,                          # None = pseudo-population; 'session_id' = single session
         window=(0.300, 0.600),                 # analysis window (seconds)

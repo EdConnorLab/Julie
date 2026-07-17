@@ -10,7 +10,7 @@ The pkl is expected to be a DataFrame with columns:
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple
 
-from analyses.population_analysis.rsa.core.rsa_config import RSAConfig, SocialRSAConfig
+from analyses.population_analysis.rsa.core.rsa_config import ModelRSAConfig, SocialRSAConfig
 
 
 # ──────────────────────────────────────────────────────────
@@ -21,9 +21,9 @@ from analyses.population_analysis.rsa.core.rsa_config import RSAConfig, SocialRS
 
 
 @dataclass
-class PklRSAConfig(RSAConfig):
+class PklRSAConfig(ModelRSAConfig):
     """
-    RSAConfig + pkl-window options.
+    ModelRSAConfig + pkl-window options.
 
     Modes
     -----

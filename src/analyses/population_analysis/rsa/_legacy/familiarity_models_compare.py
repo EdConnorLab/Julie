@@ -36,7 +36,7 @@ from analyses.population_analysis.rsa._legacy.rsa_group_separation_v2 import (
     MONKEY_INFO_PATH, FAMILIARITY_LEVEL, METRICS,
     absdiff_rdm, categorical_rdm, _star,
 )
-from analyses.population_analysis.rsa.core.rsa_config import RSAConfig
+from analyses.population_analysis.rsa.core.rsa_config import ModelRSAConfig
 from analyses.population_analysis.rsa.core.rsa_core import run_rsa_pseudopop, build_neural_rdm, compare_rdms
 from analyses.population_analysis.state_space.data_loading import load_and_filter
 from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
@@ -66,7 +66,7 @@ def compute_marginal(region, n_permutations=2000, window=(0.300, 0.500),
       { 'graded': {metric: {'rho':..,'p':..}}, 'binary': {metric: {...}},
         'groups': [group per identity], 'ids': [...] }
     """
-    cfg = RSAConfig(
+    cfg = ModelRSAConfig(
         region=region, session=None, window=window, min_epoch_duration=1.0,
         min_reps_per_monkey=min_reps, neural_metric='correlation',
         model_factors=['group'], partial_out=[], exclude_groups=[],

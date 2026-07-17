@@ -136,7 +136,6 @@ def main():
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
         neural_metric='correlation',
-        model_factors=[],
         exclude_groups=['Stranger Things'],
         normalization=None,
         transform_social_behavior=None,        # None | 'rank' | 'log'

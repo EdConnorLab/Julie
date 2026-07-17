@@ -45,7 +45,7 @@ import matplotlib.pyplot as plt
 from analyses.population_analysis.state_space.data_loading import load_and_filter
 from analyses.population_analysis.rsa.core.visual_responsiveness_filter import filter_visually_responsive
 from analyses.population_analysis.neuron_filters import apply_neuron_filters
-from analyses.population_analysis.rsa.core.rsa_config import RSAConfig
+from analyses.population_analysis.rsa.core.rsa_config import ModelRSAConfig
 from analyses.population_analysis.rsa.core.rsa_core import (run_rsa_pseudopop, build_neural_rdm,
                       compare_rdms, compare_rdms_partial)
 
@@ -134,7 +134,7 @@ def containment_slope_test(neural_rdm, group_labels, fam_map,
 
 def run_region(region, n_permutations=2000, window=(0.300, 0.500),
                normalization='soft', min_reps=7, output_root='./rsa_group_separation'):
-    cfg = RSAConfig(
+    cfg = ModelRSAConfig(
         region=region,
         session=None,                       # pseudo-population
         window=window,

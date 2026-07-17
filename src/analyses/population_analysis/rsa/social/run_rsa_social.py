@@ -620,7 +620,6 @@ def main():
         min_epoch_duration=1.3,
         min_reps_per_monkey=5,
         neural_metric='correlation',  # 'correlation', 'euclidean', 'cosine'
-        model_factors=[],
         exclude_groups=['Stranger Things', 'Best Frans', 'Instigators'],
         normalization='soft',                   # None | 'soft' | 'zscore'
         transform_social_behavior='log',        # None | 'rank' | 'log'

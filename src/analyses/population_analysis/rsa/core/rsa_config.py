@@ -6,10 +6,15 @@ from typing import Optional, List, Tuple
 @dataclass
 class RSAConfig:
     """
-    Base RSA configuration.
+    Base RSA configuration: everything needed to go from trials to a *neural*
+    RDM. These fields are shared by both pipelines.
 
-    Used directly by run_rsa.py (model-factor RSA).
-    Subclassed by SocialRSAConfig for run_rsa_social.py.
+    Subclassed by:
+      - ModelRSAConfig   → run_rsa.py            (neural RDM vs model-factor RDMs)
+      - SocialRSAConfig  → run_rsa_social.py     (neural RDM vs social RDMs)
+
+    Construct this base directly only when you just need the neural side
+    (e.g. data_diagnostics).
     """
 
     # ── Data ──
@@ -62,12 +67,6 @@ class RSAConfig:
     # its 'NeuronID' column are kept.  None = disabled.
     neuron_id_filter_pkl: Optional[str] = None
 
-    # ── Partial RSA (run_rsa.py): regress out these model RDMs before testing each factor ──
-    # e.g. ['familiarity', 'group'] → for each target factor, partial out
-    # familiarity and group, then correlate residuals.
-    # Factors listed here are auto-built even if not in model_factors.
-    partial_out: List[str] = field(default_factory=list)
-
     # ── Stats ──
     # n_permutations  : p-value for "is ρ > 0?" within each group.
     #                   Shuffles neural RDM rows+cols to build a null distribution of ρ.
@@ -83,14 +82,6 @@ class RSAConfig:
         'Instigators':     '#2ca02c',
         'Stranger Things': '#1f77b4',
     })
-
-    # ── Model RSA only (run_rsa.py) ──
-    model_factors: List[str] = field(default_factory=lambda: [
-        'group', 'sex', 'age_bin', 'rank'
-    ])
-    # Additional options: 'age_continuous', 'familiarity'
-    rdm_sort_mode: str = 'by_factor'   # 'by_factor' = each subplot sorted by its own factor
-                                        # 'by_group'  = all subplots sorted by group → sex → age
 
     def validate(self):
         if self.window[0] >= self.window[1]:
@@ -108,11 +99,35 @@ class RSAConfig:
 
 
 @dataclass
+class ModelRSAConfig(RSAConfig):
+    """
+    Config for model-factor RSA (run_rsa.py): the neural RDM is compared against
+    categorical/ordinal model RDMs (group, sex, age, rank, familiarity, ...).
+    """
+
+    # ── Model RDMs to test ──
+    model_factors: List[str] = field(default_factory=lambda: [
+        'group', 'sex', 'age_bin', 'rank'
+    ])
+    # Additional options: 'age_continuous', 'familiarity'
+
+    # ── Partial RSA: regress out these model RDMs before testing each factor ──
+    # e.g. ['familiarity', 'group'] → for each target factor, partial out
+    # familiarity and group, then correlate residuals. Factors listed here are
+    # auto-built even if not in model_factors.
+    partial_out: List[str] = field(default_factory=list)
+
+    # ── Plot sorting ──
+    rdm_sort_mode: str = 'by_factor'   # 'by_factor' = each subplot sorted by its own factor
+                                        # 'by_group'  = all subplots sorted by group → sex → age
+
+
+@dataclass
 class SocialRSAConfig(RSAConfig):
     """
     Extended config for social behavior RSA (run_rsa_social.py).
 
-    Adds social-specific parameters on top of the shared base.
+    Adds social-specific parameters on top of the shared neural-RDM base.
     """
 
     # ── Social profile RDMs ──

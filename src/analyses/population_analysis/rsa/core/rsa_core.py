@@ -95,7 +95,7 @@ def variance_quartile_diagnostic(rate_matrix, info_df, identities, cfg,
     ranked_idx = np.argsort(neuron_std)[::-1]
 
     # Build model RDMs once (shared across quartiles)
-    all_factors = list(cfg.model_factors)
+    all_factors = list(getattr(cfg, 'model_factors', []))
     for pf in getattr(cfg, 'partial_out', []):
         if pf not in all_factors:
             all_factors.append(pf)
@@ -117,7 +117,7 @@ def variance_quartile_diagnostic(rate_matrix, info_df, identities, cfg,
         rdm = build_neural_rdm(sub_matrix, metric=cfg.neural_metric)
 
         comparisons = {}
-        for factor in cfg.model_factors:
+        for factor in getattr(cfg, 'model_factors', []):
             confound_factors = [p for p in partial_out if p != factor]
             if confound_factors:
                 confound_rdm_list = [model_rdms[p] for p in confound_factors]
@@ -185,7 +185,7 @@ def random_subset_diagnostic(rate_matrix, info_df, identities, cfg,
     rng = np.random.default_rng(rng_seed)
 
     # Build model RDMs once (shared across draws)
-    all_factors = list(cfg.model_factors)
+    all_factors = list(getattr(cfg, 'model_factors', []))
     for pf in getattr(cfg, 'partial_out', []):
         if pf not in all_factors:
             all_factors.append(pf)
@@ -206,7 +206,7 @@ def random_subset_diagnostic(rate_matrix, info_df, identities, cfg,
         rdm = build_neural_rdm(sub_matrix, metric=cfg.neural_metric)
 
         comparisons = {}
-        for factor in cfg.model_factors:
+        for factor in getattr(cfg, 'model_factors', []):
             confound_factors = [p for p in partial_out if p != factor]
             if confound_factors:
                 confound_rdm_list = [model_rdms[p] for p in confound_factors]
@@ -234,7 +234,7 @@ def random_subset_diagnostic(rate_matrix, info_df, identities, cfg,
 
 def print_variance_diagnostic(diag_results, cfg):
     """Pretty-print the variance-quartile diagnostic table."""
-    factors = cfg.model_factors
+    factors = getattr(cfg, 'model_factors', [])
     header = f"{'Top %':>8s}  {'n_neur':>6s}" + "".join(f"  {f:>16s}" for f in factors)
     print(f"\n  Variance-quartile diagnostic")
     print(f"  {header}")
@@ -734,7 +734,7 @@ def run_rsa_session(df, session, info_df, cfg):
     neural_rdm = build_neural_rdm(rate_matrix, metric=cfg.neural_metric)
 
     # Ensure partial_out factors are built even if not in model_factors
-    all_factors = list(cfg.model_factors)
+    all_factors = list(getattr(cfg, 'model_factors', []))
     for pf in getattr(cfg, 'partial_out', []):
         if pf not in all_factors:
             all_factors.append(pf)
@@ -743,7 +743,7 @@ def run_rsa_session(df, session, info_df, cfg):
     # Run comparisons: partial or standard
     partial_out = getattr(cfg, 'partial_out', [])
     comparisons = {}
-    for factor in cfg.model_factors:
+    for factor in getattr(cfg, 'model_factors', []):
         confound_factors = [p for p in partial_out if p != factor]
         if confound_factors:
             confound_rdms = [model_rdms[p] for p in confound_factors]
@@ -874,7 +874,7 @@ def run_rsa_pseudopop(df, info_df, cfg):
     neural_rdm = build_neural_rdm(combined_matrix, metric=cfg.neural_metric)
 
     # Ensure partial_out factors are built even if not in model_factors
-    all_factors = list(cfg.model_factors)
+    all_factors = list(getattr(cfg, 'model_factors', []))
     for pf in getattr(cfg, 'partial_out', []):
         if pf not in all_factors:
             all_factors.append(pf)
@@ -883,7 +883,7 @@ def run_rsa_pseudopop(df, info_df, cfg):
     # Run comparisons: partial or standard
     partial_out = getattr(cfg, 'partial_out', [])
     comparisons = {}
-    for factor in cfg.model_factors:
+    for factor in getattr(cfg, 'model_factors', []):
         confound_factors = [p for p in partial_out if p != factor]
         if confound_factors:
             confound_rdms = [model_rdms[p] for p in confound_factors]

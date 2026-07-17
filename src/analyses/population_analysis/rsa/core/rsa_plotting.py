@@ -238,7 +238,7 @@ def plot_rsa_bar(results_list, cfg, save=True, save_dir=None):
     ----------
     results_list : list of result dicts (from run_rsa_session or run_rsa_pseudopop)
     """
-    factors = cfg.model_factors
+    factors = getattr(cfg, 'model_factors', [])
 
     # Collect rho values: shape (n_sessions, n_factors)
     session_names = []
@@ -380,10 +380,10 @@ def plot_neural_rdm_multi_sort(result, cfg, factors=None,
     result : dict from run_rsa_session / run_rsa_pseudopop
     cfg : RSAConfig
     factors : list of str or None
-        Which factors to sort by (one subplot each). None → cfg.model_factors.
+        Which factors to sort by (one subplot each). None → getattr(cfg, 'model_factors', []).
     """
     if factors is None:
-        factors = cfg.model_factors
+        factors = getattr(cfg, 'model_factors', [])
 
     rdm = result['neural_rdm']
     n_panels = len(factors)
@@ -560,10 +560,10 @@ def plot_variance_quartile_rdms(diag_results, cfg, sort_factors=None,
         'model_labels', 'model_rdms', 'comparisons'.
     cfg : RSAConfig
     sort_factors : list of str or None
-        Which factors to sort by (one row each).  None → cfg.model_factors.
+        Which factors to sort by (one row each).  None → getattr(cfg, 'model_factors', []).
     """
     if sort_factors is None:
-        sort_factors = cfg.model_factors
+        sort_factors = getattr(cfg, 'model_factors', [])
 
     n_cols = len(diag_results)
     n_rows = len(sort_factors)
@@ -725,10 +725,10 @@ def plot_random_subset_rdms(random_results, cfg, reference_entry=None,
         A single entry from variance_quartile_diagnostic (typically the
         top-25% quartile = diag[0]) shown as the leftmost column.
     sort_factors : list of str or None
-        None → cfg.model_factors.
+        None → getattr(cfg, 'model_factors', []).
     """
     if sort_factors is None:
-        sort_factors = cfg.model_factors
+        sort_factors = getattr(cfg, 'model_factors', [])
 
     panels = []
     if reference_entry is not None:

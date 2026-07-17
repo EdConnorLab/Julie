@@ -54,7 +54,6 @@ def main():
         min_epoch_duration=2.2,                # must cover the longest pkl window
         min_reps_per_monkey=7,
         neural_metric='correlation',
-        model_factors=[],
         exclude_groups=['Stranger Things', 'Best Frans'],
         normalization=None,
         transform_social_behavior='log',        # None | 'rank' | 'log'
