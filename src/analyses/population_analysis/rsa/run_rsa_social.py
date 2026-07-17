@@ -619,17 +619,17 @@ def main():
         window=(0.300, 0.600),
         min_epoch_duration=1.3,
         min_reps_per_monkey=5,
-        neural_metric='euclidean',  #correlation, euclidean, cosine, mahalanobis
+        neural_metric='correlation',  # 'correlation', 'euclidean', 'cosine'
         model_factors=[],
         exclude_groups=['Stranger Things', 'Best Frans', 'Instigators'],
-        normalization='soft',
+        normalization='soft',                   # None | 'soft' | 'zscore'
         transform_social_behavior='log',        # None | 'rank' | 'log'
         n_permutations=5000,
         between_group_permutations=2000,
         n_bootstrap=2000,
         save_plots=True,
-        save_dir='rsa_social',
-        visual_responsiveness_filter=False,
+        save_dir='rsa_social_visual_responsive',
+        visual_responsiveness_filter=True,
         partial_out_rank=False,
         # exclude_identities=['7124','G942'],
         # ── Neuron filters (off by default) ──

@@ -26,10 +26,10 @@ def main():
     cfg = RSAConfig(
         region='AMG',                          # 'AMG', 'ER', or 'ALL'
         session=None,                          # None = pseudo-population; 'session_id' = single session
-        window=(0.300, 0.500),                 # analysis window (seconds)
+        window=(0.300, 0.600),                 # analysis window (seconds)
         min_epoch_duration=1.0,
         min_reps_per_monkey=7,
-        neural_metric='euclidean',           # 'correlation' or 'euclidean' or 'cosine' or 'mahalanobis'
+        neural_metric='correlation',           # 'correlation' or 'euclidean' or 'cosine'
         model_factors=['group', 'familiarity'], # 'sex','age_continuous', 'rank'
         partial_out=  [],  # ['familiarity', 'group'],  # regress these out when testing other factors
         exclude_groups=[],    # ['Stranger Things'],
@@ -43,8 +43,8 @@ def main():
         peak_latency_range=(0.200, 0.500),
         peak_latency_search_window=(0.0, 1.00),
         # neuron_id_filter_pkl='/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
-        save_plots=True,
-        save_dir=f'rsa_results_for_progress_report_Jun2026_euclidean',
+        save_plots=False,
+        save_dir=f'rsa_results_after_updating_spike_cache',
     )
     cfg.validate()
 
