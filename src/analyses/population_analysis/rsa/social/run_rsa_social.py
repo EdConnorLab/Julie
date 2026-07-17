@@ -519,7 +519,7 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
     social_rdms = build_social_rdms(
         identities, interactions,
         behavior_types=['affiliation', 'agonism', 'submission'],
-        symmetrize=symmetrize, profile_metric='correlation',
+        symmetrize=symmetrize, profile_metric=cfg.social_profile_metric,
         log_transform=log_transform, include_combined=True,
         rank_transform=rank_transform,
         exclude_ids=cfg.exclude_identities)
@@ -530,7 +530,7 @@ def run_dissimilarity_condition(neural_rdm, identities, interactions, info_df, c
     social_rdms_dominance = build_social_rdms(
         identities, interactions_with_dom,
         behavior_types=['dominance'],
-        symmetrize=symmetrize, profile_metric='correlation',
+        symmetrize=symmetrize, profile_metric=cfg.social_profile_metric,
         log_transform=False, include_combined=False,
         rank_transform=rank_transform,
         exclude_ids=None)   # already stripped inside build_dominance_interactions
@@ -623,6 +623,7 @@ def main():
         exclude_groups=['Stranger Things', 'Best Frans', 'Instigators'],
         normalization='soft',                   # None | 'soft' | 'zscore'
         transform_social_behavior='log',        # None | 'rank' | 'log'
+        social_profile_metric='correlation',    # 'correlation' | 'euclidean' | 'cosine'
         n_permutations=5000,
         between_group_permutations=2000,
         n_bootstrap=2000,
@@ -671,6 +672,7 @@ def main():
     print(f"  Bootstrap CI: {cfg.n_bootstrap}")
     print(f"  Partial out rank: {cfg.partial_out_rank}")
     print(f"  Social behavior transform: {cfg.transform_social_behavior or 'raw'}")
+    print(f"  Social profile metric: {cfg.social_profile_metric}")
     print(f"  Exclude groups: {cfg.exclude_groups}")
     print(f"  Exclude identities: {cfg.exclude_identities}")
     print(f"{'='*60}\n")
@@ -710,7 +712,7 @@ def main():
         win_end   = int(cfg.window[1] * 1000)
         tx_tag    = cfg.transform_social_behavior or 'raw'
         save_dir_base = (f"/home/connorlab/Documents/GitHub/Julie/src/analyses/population_analysis/rsa/social/output/"
-                         f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_beh_{tx_tag}_neur_{cfg.neural_metric}_{cfg.normalization}")
+                         f"{cfg.save_dir}/{cfg.region}_{win_start}_{win_end}_beh_{tx_tag}_soc_{cfg.social_profile_metric}_neur_{cfg.neural_metric}_{cfg.normalization}")
         save_config_summary(cfg, save_dir_base)
 
         print(f"\n{'='*60}")

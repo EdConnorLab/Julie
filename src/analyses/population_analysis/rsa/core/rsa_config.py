@@ -137,6 +137,13 @@ class SocialRSAConfig(RSAConfig):
     #   'log'  = log1p-transform the interaction matrix before profiling
     transform_social_behavior: Optional[str] = None
 
+    # social_profile_metric : distance used to turn each pair of behavioral
+    # profile vectors into a social RDM entry.
+    #   'correlation' = 1 - Pearson r between profiles (default)
+    #   'euclidean'   = Euclidean distance between profiles
+    #   'cosine'      = 1 - cosine similarity between profiles
+    social_profile_metric: str = 'correlation'
+
     # ── Partial out rank from social RSA (|rank_i - rank_j| as confound within each group) ──
     partial_out_rank: bool = False
 
@@ -162,3 +169,8 @@ class SocialRSAConfig(RSAConfig):
             raise ValueError(
                 f"transform_social_behavior must be one of {valid}, "
                 f"got {self.transform_social_behavior!r}")
+        valid_metrics = {'correlation', 'euclidean', 'cosine'}
+        if self.social_profile_metric not in valid_metrics:
+            raise ValueError(
+                f"social_profile_metric must be one of {valid_metrics}, "
+                f"got {self.social_profile_metric!r}")
