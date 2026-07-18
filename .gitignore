@@ -8,3 +8,19 @@ __pycache__/
 # jun2026 grant investigation generated outputs
 src/analyses/jun2026_grant_investigation/investigation_outputs/
 src/analyses/jun2026_grant_investigation/regenerated_inputs/
+
+# macOS
+.DS_Store
+
+# Cortana regeneratable caches and generated outputs (recomputable from source)
+Cortana/threshold_mua_spike_cache/
+Cortana/exploded_spike_cache/
+Cortana/sorted_spike_cache_filtered/
+Cortana/analysis_cache/
+Cortana/analysis_results/
+Cortana/behavior_matrix_cache/
+Cortana/psth_heatmaps/
+
+# Cortana source data kept external, not in git (not regeneratable in-repo)
+Cortana/compiled/
+Cortana/sorted_spike_cache/
