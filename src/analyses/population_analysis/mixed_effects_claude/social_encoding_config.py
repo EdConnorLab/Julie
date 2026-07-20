@@ -61,7 +61,7 @@ class SocialEncodingConfig:
 
     # ── Plotting / saving ──────────────────────────────────────────────
     save_plots: bool = True
-    save_dir: str = 'social_encoding_results'
+    save_dir: str = 'outputs/social_encoding_results'
 
     group_colors: dict = field(default_factory=lambda: {
         'Zombies':         '#9467bd',

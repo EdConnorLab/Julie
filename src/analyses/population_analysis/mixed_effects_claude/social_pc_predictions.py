@@ -749,7 +749,7 @@ def main():
         pseudo_population=True,
         n_permutations=0,
         save_plots=True,
-        save_dir='social_pc_predictions_grant_figures',
+        save_dir='outputs/social_pc_predictions_grant_figures',
         groups=['Instigators'],
     )
     cfg.validate()

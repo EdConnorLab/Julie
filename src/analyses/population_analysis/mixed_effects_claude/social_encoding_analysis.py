@@ -691,7 +691,7 @@ def main():
         pseudo_population=True,
         n_permutations=5000,
         save_plots=True,
-        save_dir='social_encoding_results',
+        save_dir='outputs/social_encoding_results',
         groups=['Zombies', 'Instigators'],
     )
     cfg.validate()

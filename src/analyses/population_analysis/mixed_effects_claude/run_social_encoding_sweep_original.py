@@ -353,7 +353,7 @@ def run_pcs_sweep(region='ALL', max_pcs=5, n_permutations=5000):
         pseudo_population=True,
         n_permutations=n_permutations,
         save_plots=True,
-        save_dir='social_encoding_pcs_sweep',
+        save_dir='outputs/social_encoding_pcs_sweep',
     )
     cfg.validate()
 
