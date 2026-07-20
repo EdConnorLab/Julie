@@ -9,6 +9,21 @@ __pycache__/
 src/analyses/jun2026_grant_investigation/investigation_outputs/
 src/analyses/jun2026_grant_investigation/regenerated_inputs/
 
+# eye data analysis
+src/analyses/eye_data_analysis/eye_track_plots
+
+# RSA
+src/analyses/population_analysis/rsa/outputs
+
+# mixed effects
+src/analyses/population_analysis/mixed_effects_claude/outputs
+
+# decoding
+src/analyses/population_analysis/decoding/outputs
+
+# zombies raster review output
+src/analyses/zombies_raster_review/output
+
 # macOS
 .DS_Store
 
