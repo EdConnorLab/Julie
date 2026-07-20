@@ -103,7 +103,7 @@ def find_consensus_units(sortings, analyzers, intan_dir):
     return sorted_df, summary_lines
 
 
-def assign_spikes_to_trials(sorted_df, intan_dir, sampling_frequency):
+def assign_spikes_to_trials(sorted_df, intan_dir, sampling_frequency, pre_stimulus_time=0.0):
     stim_epochs = epoch_using_marker_channels(
         os.path.join(intan_dir, "digitalin.dat"),
         false_negative_correction_duration=2,
@@ -112,12 +112,20 @@ def assign_spikes_to_trials(sorted_df, intan_dir, sampling_frequency):
         os.path.join(intan_dir, "notes.txt"), stim_epochs,
     )
 
+    # Widen the trial window's lower bound by `pre_stimulus_time` (converted to
+    # samples) so pre-stimulus spikes are retained. EpochStartStop is left as the
+    # strict (onset, offset), so plot-time re-zeroing (spike - onset) renders the
+    # pre-stimulus spikes as negative times. pre_stimulus_time=0.0 reproduces the
+    # original strict window exactly.
+    pre_samples = int(round(pre_stimulus_time * sampling_frequency))
+
     rows = []
     for task_id, (epoch_start, epoch_stop) in epochs_for_task_ids.items():
         epoch = (epoch_start / sampling_frequency, epoch_stop / sampling_frequency)
+        lower_bound = max(epoch_start - pre_samples, 0)  # clamp to recording start
         for _, unit_row in sorted_df.iterrows():
             spike_indices = unit_row['SpikeIdx']
-            mask = (epoch_start <= spike_indices) & (spike_indices <= epoch_stop)
+            mask = (lower_bound <= spike_indices) & (spike_indices <= epoch_stop)
             rows.append({
                 'TaskField': task_id,
                 'SpikeTimes': spike_indices[mask] / sampling_frequency,
@@ -154,14 +162,30 @@ def write_summary(summary_dir, round_folder, lines):
     print(f"Summary written to {summary_path}")
 
 
-def analyze_sorted_spikes(date_str, round_no, monkey=SUBJECT_MONKEY):
+def default_cache_subdir(pre_stimulus_time=0.0):
+    """Cache subdir name for a given pre-stimulus window.
+
+    Strict window (pre_stimulus_time=0.0) keeps the canonical 'sorted_spike_cache'
+    so existing behavior/paths are unchanged; a positive window writes to a
+    separate variant (e.g. 'sorted_spike_cache_pre200ms') so strict-window
+    analyses are never contaminated by pre-stimulus spikes.
+    """
+    if pre_stimulus_time and pre_stimulus_time > 0:
+        return f"sorted_spike_cache_pre{int(round(pre_stimulus_time * 1000))}ms"
+    return "sorted_spike_cache"
+
+
+def analyze_sorted_spikes(date_str, round_no, monkey=SUBJECT_MONKEY,
+                          pre_stimulus_time=0.0, cache_subdir=None):
     intan_dir = build_intan_session_path(date_str, round_no, monkey)
     sampling_frequency, _ = get_recording_session_info(intan_dir)
 
     date_obj = datetime.strptime(date_str, "%Y-%m-%d")
     round_folder = f"{date_obj.strftime('%y%m%d')}_round{round_no}"
 
-    cache_mgr = SortedSpikeCacheManager(monkey)
+    if cache_subdir is None:
+        cache_subdir = default_cache_subdir(pre_stimulus_time)
+    cache_mgr = SortedSpikeCacheManager(monkey, cache_subdir=cache_subdir)
 
     # Load sorter outputs and find consensus
     sortings, analyzers = load_sorting_results(intan_dir)
@@ -176,7 +200,8 @@ def analyze_sorted_spikes(date_str, round_no, monkey=SUBJECT_MONKEY):
     print(f"Units in agreement: {sorted_df.shape[0]}")
 
     # Assign spikes to trial epochs
-    sorted_spikes_df = assign_spikes_to_trials(sorted_df, intan_dir, sampling_frequency)
+    sorted_spikes_df = assign_spikes_to_trials(sorted_df, intan_dir, sampling_frequency,
+                                               pre_stimulus_time=pre_stimulus_time)
     print(f"Sorted spikes shape: {sorted_spikes_df.shape}")
 
     # Merge with metadata from exploded spike cache
@@ -197,6 +222,14 @@ if __name__ == "__main__":
     p.add_argument("--date", required=True, help="e.g. 2023-09-26")
     p.add_argument("--round", type=int, required=True, dest="round_no")
     p.add_argument("--monkey", default=SUBJECT_MONKEY, help="Subject monkey folder name (default: Cortana)")
+    p.add_argument("--pre-stimulus-time", type=float, default=0.0, dest="pre_stimulus_time",
+                   help="Seconds of pre-stimulus baseline to retain (default 0.0 = strict window). "
+                        "E.g. 0.2 keeps 200 ms before onset and writes to sorted_spike_cache_pre200ms.")
+    p.add_argument("--cache-subdir", default=None,
+                   help="Override output cache subdir (default: sorted_spike_cache, or "
+                        "sorted_spike_cache_pre{ms}ms when --pre-stimulus-time > 0).")
     args = p.parse_args()
 
-    analyze_sorted_spikes(args.date, args.round_no, args.monkey)
+    analyze_sorted_spikes(args.date, args.round_no, args.monkey,
+                          pre_stimulus_time=args.pre_stimulus_time,
+                          cache_subdir=args.cache_subdir)

@@ -23,6 +23,7 @@ _UNIT_COLORS_FOR_RASTER = [
 def plot_raster_by_group(data, spike_col, *,
                          order_by_rank=True,
                          xlim=2.2,
+                         pre_stimulus_time=0.0,
                          title=None,
                          save_path=None):
     """
@@ -39,6 +40,10 @@ def plot_raster_by_group(data, spike_col, *,
         If True, order monkeys within each group by dominance rank.
     xlim : float
         X-axis limit (seconds after epoch start).
+    pre_stimulus_time : float
+        Seconds of pre-stimulus baseline to show left of onset (default 0.0).
+        Requires a cache built with a matching pre-stimulus window; the axis
+        then spans [-pre_stimulus_time, xlim] with an onset marker at t=0.
     title : str, optional
         Figure super-title.
     save_path : str, optional
@@ -75,10 +80,11 @@ def plot_raster_by_group(data, spike_col, *,
             subplot_idx = row_idx * n_groups + col_idx + 1
             ax = fig.add_subplot(max_rows, n_groups, subplot_idx)
 
-            aligned_spikes_list = _align_spikes_to_epoch(monkey_data, spike_col)
+            aligned_spikes_list = _align_spikes_to_epoch(monkey_data, spike_col,
+                                                         pre_stimulus_time=pre_stimulus_time)
 
             ax.eventplot(aligned_spikes_list, color="black", linewidths=1)
-            ax.set_xlim(0, xlim)
+            _apply_prestim_time_axis(ax, xlim, pre_stimulus_time)
             ax.set_yticks([len(aligned_spikes_list)])
             ax.text(1.05, 0.5, monkey_name,
                     transform=ax.transAxes, ha="left", va="center", fontsize=14)
@@ -111,6 +117,7 @@ def plot_raster_by_group(data, spike_col, *,
 def plot_multiunit_raster_overlaid(unit_dataframes, *,
                                    order_by_rank=True,
                                    xlim=2.2,
+                                   pre_stimulus_time=0.0,
                                    title=None,
                                    save_path=None):
     """
@@ -167,10 +174,11 @@ def plot_multiunit_raster_overlaid(unit_dataframes, *,
                 ]
                 if monkey_data.empty:
                     continue
-                aligned = _align_spikes_to_epoch(monkey_data, "SpikeTimes")
+                aligned = _align_spikes_to_epoch(monkey_data, "SpikeTimes",
+                                                 pre_stimulus_time=pre_stimulus_time)
                 ax.eventplot(aligned, color=colors[label], linewidths=0.8)
 
-            ax.set_xlim(0, xlim)
+            _apply_prestim_time_axis(ax, xlim, pre_stimulus_time)
             ax.text(1.05, 0.5, monkey_name,
                     transform=ax.transAxes, ha="left", va="center", fontsize=14)
 
@@ -196,6 +204,7 @@ def plot_multiunit_raster_overlaid(unit_dataframes, *,
 def plot_multiunit_raster_sidebyside(unit_dataframes, *,
                                      order_by_rank=True,
                                      xlim=2.2,
+                                     pre_stimulus_time=0.0,
                                      title=None,
                                      save_path=None):
     """
@@ -245,10 +254,11 @@ def plot_multiunit_raster_sidebyside(unit_dataframes, *,
                 (udf["MonkeyName"] == monkey_name)
             ]
             if not monkey_data.empty:
-                aligned = _align_spikes_to_epoch(monkey_data, "SpikeTimes")
+                aligned = _align_spikes_to_epoch(monkey_data, "SpikeTimes",
+                                                 pre_stimulus_time=pre_stimulus_time)
                 ax.eventplot(aligned, color=colors[label], linewidths=0.8)
 
-            ax.set_xlim(0, xlim)
+            _apply_prestim_time_axis(ax, xlim, pre_stimulus_time)
             if u_idx == 0:
                 ax.set_ylabel(monkey_name, fontsize=9, rotation=0, labelpad=40, va="center")
             ax.set_yticks([])
@@ -273,12 +283,33 @@ def _save_or_show(fig, save_path):
     else:
         plt.show()
 
-def _align_spikes_to_epoch(monkey_data, spike_col):
-    """Align spike times to epoch start for each trial."""
+def _align_spikes_to_epoch(monkey_data, spike_col, pre_stimulus_time=0.0):
+    """Align spike times to epoch start (stimulus onset) for each trial.
+
+    Spikes from ``start - pre_stimulus_time`` through ``stop`` are kept and
+    re-zeroed to the onset (``start``), so pre-stimulus spikes become negative
+    times. ``pre_stimulus_time=0.0`` reproduces the original strict
+    ``[start, stop]`` behavior exactly. Note that pre-stimulus spikes only exist
+    in caches built with a matching pre-stimulus window; against a strict cache
+    this simply finds nothing before onset.
+    """
     aligned = []
     for _, row in monkey_data.iterrows():
         spikes = row[spike_col]
         start, stop = row["EpochStartStop"]
-        trial_spikes = [s - start for s in spikes if start <= s <= stop]
+        trial_spikes = [s - start for s in spikes if start - pre_stimulus_time <= s <= stop]
         aligned.append(trial_spikes)
     return aligned
+
+
+def _apply_prestim_time_axis(ax, xlim, pre_stimulus_time=0.0):
+    """Set the raster time axis, extending left to reveal a pre-stimulus window.
+
+    When ``pre_stimulus_time == 0`` this is identical to the original
+    ``ax.set_xlim(0, xlim)``. When positive, the axis starts at
+    ``-pre_stimulus_time`` and a dashed onset marker is drawn at t=0.
+    """
+    left = -pre_stimulus_time if pre_stimulus_time and pre_stimulus_time > 0 else 0
+    ax.set_xlim(left, xlim)
+    if pre_stimulus_time and pre_stimulus_time > 0:
+        ax.axvline(0, color="k", lw=0.8, ls="--", zorder=0)  # stimulus onset
