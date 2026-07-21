@@ -48,6 +48,7 @@ from data_access.spike_source import SISortedSpikeSource, ThresholdMUASpikeSourc
 from project_util import PROJECT_BASE_PATH                           # noqa: E402
 from grant_mua_matching import (                                     # noqa: E402
     match_grant_cells_to_mua_neuronids, is_mua_name, summarize_problems,
+    match_rows, MATCH_TABLE_COLUMNS,
 )
 
 # =====================================================================
@@ -212,6 +213,40 @@ def _report_problems(problems):
         print(f"    [{p['kind']}] {c.date} round{c.round_no} {c.match_value}: {p['detail']}")
 
 
+def _default_match_csv():
+    return os.path.join(_HERE, 'output', 'grant_mua_match_table.csv')   # 'output/' is gitignored
+
+
+def _write_match_rows_csv(rows, out_csv=None):
+    out_csv = out_csv or _default_match_csv()
+    os.makedirs(os.path.dirname(out_csv), exist_ok=True)
+    pd.DataFrame(rows, columns=list(MATCH_TABLE_COLUMNS)).to_csv(out_csv, index=False)
+    return out_csv
+
+
+def export_grant_mua_match_table(out_csv=None):
+    """Match the grant's UNSORTED (MUA) cells to their threshold-MUA NeuronIDs and write a
+    CSV you can eyeball: one row per grant MUA cell with its matched NeuronID and status
+    (matched / no_match / ambiguous / missing_session / no_window). Matching ONLY -- no
+    count extraction -- so it is fast. Same match logic Run B uses, so the CSV is an exact
+    audit of the mapping. Returns (rows, path)."""
+    from analyses.zombies_raster_review.unit_lists import load_mixed_manual_requests
+    import common
+
+    reqs = load_mixed_manual_requests(common.HIS_XLSX)
+    reqs = reqs[:GRANT_NCELLS] if GRANT_NCELLS and GRANT_NCELLS > 0 else reqs
+    mua_reqs = [r for r in reqs if is_mua_name(r.match_value)]
+    print(f"[grant-mua] {len(reqs)} grant rows -> {len(mua_reqs)} unsorted (MUA) cells")
+    source = _mua_source()
+    matched, problems = match_grant_cells_to_mua_neuronids(mua_reqs, _mua_session_ids_fn(source))
+    _report_problems(problems)
+    rows = match_rows(matched, problems)
+    path = _write_match_rows_csv(rows, out_csv)
+    print(f"[grant-mua] {len(rows)} grant MUA cells ({len(matched)} matched, "
+          f"{len(problems)} unmatched) -> {path}")
+    return rows, path
+
+
 def load_grant_mua_from_cache(value='count'):
     """Rebuild replicate_analysis's input for the grant's UNSORTED (MUA) cells, with spike
     counts recomputed from the threshold-MUA cache over each cell's own grant time window.
@@ -234,6 +269,8 @@ def load_grant_mua_from_cache(value='count'):
     source = _mua_source()
     matched, problems = match_grant_cells_to_mua_neuronids(mua_reqs, _mua_session_ids_fn(source))
     _report_problems(problems)
+    csv_path = _write_match_rows_csv(match_rows(matched, problems))   # audit table, even on failure
+    print(f"[grant-mua] match table -> {csv_path}")
     if not matched:
         raise RuntimeError("[grant-mua] no grant MUA cell matched the threshold-MUA cache -- "
                            "check that the cache/recordings exist for these sessions")

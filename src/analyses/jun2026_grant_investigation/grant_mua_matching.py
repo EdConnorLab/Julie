@@ -131,3 +131,27 @@ def match_grant_cells_to_mua_neuronids(cells, session_ids_fn):
 def summarize_problems(problems):
     """One-line-per-kind counts, e.g. {'no_match': 2, 'missing_session': 1}."""
     return dict(Counter(p['kind'] for p in problems))
+
+
+# CSV column order for the eyeball-able match table.
+MATCH_TABLE_COLUMNS = ('grant_cell', 'date', 'round_no', 'time_window',
+                       'neuron_id', 'status', 'detail')
+
+
+def match_rows(matched, problems):
+    """Flatten (matched, problems) into ordered, CSV-ready row dicts -- one per grant
+    cell, matched first then problems, all sorted by (date, round, channel). Columns
+    follow MATCH_TABLE_COLUMNS. Pure (no pandas) so it stays unit-testable."""
+    rows = []
+    for m in matched:
+        c = m['cell']
+        rows.append({'grant_cell': c.match_value, 'date': c.date,
+                     'round_no': int(c.round_no), 'time_window': c.window_ms,
+                     'neuron_id': m['neuron_id'], 'status': 'matched', 'detail': ''})
+    for p in problems:
+        c = p['cell']
+        rows.append({'grant_cell': c.match_value, 'date': c.date,
+                     'round_no': int(c.round_no), 'time_window': c.window_ms,
+                     'neuron_id': '', 'status': p['kind'], 'detail': p['detail']})
+    rows.sort(key=lambda r: (r['date'], r['round_no'], r['grant_cell']))
+    return rows

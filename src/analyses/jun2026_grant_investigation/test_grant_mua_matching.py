@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from grant_mua_matching import (  # noqa: E402
     is_mua_name, mua_neuron_ids, match_channel,
     match_grant_cells_to_mua_neuronids, summarize_problems,
+    match_rows, MATCH_TABLE_COLUMNS,
 )
 
 # Minimal duck-type for a grant cell (unit_lists.RasterRequest exposes the same names).
@@ -143,6 +144,31 @@ class TestMatchGrantCells(unittest.TestCase):
         matched, problems = match_grant_cells_to_mua_neuronids(cells, counting_fn)
         self.assertEqual(len(matched), 2)
         self.assertEqual(calls, [('2023-09-26', 2)])  # cached: one call, not two
+
+
+class TestMatchRows(unittest.TestCase):
+    def test_rows_cover_all_cells_sorted_with_status(self):
+        cells = [
+            Cell('2023-10-03', 1, 'Channel.C_005', (0.0, 300.0)),   # match (later date)
+            Cell('2023-09-26', 2, 'Channel.C_018', (50.0, 150.0)),  # match
+            Cell('2023-09-26', 2, 'Channel.C_099', (0.0, 300.0)),   # no_match
+        ]
+        session = lambda d, r: {
+            ('2023-09-26', 2): ['AMG_2023-09-26_2_Channel.C_018'],
+            ('2023-10-03', 1): ['ER_2023-10-03_1_Channel.C_005'],
+        }.get((d, int(r)))
+        matched, problems = match_grant_cells_to_mua_neuronids(cells, session)
+        rows = match_rows(matched, problems)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(tuple(rows[0].keys()), MATCH_TABLE_COLUMNS)
+        # sorted by (date, round, channel): 09-26 rows before 10-03
+        self.assertEqual([r['date'] for r in rows],
+                         ['2023-09-26', '2023-09-26', '2023-10-03'])
+        by_cell = {r['grant_cell']: r for r in rows}
+        self.assertEqual(by_cell['Channel.C_018']['neuron_id'], 'AMG_2023-09-26_2_Channel.C_018')
+        self.assertEqual(by_cell['Channel.C_018']['status'], 'matched')
+        self.assertEqual(by_cell['Channel.C_099']['status'], 'no_match')
+        self.assertEqual(by_cell['Channel.C_099']['neuron_id'], '')
 
 
 class TestRealNeuronIDs(unittest.TestCase):
