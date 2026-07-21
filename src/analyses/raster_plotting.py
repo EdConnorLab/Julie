@@ -316,31 +316,14 @@ def _apply_prestim_time_axis(ax, xlim, pre_stimulus_time=0.0):
         ax.axvline(0, color="k", lw=0.8, ls="--", zorder=0)  # stimulus onset
 
 
-def plot_stacked_raster(neuron_df, *, spike_col="SpikeTimes",
-                        xlim=2.2, pre_stimulus_time=0.0,
-                        order_by_rank=True, show_rank=True,
-                        title=None, save_path=None):
-    """Legible single-panel raster for ONE unit (stacked style).
-
-    Every trial is one row; trials are stacked and grouped by stimulus monkey,
-    ranked (dominant → subordinate) within each social group. Monkeys alternate
-    light-gray / white background bands; monkey ids label the left and social
-    groups are divided by a rule and labeled in the left margin. Stimulus onset
-    is dashed at t=0, and when ``pre_stimulus_time > 0`` the axis extends left to
-    reveal the baseline.
-
-    This is the compact "stacked" style (as in zombies_raster_review) — no PSTH,
-    no probe map. ``neuron_df`` must hold all rows for a single unit with columns
-    ``MonkeyGroup``, ``MonkeyName``, ``EpochStartStop`` and ``spike_col``
-    (per-trial absolute spike-time lists).
-
-    Returns the Matplotlib Figure, or None if there are no trials.
-    """
-    # Ordered blocks: (group, monkey, rank, [per-trial aligned spike arrays]).
+def _build_stacked_blocks(neuron_df, groups, *, spike_col, pre_stimulus_time, order_by_rank):
+    """(group, monkey, rank, [per-trial aligned spike arrays]) for the given ordered groups."""
     blocks = []
-    for group in neuron_df["MonkeyGroup"].dropna().unique():
+    for group in groups:
         gdf = neuron_df[neuron_df["MonkeyGroup"] == group]
         present = gdf["MonkeyName"].dropna().unique().tolist()
+        if not present:
+            continue
         if order_by_rank:
             ranked = get_monkeys_by_rank(group)
             ordered = [m for m in ranked if m in present] + [m for m in present if m not in ranked]
@@ -353,14 +336,19 @@ def plot_stacked_raster(neuron_df, *, spike_col="SpikeTimes",
                                             pre_stimulus_time=pre_stimulus_time)
             if trials:
                 blocks.append((str(group), str(m), rank_of[m], trials))
+    return blocks
 
-    total = sum(len(t) for *_, t in blocks)
-    if total == 0:
-        print("plot_stacked_raster: no trials to plot")
-        return None
 
-    fig_h = max(3.0, min(0.05 * total + 1.2, 24))
-    fig, ax = plt.subplots(figsize=(9, fig_h))
+def _draw_stacked_column(ax, blocks, *, xlim, pre_stimulus_time, show_rank, ymax):
+    """Draw one column of stacked-by-monkey trials onto ``ax``.
+
+    y-range is fixed to ``ymax`` (the tallest column) so a trial row is the same
+    physical height in every column and spikes render at a consistent size.
+    """
+    left = -pre_stimulus_time if pre_stimulus_time and pre_stimulus_time > 0 else 0
+    if not blocks:
+        ax.text(0.5, 0.5, "no trials", transform=ax.transAxes,
+                ha="center", va="center", color="0.5", fontsize=9)
 
     y = 0
     ytick_pos, ytick_lab, group_spans = [], [], {}
@@ -375,15 +363,13 @@ def plot_stacked_raster(neuron_df, *, spike_col="SpikeTimes",
         group_spans.setdefault(group, [y, y])[1] = y + n
         y += n
 
-    left = -pre_stimulus_time if pre_stimulus_time and pre_stimulus_time > 0 else 0
     ax.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7, zorder=3)  # stimulus onset
     ax.set_xlim(left, xlim)
-    ax.set_ylim(-0.5, total - 0.5)
+    ax.set_ylim(-0.5, max(ymax, 1) - 0.5)
     ax.invert_yaxis()  # first block (dominant monkey / first group) on top
     ax.set_yticks(ytick_pos)
     ax.set_yticklabels(ytick_lab, fontsize=8)
     ax.tick_params(axis="y", length=0)
-    ax.set_xlabel("Time from stimulus onset (s)")
     for s in ("top", "right", "left"):
         ax.spines[s].set_visible(False)
 
@@ -391,14 +377,64 @@ def plot_stacked_raster(neuron_df, *, spike_col="SpikeTimes",
     for group, (gs, ge) in group_spans.items():
         if gs != 0:
             ax.axhline(gs - 0.5, color="0.55", lw=0.9, zorder=1)
-        ax.text(-0.16, (gs + ge) / 2.0 - 0.5, group,
+        ax.text(-0.22, (gs + ge) / 2.0 - 0.5, group,
                 transform=ax.get_yaxis_transform(), rotation=90,
                 ha="center", va="center", fontsize=9, fontweight="bold",
                 color="0.25", clip_on=False)
 
-    if title:
-        ax.set_title(title, fontsize=11, loc="left")
-    fig.subplots_adjust(left=0.24)
 
+def plot_stacked_raster(neuron_df, *, spike_col="SpikeTimes",
+                        xlim=2.2, pre_stimulus_time=0.0,
+                        order_by_rank=True, show_rank=True,
+                        columns=None, title=None, save_path=None):
+    """Legible stacked raster for ONE unit (à la zombies_raster_review).
+
+    Every trial is one row; trials are stacked and grouped by stimulus monkey,
+    ranked (dominant → subordinate) within each social group, with alternating
+    light-gray / white bands, monkey + rank labels on the left, group dividers,
+    a dashed onset marker at t=0, and (when ``pre_stimulus_time > 0``) a left axis
+    extension revealing the baseline. No PSTH, no probe map.
+
+    Parameters
+    ----------
+    columns : list[list[str]] | None
+        Column layout. Each inner list names the social groups (top → bottom) for
+        one column; columns are drawn left → right, sharing the time axis and a
+        common row height. Example (two columns)::
+
+            [["Zombies", "Best Frans"], ["Instigators", "Stranger Things"]]
+
+        ``None`` draws a single column containing every group present, in the
+        order they appear. Groups with no trials for this unit are skipped.
+
+    ``neuron_df`` must hold all rows for a single unit with columns
+    ``MonkeyGroup``, ``MonkeyName``, ``EpochStartStop`` and ``spike_col``
+    (per-trial absolute spike-time lists). Returns the Figure, or None if empty.
+    """
+    if columns is None:
+        columns = [[str(g) for g in neuron_df["MonkeyGroup"].dropna().unique()]]
+
+    col_blocks = [_build_stacked_blocks(neuron_df, groups, spike_col=spike_col,
+                                        pre_stimulus_time=pre_stimulus_time,
+                                        order_by_rank=order_by_rank)
+                  for groups in columns]
+    ymax = max((sum(len(t) for *_, t in blocks) for blocks in col_blocks), default=0)
+    if ymax == 0:
+        print("plot_stacked_raster: no trials to plot")
+        return None
+
+    n_cols = len(columns)
+    fig_h = max(3.0, min(0.05 * ymax + 1.2, 22))
+    fig, axes = plt.subplots(1, n_cols, figsize=(6.0 * n_cols, fig_h),
+                             sharex=True, squeeze=False)
+    for ax, blocks in zip(axes[0], col_blocks):
+        _draw_stacked_column(ax, blocks, xlim=xlim, pre_stimulus_time=pre_stimulus_time,
+                             show_rank=show_rank, ymax=ymax)
+        ax.set_xlabel("Time from stimulus onset (s)")
+
+    if title:
+        fig.suptitle(title, fontsize=11)
+    fig.subplots_adjust(left=0.13 / n_cols + 0.02, right=0.98, wspace=0.6,
+                        top=0.93 if title else 0.98, bottom=max(0.04, 0.5 / fig_h))
     _save_or_show(fig, save_path)
     return fig
