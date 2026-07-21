@@ -21,9 +21,10 @@ class MixedManualSpikeSource:
     curated_channels_only: bool = False
     force_recompute: bool = False
     name: str = "mixed_manual"
+    cache_subdir: str = "exploded_spike_cache"
 
     def load(self, date: str, round_no: int) -> Optional[pd.DataFrame]:
-        df = ExplodedSpikeCacheManager().load_or_compute(
+        df = ExplodedSpikeCacheManager(cache_subdir=self.cache_subdir).load_or_compute(
             date,
             round_no,
             curated_channels_only=self.curated_channels_only,

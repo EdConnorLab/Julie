@@ -53,8 +53,9 @@ class SortedSpikeCacheManager(GenericCacheManager):
         raise FileNotFoundError(f"No sorted cache found for {label}")
 
 class ExplodedSpikeCacheManager(GenericCacheManager):
-    def __init__(self, monkey: str = SUBJECT_MONKEY):
-        cache_dir = PROJECT_ROOT / monkey / "exploded_spike_cache"
+    def __init__(self, monkey: str = SUBJECT_MONKEY, cache_subdir: str = "exploded_spike_cache"):
+        self.cache_subdir = cache_subdir
+        cache_dir = PROJECT_ROOT / monkey / cache_subdir
         super().__init__(cache_dir)
 
     def _filter_curated(self, df: pd.DataFrame, date: str, round_no: int) -> pd.DataFrame:
@@ -94,7 +95,15 @@ class ExplodedSpikeCacheManager(GenericCacheManager):
             df_all = pd.read_pickle(path)
             return self._filter_curated(df_all, date, round_no) if curated_channels_only else df_all
 
-        # 2) Compute ALL channels (ignore curated flag when writing)
+        # 2) Only the canonical cache is computed here (from compiled.pkl). Variant
+        # caches (e.g. pre-stimulus) are written by their own builder, never
+        # strict-computed into the variant directory.
+        if self.cache_subdir != "exploded_spike_cache":
+            raise FileNotFoundError(
+                f"No exploded cache at {path}. Build the '{self.cache_subdir}' variant first "
+                f"(see data_access.exploded_peristim_builder).")
+
+        # Compute ALL channels (ignore curated flag when writing)
         print(f"[Cache] Using file: {path}")
         combined_data = load_and_combine_data(date, round_no)
 
