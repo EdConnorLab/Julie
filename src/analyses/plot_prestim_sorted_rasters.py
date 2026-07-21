@@ -26,6 +26,8 @@ XLIM = 2.2                                     # right edge of the time axis (se
 # Column layout: each inner list = social groups (top->bottom) for one column,
 # drawn left->right. Set to None to stack all groups in a single (tall) column.
 COLUMNS = [["Zombies", "Best Frans"], ["Instigators", "Stranger Things"]]
+EXCLUDE = []           # monkey names to leave out entirely, e.g. ["144H", "81G"]
+LABEL = "trials"       # next to each name: "trials" (count), "rank" (#N), "both", or "none"
 SAVE = False           # False = show each figure interactively; True = write PNGs and move on
 MIN_TRIALS = 7         # skip neurons with fewer trials
 ONLY_NEURON = None     # set to a NeuronID string to plot just one; None = plot all
@@ -60,6 +62,8 @@ def main():
             xlim=XLIM,
             pre_stimulus_time=PRE_STIMULUS_TIME,
             columns=COLUMNS,
+            exclude_monkeys=EXCLUDE,
+            annotate=LABEL,
             title=f"SI-sorted raster (pre-stim {int(PRE_STIMULUS_TIME * 1000)} ms): {neuron_id}",
             save_path=save_path,
         )

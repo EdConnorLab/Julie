@@ -316,12 +316,30 @@ def _apply_prestim_time_axis(ax, xlim, pre_stimulus_time=0.0):
         ax.axvline(0, color="k", lw=0.8, ls="--", zorder=0)  # stimulus onset
 
 
-def _build_stacked_blocks(neuron_df, groups, *, spike_col, pre_stimulus_time, order_by_rank):
-    """(group, monkey, rank, [per-trial aligned spike arrays]) for the given ordered groups."""
+def _monkey_label(monkey, rank, n_trials, annotate):
+    """Left-margin tick label for one stimulus identity."""
+    if annotate == "rank":
+        return f"{monkey}  #{rank}" if rank else str(monkey)
+    if annotate == "both":
+        head = f"#{rank} " if rank else ""
+        return f"{monkey}  {head}({n_trials})"
+    if annotate == "none":
+        return str(monkey)
+    return f"{monkey}  ({n_trials})"  # default: "trials"
+
+
+def _build_stacked_blocks(neuron_df, groups, *, spike_col, pre_stimulus_time,
+                          order_by_rank, exclude_monkeys=()):
+    """(group, monkey, rank, [per-trial aligned spike arrays]) for the given ordered groups.
+
+    Monkeys whose name is in ``exclude_monkeys`` are dropped entirely.
+    """
+    exclude = {str(m) for m in (exclude_monkeys or ())}
     blocks = []
     for group in groups:
         gdf = neuron_df[neuron_df["MonkeyGroup"] == group]
-        present = gdf["MonkeyName"].dropna().unique().tolist()
+        present = [m for m in gdf["MonkeyName"].dropna().unique().tolist()
+                   if str(m) not in exclude]
         if not present:
             continue
         if order_by_rank:
@@ -339,7 +357,7 @@ def _build_stacked_blocks(neuron_df, groups, *, spike_col, pre_stimulus_time, or
     return blocks
 
 
-def _draw_stacked_column(ax, blocks, *, xlim, pre_stimulus_time, show_rank, ymax):
+def _draw_stacked_column(ax, blocks, *, xlim, pre_stimulus_time, annotate, ymax):
     """Draw one column of stacked-by-monkey trials onto ``ax``.
 
     y-range is fixed to ``ymax`` (the tallest column) so a trial row is the same
@@ -359,7 +377,7 @@ def _draw_stacked_column(ax, blocks, *, xlim, pre_stimulus_time, show_rank, ymax
         ax.eventplot(trials, lineoffsets=np.arange(y, y + n),
                      colors="black", linewidths=0.8, linelengths=0.9, zorder=2)
         ytick_pos.append(y + n / 2.0 - 0.5)
-        ytick_lab.append(f"{monkey}  #{rank}" if (show_rank and rank) else monkey)
+        ytick_lab.append(_monkey_label(monkey, rank, n, annotate))
         group_spans.setdefault(group, [y, y])[1] = y + n
         y += n
 
@@ -385,18 +403,25 @@ def _draw_stacked_column(ax, blocks, *, xlim, pre_stimulus_time, show_rank, ymax
 
 def plot_stacked_raster(neuron_df, *, spike_col="SpikeTimes",
                         xlim=2.2, pre_stimulus_time=0.0,
-                        order_by_rank=True, show_rank=True,
-                        columns=None, title=None, save_path=None):
+                        order_by_rank=True, annotate="trials",
+                        exclude_monkeys=None, columns=None,
+                        title=None, save_path=None):
     """Legible stacked raster for ONE unit (à la zombies_raster_review).
 
     Every trial is one row; trials are stacked and grouped by stimulus monkey,
     ranked (dominant → subordinate) within each social group, with alternating
-    light-gray / white bands, monkey + rank labels on the left, group dividers,
+    light-gray / white bands, a per-identity label on the left, group dividers,
     a dashed onset marker at t=0, and (when ``pre_stimulus_time > 0``) a left axis
     extension revealing the baseline. No PSTH, no probe map.
 
     Parameters
     ----------
+    annotate : {"trials", "rank", "both", "none"}
+        What to show next to each monkey name. "trials" (default) → the trial
+        count for that identity, e.g. ``7124  (12)``; "rank" → dominance rank
+        ``#N``; "both" → ``#N (12)``; "none" → name only.
+    exclude_monkeys : iterable[str] | None
+        Monkey names to leave out of the raster entirely, e.g. ``["144H"]``.
     columns : list[list[str]] | None
         Column layout. Each inner list names the social groups (top → bottom) for
         one column; columns are drawn left → right, sharing the time axis and a
@@ -416,7 +441,8 @@ def plot_stacked_raster(neuron_df, *, spike_col="SpikeTimes",
 
     col_blocks = [_build_stacked_blocks(neuron_df, groups, spike_col=spike_col,
                                         pre_stimulus_time=pre_stimulus_time,
-                                        order_by_rank=order_by_rank)
+                                        order_by_rank=order_by_rank,
+                                        exclude_monkeys=exclude_monkeys)
                   for groups in columns]
     ymax = max((sum(len(t) for *_, t in blocks) for blocks in col_blocks), default=0)
     if ymax == 0:
@@ -429,7 +455,7 @@ def plot_stacked_raster(neuron_df, *, spike_col="SpikeTimes",
                              sharex=True, squeeze=False)
     for ax, blocks in zip(axes[0], col_blocks):
         _draw_stacked_column(ax, blocks, xlim=xlim, pre_stimulus_time=pre_stimulus_time,
-                             show_rank=show_rank, ymax=ymax)
+                             annotate=annotate, ymax=ymax)
         ax.set_xlabel("Time from stimulus onset (s)")
 
     if title:
