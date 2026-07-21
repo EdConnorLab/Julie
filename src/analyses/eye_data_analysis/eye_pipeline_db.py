@@ -51,6 +51,12 @@ DB_PASS = "up2nite"
 SKIP_MOCK_PATHS = ("animal-images",)       # substrings of paths to ignore
 MAX_TRIAL_DUR_S = 10.0                     # discard trials longer than this (bad SlideOff match)
 
+# Eye-track window. The photo + screen markers physically turn on at FixationPointOn
+# (that is also where the marker-channel neural epoch starts), which precedes SlideOn
+# by the initial-eye-in + eye-hold interval. Plot the gaze over FixationPointOn ->
+# SlideOff so the eye data matches the neural epoch rather than starting at SlideOn.
+MARK_SLIDE_ON    = True                    # mark where SlideOn falls within the track
+
 
 # ============================================================================
 # DATABASE
@@ -119,7 +125,8 @@ def read_behmsg(conn, schema):
         SELECT tstamp, type, msg
         FROM `{schema}`.BehMsg
         WHERE type IN ('SlideOn','SlideOff','TrialStart','TrialStop',
-                       'TrialComplete','FixationSucceed','InitialEyeInSucceed')
+                       'TrialComplete','FixationSucceed','InitialEyeInSucceed',
+                       'FixationPointOn')
         ORDER BY tstamp
     """)
     rows = cur.fetchall()
@@ -182,7 +189,14 @@ def get_taskid(msg):
 
 
 def build_slide_events(behmsg):
-    """Each row = one trial slide, with on/off timestamps + stim spec."""
+    """Each row = one trial slide, with on/off timestamps + stim spec.
+
+    Also attaches ``fix_on_ts`` — the trial's FixationPointOn timestamp, which is
+    when the photo + screen markers physically turn on (the true stimulus onset,
+    and the start of the marker-channel neural epoch). FixationPointOn precedes
+    SlideOn by the initial-eye-in + eye-hold interval; the eye data is windowed on
+    fix_on_ts -> slide_off_ts to match the neural epoch instead of SlideOn -> SlideOff.
+    """
     so = behmsg[behmsg['type'] == 'SlideOn'].copy()
     parsed = pd.DataFrame(so['msg'].apply(parse_slide_on).tolist())
     so = pd.concat([so.reset_index(drop=True), parsed], axis=1)
@@ -195,6 +209,35 @@ def build_slide_events(behmsg):
     merged = so.merge(off, on='taskId', how='left')
     merged['slide_on_ts'] = pd.to_numeric(merged['slide_on_ts'], errors='coerce')
     merged['slide_off_ts'] = pd.to_numeric(merged['slide_off_ts'], errors='coerce')
+
+    # FixationPointOn rows carry an empty msg (no taskId), so they can't be merged
+    # by id. Match by time instead: each trial's FixationPointOn is the most recent
+    # FixationPointOn at or before that trial's SlideOn. A failed trial's
+    # FixationPointOn is always superseded by the next trial's own FixationPointOn
+    # before any SlideOn occurs, so this backward-asof match stays within-trial.
+    merged = merged.dropna(subset=['slide_on_ts']).copy()
+    merged['slide_on_ts'] = merged['slide_on_ts'].astype('int64')
+    merged = merged.sort_values('slide_on_ts')
+
+    fix = behmsg.loc[behmsg['type'] == 'FixationPointOn', ['tstamp']].copy()
+    fix['fix_on_ts'] = pd.to_numeric(fix['tstamp'], errors='coerce')
+    fix = fix.dropna(subset=['fix_on_ts'])[['fix_on_ts']]
+
+    if len(fix):
+        fix['fix_on_ts'] = fix['fix_on_ts'].astype('int64')
+        fix = fix.sort_values('fix_on_ts')
+        merged = pd.merge_asof(
+            merged, fix,
+            left_on='slide_on_ts', right_on='fix_on_ts',
+            direction='backward',
+        )
+    else:
+        merged['fix_on_ts'] = pd.NA
+
+    # Fallback for any SlideOn with no preceding FixationPointOn: use SlideOn itself,
+    # so the window degrades to the old SlideOn -> SlideOff behavior rather than NaN.
+    merged['fix_on_ts'] = pd.to_numeric(merged['fix_on_ts'], errors='coerce')
+    merged['fix_on_ts'] = merged['fix_on_ts'].fillna(merged['slide_on_ts']).astype('int64')
     return merged
 
 
@@ -316,7 +359,7 @@ def deg_to_screen_pixels(x_deg, y_deg, sp):
 def plot_trial(trial, eye_df, screen_params, metadata,
                eye_to_use=EYE_TO_USE, ax=None):
     """Overlay eye gaze + face/body bboxes on the stimulus image."""
-    mask = ((eye_df['tstamp'] >= trial['slide_on_ts']) &
+    mask = ((eye_df['tstamp'] >= trial['fix_on_ts']) &
             (eye_df['tstamp'] <= trial['slide_off_ts']) &
             (eye_df['eye_id'] == eye_to_use))
     eye_trial = eye_df.loc[mask].sort_values('tstamp')
@@ -351,10 +394,18 @@ def plot_trial(trial, eye_df, screen_params, metadata,
         ax.add_patch(patches.Rectangle((-dw/2, -dh/2), dw, dh, fill=False,
                                        edgecolor='black'))
 
-    # Eye track
+    # Eye track (colored by time: first sample = fix_on / stimulus onset, last = slide off)
     ax.plot(x_px, y_px, '-', color='red', linewidth=0.6, alpha=0.4)
     ax.scatter(x_px, y_px, c=np.arange(len(x_px)), cmap='autumn',
                s=10, edgecolors='none')
+
+    # Mark the gaze position at SlideOn, so the pre-slide (FixationPointOn -> SlideOn)
+    # eye-in/hold segment is visually separable from the slide itself.
+    if MARK_SLIDE_ON and pd.notna(trial['slide_on_ts']):
+        k = int(np.searchsorted(eye_trial['tstamp'].values, trial['slide_on_ts']))
+        if 0 <= k < len(x_px):
+            ax.scatter([x_px[k]], [y_px[k]], marker='X', s=90, facecolor='white',
+                       edgecolor='black', linewidth=1.2, zorder=5, label='SlideOn')
 
     # Face / body bbox overlays from metadata
     mid = monkey_id_from_path(img_path)
@@ -398,7 +449,8 @@ def plot_trial(trial, eye_df, screen_params, metadata,
     ax.set_ylim(-dh/2 * 1.3, dh/2 * 1.3)
     ax.set_aspect('equal')
     ax.set_title(f"{Path(img_path).name}  id={mid}  N={len(eye_trial)}  "
-                 f"dur={(trial['slide_off_ts']-trial['slide_on_ts'])/1e6:.2f}s",
+                 f"win={(trial['slide_off_ts']-trial['fix_on_ts'])/1e6:.2f}s "
+                 f"(slide {(trial['slide_off_ts']-trial['slide_on_ts'])/1e6:.2f}s)",
                  fontsize=9)
     return ax
 
@@ -466,7 +518,8 @@ def run_one_schema(conn, schema, metadata):
           f"(indices: {indices.tolist()} out of {len(real)})")
 
     # Read eye data only for the window covering those demo trials
-    t_start = int(demo['slide_on_ts'].min()) - 100_000
+    # (start at FixationPointOn, the true stimulus onset, not SlideOn)
+    t_start = int(demo['fix_on_ts'].min()) - 100_000
     t_end   = int(demo['slide_off_ts'].max()) + 100_000
     print(f"Reading BehMsgEye for window {t_start}..{t_end} "
           f"({(t_end-t_start)/1e6:.1f} s)...")
