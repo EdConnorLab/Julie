@@ -13,7 +13,7 @@ PRE_STIMULUS_TIME below must match the window that cache was built with.
 """
 from pathlib import Path
 
-from analyses.raster_plotting import plot_raster_by_group
+from analyses.raster_plotting import plot_stacked_raster
 from data_access.spike_source import SISortedSpikeSource
 from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
 
@@ -23,6 +23,7 @@ ROUND_NO = 2
 PRE_STIMULUS_TIME = 1.0                        # seconds before onset; must match the cache
 CACHE_SUBDIR = "sorted_spike_cache_pre1000ms"  # the variant you generated
 XLIM = 2.2                                     # right edge of the time axis (seconds after onset)
+GROUP = None           # None = all social groups stacked (tall); or e.g. "Zombies" for one group
 SAVE = False           # False = show each figure interactively; True = write PNGs and move on
 MIN_TRIALS = 7         # skip neurons with fewer trials
 ONLY_NEURON = None     # set to a NeuronID string to plot just one; None = plot all
@@ -46,14 +47,16 @@ def main():
     save_dir = Path(PROJECT_BASE_PATH) / SUBJECT_MONKEY / "raster_plots" / CACHE_SUBDIR
     for neuron_id in neuron_ids:
         neuron_df = df[df["NeuronID"] == neuron_id]
+        if GROUP is not None:
+            neuron_df = neuron_df[neuron_df["MonkeyGroup"] == GROUP]
         if len(neuron_df) < MIN_TRIALS:
             print(f"  skip {neuron_id}: only {len(neuron_df)} trials")
             continue
         n_spikes = sum(len(s) for s in neuron_df["SpikeTimes"])
         print(f"  plotting {neuron_id} — {len(neuron_df)} trials, {n_spikes} spikes")
         save_path = str(save_dir / f"{neuron_id}.png") if SAVE else None
-        plot_raster_by_group(
-            neuron_df, "SpikeTimes",
+        plot_stacked_raster(
+            neuron_df,
             xlim=XLIM,
             pre_stimulus_time=PRE_STIMULUS_TIME,
             title=f"SI-sorted raster (pre-stim {int(PRE_STIMULUS_TIME * 1000)} ms): {neuron_id}",

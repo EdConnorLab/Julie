@@ -4,6 +4,7 @@ raster_plotting.py — Reusable raster plot grouped by MonkeyGroup, ordered by r
 import os
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
@@ -313,3 +314,91 @@ def _apply_prestim_time_axis(ax, xlim, pre_stimulus_time=0.0):
     ax.set_xlim(left, xlim)
     if pre_stimulus_time and pre_stimulus_time > 0:
         ax.axvline(0, color="k", lw=0.8, ls="--", zorder=0)  # stimulus onset
+
+
+def plot_stacked_raster(neuron_df, *, spike_col="SpikeTimes",
+                        xlim=2.2, pre_stimulus_time=0.0,
+                        order_by_rank=True, show_rank=True,
+                        title=None, save_path=None):
+    """Legible single-panel raster for ONE unit (stacked style).
+
+    Every trial is one row; trials are stacked and grouped by stimulus monkey,
+    ranked (dominant → subordinate) within each social group. Monkeys alternate
+    light-gray / white background bands; monkey ids label the left and social
+    groups are divided by a rule and labeled in the left margin. Stimulus onset
+    is dashed at t=0, and when ``pre_stimulus_time > 0`` the axis extends left to
+    reveal the baseline.
+
+    This is the compact "stacked" style (as in zombies_raster_review) — no PSTH,
+    no probe map. ``neuron_df`` must hold all rows for a single unit with columns
+    ``MonkeyGroup``, ``MonkeyName``, ``EpochStartStop`` and ``spike_col``
+    (per-trial absolute spike-time lists).
+
+    Returns the Matplotlib Figure, or None if there are no trials.
+    """
+    # Ordered blocks: (group, monkey, rank, [per-trial aligned spike arrays]).
+    blocks = []
+    for group in neuron_df["MonkeyGroup"].dropna().unique():
+        gdf = neuron_df[neuron_df["MonkeyGroup"] == group]
+        present = gdf["MonkeyName"].dropna().unique().tolist()
+        if order_by_rank:
+            ranked = get_monkeys_by_rank(group)
+            ordered = [m for m in ranked if m in present] + [m for m in present if m not in ranked]
+            rank_of = {m: (ranked.index(m) + 1 if m in ranked else None) for m in ordered}
+        else:
+            ordered = present
+            rank_of = {m: None for m in ordered}
+        for m in ordered:
+            trials = _align_spikes_to_epoch(gdf[gdf["MonkeyName"] == m], spike_col,
+                                            pre_stimulus_time=pre_stimulus_time)
+            if trials:
+                blocks.append((str(group), str(m), rank_of[m], trials))
+
+    total = sum(len(t) for *_, t in blocks)
+    if total == 0:
+        print("plot_stacked_raster: no trials to plot")
+        return None
+
+    fig_h = max(3.0, min(0.05 * total + 1.2, 24))
+    fig, ax = plt.subplots(figsize=(9, fig_h))
+
+    y = 0
+    ytick_pos, ytick_lab, group_spans = [], [], {}
+    for i, (group, monkey, rank, trials) in enumerate(blocks):
+        n = len(trials)
+        if i % 2 == 0:  # alternating band separates adjacent stimuli
+            ax.axhspan(y - 0.5, y + n - 0.5, color="0.94", zorder=0)
+        ax.eventplot(trials, lineoffsets=np.arange(y, y + n),
+                     colors="black", linewidths=0.8, linelengths=0.9, zorder=2)
+        ytick_pos.append(y + n / 2.0 - 0.5)
+        ytick_lab.append(f"{monkey}  #{rank}" if (show_rank and rank) else monkey)
+        group_spans.setdefault(group, [y, y])[1] = y + n
+        y += n
+
+    left = -pre_stimulus_time if pre_stimulus_time and pre_stimulus_time > 0 else 0
+    ax.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7, zorder=3)  # stimulus onset
+    ax.set_xlim(left, xlim)
+    ax.set_ylim(-0.5, total - 0.5)
+    ax.invert_yaxis()  # first block (dominant monkey / first group) on top
+    ax.set_yticks(ytick_pos)
+    ax.set_yticklabels(ytick_lab, fontsize=8)
+    ax.tick_params(axis="y", length=0)
+    ax.set_xlabel("Time from stimulus onset (s)")
+    for s in ("top", "right", "left"):
+        ax.spines[s].set_visible(False)
+
+    # group dividers + vertical group labels in the left margin
+    for group, (gs, ge) in group_spans.items():
+        if gs != 0:
+            ax.axhline(gs - 0.5, color="0.55", lw=0.9, zorder=1)
+        ax.text(-0.16, (gs + ge) / 2.0 - 0.5, group,
+                transform=ax.get_yaxis_transform(), rotation=90,
+                ha="center", va="center", fontsize=9, fontweight="bold",
+                color="0.25", clip_on=False)
+
+    if title:
+        ax.set_title(title, fontsize=11, loc="left")
+    fig.subplots_adjust(left=0.24)
+
+    _save_or_show(fig, save_path)
+    return fig
