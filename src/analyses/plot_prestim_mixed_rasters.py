@@ -6,11 +6,14 @@ HOW TO RUN (PyCharm): open this file and click the green Run button. No CLI args
 edit the CONFIG block and re-run. (Requires `src` as a Sources Root, which you
 already have.)
 
-Unlike the SI-sorted path, the pre-stimulus exploded cache is built straight from
-the raw session (spike.dat + sorted_spikes.pkl), so with BUILD_IF_MISSING=True
-this script builds the variant on first run (writes
-Cortana/exploded_spike_cache_pre{ms}ms/) and plots it; later runs just read it.
-Same stacked layout as the SI-sorted rasters.
+With BUILD_IF_MISSING=True this script builds the pre-stimulus exploded variant on
+first run (writes Cortana/exploded_spike_cache_pre{ms}ms/) and plots it; later runs
+just read it. Same stacked layout as the SI-sorted rasters.
+
+NOTE: only manually-sorted units get a real pre-stimulus baseline (their indices
+live un-windowed in sorted_spikes.pkl). Unsorted channels come from the already-
+clipped compiled.pkl, so their pre-window (left of t=0) stays empty. spike.dat is
+not used.
 """
 from pathlib import Path
 
@@ -22,12 +25,9 @@ from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
 # ===== CONFIG — edit me =======================================================
 DATE = "2023-09-26"
 ROUND_NO = 2
-PRE_STIMULUS_TIME = 1.0          # seconds of baseline before onset
-REEPOCH_FNC = None               # None = reuse compiled.pkl epochs (safe/consistent).
-                                 # 2 = re-extract epochs to match the SI-sorted path and
-                                 # fix overlapping-epoch sessions (watch the "matched X/Y" log).
+PRE_STIMULUS_TIME = 1.0          # seconds of baseline before onset (manual-sorted units only)
 BUILD_IF_MISSING = True          # build the variant cache if it isn't on disk yet
-FORCE_REBUILD = False            # rebuild even if the variant exists (e.g. after changing REEPOCH_FNC)
+FORCE_REBUILD = False            # rebuild even if the variant exists
 
 XLIM = 2.2                                     # right edge of the time axis (seconds after onset)
 COLUMNS = [["Zombies", "Best Frans"], ["Instigators", "Stranger Things"]]
@@ -45,8 +45,7 @@ def main():
     if BUILD_IF_MISSING or FORCE_REBUILD:
         print(f"Building/checking {cache_subdir} for {DATE} round {ROUND_NO} ...")
         build_exploded_peristim_cache(DATE, ROUND_NO, PRE_STIMULUS_TIME,
-                                      reepoch_fnc=REEPOCH_FNC, cache_subdir=cache_subdir,
-                                      force=FORCE_REBUILD)
+                                      cache_subdir=cache_subdir, force=FORCE_REBUILD)
 
     source = MixedManualSpikeSource(cache_subdir=cache_subdir, curated_channels_only=CURATED_ONLY)
     df = source.load(DATE, ROUND_NO)
