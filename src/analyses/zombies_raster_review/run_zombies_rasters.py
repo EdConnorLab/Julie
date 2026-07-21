@@ -630,7 +630,7 @@ if __name__ == "__main__":
     #               put the same neuron on different channels) and overlay each
     #               matched group, matched trial-for-trial. See coincidence_match.
     # ========================================================================
-    MODE = "demo"
+    MODE = "si"
 
     # Where figures are written (created if missing). Defaults to an `output/`
     # folder next to this file so they show up right in the PyCharm project tree.

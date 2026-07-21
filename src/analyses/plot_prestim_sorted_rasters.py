@@ -18,18 +18,18 @@ from data_access.spike_source import SISortedSpikeSource
 from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
 
 # ===== CONFIG — edit me =======================================================
-DATE = "2023-09-26"
+DATE = "2023-11-20"
 ROUND_NO = 2
 PRE_STIMULUS_TIME = 1.0                        # seconds before onset; must match the cache
 CACHE_SUBDIR = "sorted_spike_cache_pre1000ms"  # the variant you generated
 XLIM = 2.2                                     # right edge of the time axis (seconds after onset)
 # Column layout: each inner list = social groups (top->bottom) for one column,
 # drawn left->right. Set to None to stack all groups in a single (tall) column.
-COLUMNS = [["Zombies", "Best Frans"], ["Instigators", "Stranger Things"]]
+COLUMNS = [["Zombies", "Stranger Things"], ["Best Frans", "Instigators"]]
 EXCLUDE = []           # monkey names to leave out entirely, e.g. ["144H", "81G"]
 LABEL = "trials"       # next to each name: "trials" (count), "rank" (#N), "both", or "none"
 SAVE = False           # False = show each figure interactively; True = write PNGs and move on
-MIN_TRIALS = 7         # skip neurons with fewer trials
+MIN_TRIALS = 5         # skip neurons with fewer trials
 ONLY_NEURON = None     # set to a NeuronID string to plot just one; None = plot all
 # ==============================================================================
 
