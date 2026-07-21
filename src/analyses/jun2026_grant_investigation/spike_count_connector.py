@@ -40,10 +40,15 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _SRC = os.path.abspath(os.path.join(_HERE, '..', '..'))            # .../Julie/src
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
+if _HERE not in sys.path:                     # sibling modules (grant_mua_matching, common)
+    sys.path.insert(0, _HERE)
 
 from analyses.spike_count import extract_spike_counts_from_windows   # noqa: E402
 from data_access.spike_source import SISortedSpikeSource, ThresholdMUASpikeSource  # noqa: E402
 from project_util import PROJECT_BASE_PATH                           # noqa: E402
+from grant_mua_matching import (                                     # noqa: E402
+    match_grant_cells_to_mua_neuronids, is_mua_name, summarize_problems,
+)
 
 # =====================================================================
 # CONFIG
@@ -53,6 +58,7 @@ GROUP = 'Zombies'                               # stimulus group used in the reg
 MONKEY_NAME = ['7124', '69X', '72X', '94B', '110E', '67G', '81G', '143H', '87J', '151J']
 SUBJECT = 6                                     # 81G, excluded as a stimulus column
 ORDER9 = [m for i, m in enumerate(MONKEY_NAME) if i != SUBJECT]  # matches common.MONKEY_NAME order
+GRANT_NCELLS = 74                               # grant xlsx: first 74 rows (== replicate_analysis.NCELLS)
 
 # per-list spike sources (factories -> a fresh instance per use)
 def _si_sorted_source():
@@ -171,6 +177,104 @@ def load_data_from_cache(list_name, value='count', per_trial=None):
     meta = piv.reset_index()[KEY].copy()
     meta['Cell'] = meta['NeuronID']
     meta['Time Window'] = list(zip(meta['WindowStart_ms'], meta['WindowEnd_ms']))
+    return X_mean, meta
+
+
+# =====================================================================
+# GRANT MUA cells, recomputed from the threshold-MUA cache (matched by channel)
+# =====================================================================
+def _mua_session_ids_fn(source):
+    """Return session_ids_fn(date, round) -> [NeuronID] | None, backed by `source` and
+    caching each session so its cache is read once here (extract_spike_counts_from_windows
+    re-reads it, but the threshold-MUA cache is on disk so that second read is cheap)."""
+    sessions = {}
+
+    def fn(date, round_no):
+        key = (date, int(round_no))
+        if key not in sessions:
+            df = source.load(date, int(round_no))
+            if df is None or getattr(df, 'empty', True):
+                sessions[key] = None
+            else:
+                sessions[key] = df['NeuronID'].astype(str).unique().tolist()
+        return sessions[key]
+
+    return fn
+
+
+def _report_problems(problems):
+    """Print grouped, per-cell warnings for anything the matcher could not resolve."""
+    if not problems:
+        return
+    print(f"[grant-mua][warn] {len(problems)} cell(s) with issues: {summarize_problems(problems)}")
+    for p in problems:
+        c = p['cell']
+        print(f"    [{p['kind']}] {c.date} round{c.round_no} {c.match_value}: {p['detail']}")
+
+
+def load_grant_mua_from_cache(value='count'):
+    """Rebuild replicate_analysis's input for the grant's UNSORTED (MUA) cells, with spike
+    counts recomputed from the threshold-MUA cache over each cell's own grant time window.
+
+    Returns (X_mean (n,9), meta) in the same shape as load_data_from_cache, so it is a
+    drop-in for DATA_SOURCE='cache_mua_grantcells'. Matching never guesses Location -- the
+    NeuronID is taken verbatim from the threshold-MUA source (see grant_mua_matching). Any
+    cell that cannot be matched/completed is reported; the final line reconciles the used
+    count against the grant MUA list so Run A vs Run B cell counts can be compared.
+    """
+    from analyses.zombies_raster_review.unit_lists import load_mixed_manual_requests
+    import common
+
+    reqs = load_mixed_manual_requests(common.HIS_XLSX)
+    reqs = reqs[:GRANT_NCELLS] if GRANT_NCELLS and GRANT_NCELLS > 0 else reqs
+    mua_reqs = [r for r in reqs if is_mua_name(r.match_value)]
+    print(f"[grant-mua] {len(reqs)} grant rows -> {len(mua_reqs)} unsorted (MUA) cells "
+          f"({len(reqs) - len(mua_reqs)} sorted units skipped)")
+
+    source = _mua_source()
+    matched, problems = match_grant_cells_to_mua_neuronids(mua_reqs, _mua_session_ids_fn(source))
+    _report_problems(problems)
+    if not matched:
+        raise RuntimeError("[grant-mua] no grant MUA cell matched the threshold-MUA cache -- "
+                           "check that the cache/recordings exist for these sessions")
+
+    windows = pd.DataFrame([{
+        'NeuronID': m['neuron_id'],
+        'WindowStart_ms': m['window_ms'][0],
+        'WindowEnd_ms': m['window_ms'][1],
+        'Date': m['cell'].date,
+        'Round No.': int(m['cell'].round_no),
+    } for m in matched])
+    dup = windows.duplicated(subset=KEY, keep=False)
+    if dup.any():
+        print(f"[grant-mua][warn] {int(dup.sum())} duplicate (NeuronID, window) row(s) collapsed:")
+        print(windows.loc[dup, KEY].to_string(index=False))
+        windows = windows.drop_duplicates(subset=KEY)
+
+    per_trial = extract_spike_counts_from_windows(windows, source)
+    per_trial = per_trial[per_trial['MonkeyGroup'] == GROUP].copy()
+
+    col = 'MeanSpikeCount' if value == 'count' else 'MeanSpikeRate'
+    long = build_long_counts(None, per_trial=per_trial)      # reuse the mean count/rate builder
+    piv = long.pivot_table(index=KEY, columns='MonkeyName', values=col)
+
+    full = piv.reindex(columns=ORDER9)                       # require all 9 stimulus monkeys
+    incomplete = full[full.isna().any(axis=1)]
+    if len(incomplete):
+        print(f"[grant-mua][warn] {len(incomplete)} matched cell(s) dropped for missing "
+              f"stimulus monkeys:")
+        for idx, row in incomplete.iterrows():
+            miss = [m for m in ORDER9 if pd.isna(row[m])]
+            print(f"        {idx[0]}  win={idx[1]}-{idx[2]}ms  missing={miss}")
+    full = full.dropna()
+
+    X_mean = full.to_numpy(float)
+    meta = full.reset_index()[KEY].copy()
+    meta['Cell'] = meta['NeuronID']
+    meta['Time Window'] = list(zip(meta['WindowStart_ms'], meta['WindowEnd_ms']))
+    print(f"[grant-mua] matched {len(matched)}/{len(mua_reqs)} MUA cells; used {len(meta)} "
+          f"after requiring all {len(ORDER9)} stimulus monkeys "
+          f"(Run A 'grant_xlsx'+multiunit uses {len(mua_reqs)} cells).")
     return X_mean, meta
 
 

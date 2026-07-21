@@ -89,6 +89,10 @@ from common import (
 #   'cache_anova'     - SI-sorted ANOVA list, rebuilt from analysis_cache   -> connector
 #   'cache_mua_kw'    - threshold-MUA KW list (MAD/RMS offline detection)   -> connector
 #   'cache_mua_anova' - threshold-MUA ANOVA list                           -> connector
+#   'cache_mua_grantcells' - the grant's UNSORTED (MUA) cells only, recomputed from the
+#                     threshold-MUA cache over each cell's own grant window (matched to
+#                     NeuronIDs by date/round/channel). Use CELL_SUBSET='all'; compare
+#                     against DATA_SOURCE='grant_xlsx' + CELL_SUBSET='multiunit'.
 DATA_SOURCE = 'cache_kw'
 NCELLS      = 74             # 'grant_xlsx' only: his hardcoded value; None/0 for all rows
 CELL_SUBSET = 'all'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
@@ -107,6 +111,9 @@ def load_neural_data():
         list_name = {'cache_kw': 'KW', 'cache_anova': 'ANOVA',
                      'cache_mua_kw': 'MUA_KW', 'cache_mua_anova': 'MUA_ANOVA'}[DATA_SOURCE]
         return load_data_from_cache(list_name)
+    if DATA_SOURCE == 'cache_mua_grantcells':
+        from spike_count_connector import load_grant_mua_from_cache
+        return load_grant_mua_from_cache()
     raise ValueError(f"unknown DATA_SOURCE={DATA_SOURCE!r}")
 
 
