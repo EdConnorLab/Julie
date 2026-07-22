@@ -67,7 +67,9 @@ def run_window_significance(n_permutations=N_PERMUTATIONS, alpha=ALPHA, tests=TE
     """Detect windows for the grant MUA cells and permutation-test each. Returns
     (combined_df, path)."""
     import pandas as pd
-    from spike_count_connector import grant_mua_detected_windows, GROUP, DETECT_BIN_SIZE
+    from spike_count_connector import (
+        grant_mua_detected_windows, GROUP, DETECT_BIN_SIZE, _default_significance_csv,
+    )
     from analyses.preprocessing.preprocess_and_select_significant_neurons import (
         PreprocessConfig,
         detect_significant_windows_using_pKW,
@@ -105,8 +107,7 @@ def run_window_significance(n_permutations=N_PERMUTATIONS, alpha=ALPHA, tests=TE
         combined = pd.DataFrame(columns=KEYS)
     combined = combined.sort_values(["Date", "Round No.", "NeuronID", "WindowStart_ms"])
 
-    out_csv = out_csv or os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                      "output", "grant_mua_window_significance.csv")
+    out_csv = out_csv or _default_significance_csv()
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
     combined.to_csv(out_csv, index=False)
 

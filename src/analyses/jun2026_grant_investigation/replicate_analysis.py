@@ -97,6 +97,11 @@ from common import (
 #                     the in-house response-window DETECTOR (threshold_window_detection) run
 #                     on the threshold-MUA source, not the grant xlsx. Row count differs from
 #                     37 (detector yields 0/1/several windows per neuron). Use CELL_SUBSET='all'.
+#   'cache_mua_grant_detected_sig_anova' - the detected windows that PASSED the permutation
+#                     ANOVA test (uncorrected p<alpha). Run grant_mua_window_significance.py
+#                     first to build output/grant_mua_window_significance.csv. CELL_SUBSET='all'.
+#   'cache_mua_grant_detected_sig_kw' - same, but windows that passed the permutation KW test
+#                     (uncorrected p<alpha). CELL_SUBSET='all'.
 DATA_SOURCE = 'cache_kw'
 NCELLS      = 74             # 'grant_xlsx' only: his hardcoded value; None/0 for all rows
 CELL_SUBSET = 'all'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
@@ -121,6 +126,12 @@ def load_neural_data():
     if DATA_SOURCE == 'cache_mua_grant_detected':
         from spike_count_connector import load_grant_mua_detected_windows
         return load_grant_mua_detected_windows()
+    if DATA_SOURCE == 'cache_mua_grant_detected_sig_anova':
+        from spike_count_connector import load_grant_mua_significant_windows
+        return load_grant_mua_significant_windows(test='ANOVA', corrected=False)
+    if DATA_SOURCE == 'cache_mua_grant_detected_sig_kw':
+        from spike_count_connector import load_grant_mua_significant_windows
+        return load_grant_mua_significant_windows(test='KW', corrected=False)
     raise ValueError(f"unknown DATA_SOURCE={DATA_SOURCE!r}")
 
 

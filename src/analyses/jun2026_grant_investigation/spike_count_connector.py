@@ -219,6 +219,10 @@ def _default_match_csv():
     return os.path.join(_HERE, 'output', 'grant_mua_match_table.csv')   # 'output/' is gitignored
 
 
+def _default_significance_csv():
+    return os.path.join(_HERE, 'output', 'grant_mua_window_significance.csv')   # 'output/' is gitignored
+
+
 def _write_match_rows_csv(rows, out_csv=None):
     out_csv = out_csv or _default_match_csv()
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
@@ -409,6 +413,45 @@ def load_grant_mua_detected_windows(value='count'):
     X_mean, meta = _counts_from_windows(detected, source, value=value)
     print(f"[grant-mua][detect] used {len(meta)} (neuron x detected-window) rows after "
           f"requiring all {len(ORDER9)} stimulus monkeys")
+    return X_mean, meta
+
+
+def load_grant_mua_significant_windows(test='ANOVA', corrected=False, sig_csv=None, value='count'):
+    """Run replicate_analysis on ONLY the detected windows that PASSED the permutation
+    significance test. Reads the per-window table written by grant_mua_window_significance.py
+    (run that first), keeps windows significant by `test` ('KW' | 'ANOVA') and `corrected`
+    (False = uncorrected p<alpha, True = Benjamini-Hochberg FDR), re-extracts threshold-MUA
+    counts for them, and returns (X_mean, meta). Drop-in for
+    DATA_SOURCE='cache_mua_grant_detected_sig_{kw,anova}'.
+
+    NOTE: this trusts the CSV's (neuron, window) list -- re-run the significance script if you
+    change the detector params so the table stays in sync.
+    """
+    tag = test.upper()
+    sig_csv = sig_csv or _default_significance_csv()
+    if not os.path.exists(sig_csv):
+        raise FileNotFoundError(
+            f"[grant-mua][sig] significance table not found: {sig_csv} -- "
+            f"run `python grant_mua_window_significance.py` first")
+    tbl = pd.read_csv(sig_csv)
+    col = f"{tag}_sig_fdr" if corrected else f"{tag}_sig"
+    if col not in tbl.columns:
+        raise ValueError(f"[grant-mua][sig] column {col!r} not in {sig_csv} "
+                         f"(present: {list(tbl.columns)}); re-run the significance script with "
+                         f"that test enabled")
+    # robust bool parse (CSV may hold True/False/blank across the outer-merged tests)
+    mask = tbl[col].astype(str).str.strip().str.lower() == 'true'
+    sig = tbl[mask]
+    kind = 'FDR-corrected' if corrected else 'uncorrected'
+    print(f"[grant-mua][sig] {tag} {kind}: {len(sig)}/{len(tbl)} detected windows significant "
+          f"(from {sig_csv})")
+    if sig.empty:
+        raise RuntimeError(f"[grant-mua][sig] no windows significant by {tag} {kind} -- nothing to analyze")
+
+    windows = sig[['NeuronID', 'WindowStart_ms', 'WindowEnd_ms', 'Date', 'Round No.']].copy()
+    X_mean, meta = _counts_from_windows(windows, _mua_source(), value=value)
+    print(f"[grant-mua][sig] used {len(meta)} significant (neuron x window) rows across "
+          f"{meta['NeuronID'].nunique()} neurons after requiring all {len(ORDER9)} stimulus monkeys")
     return X_mean, meta
 
 
