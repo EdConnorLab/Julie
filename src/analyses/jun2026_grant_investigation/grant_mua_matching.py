@@ -138,6 +138,26 @@ MATCH_TABLE_COLUMNS = ('grant_cell', 'date', 'round_no', 'time_window',
                        'neuron_id', 'status', 'detail')
 
 
+def unit_key_resolver(alias_groups=()):
+    """Return f(date, round_no, channel) -> a hashable unit key, collapsing declared
+    same-unit aliases so overlap_keep_mask de-duplicates their windows together.
+
+    alias_groups: iterable of groups; each group is an iterable of (date, round_no, channel)
+    tuples that are the SAME physical unit (e.g. two channel labels for one neuron in a
+    session). Every member of a group maps to one shared key. Dates are compared as strings
+    and rounds as ints, so ('2023-10-27', '4', ...) and ('2023-10-27', 4, ...) match.
+    """
+    alias = {}
+    for group in alias_groups:
+        members = tuple(sorted((str(d), int(r), str(c)) for d, r, c in group))
+        for m in members:
+            alias[m] = members
+    def resolve(date, round_no, channel):
+        base = (str(date), int(round_no), str(channel))
+        return alias.get(base, base)
+    return resolve
+
+
 def _intervals_overlap(a_start, a_end, b_start, b_end):
     """True if [a_start, a_end) and [b_start, b_end) share an interior point. Touching
     endpoints (e.g. (0,300) & (300,600)) do NOT count -- spike counting is half-open, so

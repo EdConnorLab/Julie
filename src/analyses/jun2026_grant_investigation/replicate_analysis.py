@@ -107,6 +107,11 @@ NCELLS      = 74             # 'grant_xlsx' only: his hardcoded value; None/0 fo
 CELL_SUBSET = 'all'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
 DROP_OVERLAPPING_WINDOWS = False  # 'grant_xlsx' & 'cache_mua_grantcells' only: when a cell has
 #                            overlapping time windows, keep only the WIDEST (drops narrower dups)
+SAME_UNIT_GROUPS = [             # channels that are the SAME physical unit within a session ->
+    #                            collapsed together by DROP_OVERLAPPING_WINDOWS. Each inner list
+    #                            = one unit's (date, round, channel) aliases.
+    [("2023-10-27", 4, "Channel.C_011"), ("2023-10-27", 4, "Channel.C_020")],
+]
 THRESH      = 0.5             # R^2 cutoff
 NPERM       = 10000           # drop to 1000 for fast smoke-tests
 RANDOM_SEED = 20251121
@@ -114,16 +119,18 @@ RANDOM_SEED = 20251121
 
 
 def _drop_overlapping_grant_windows(X_mean, df):
-    """grant_xlsx post-filter for DROP_OVERLAPPING_WINDOWS: when a cell (Date, Round No.,
-    Cell) has overlapping time windows, keep only the widest. Masks X_mean and df together.
-    Reuses the pure overlap_keep_mask; unparseable windows are always kept."""
+    """grant_xlsx post-filter for DROP_OVERLAPPING_WINDOWS: when a cell has overlapping time
+    windows, keep only the widest. SAME_UNIT_GROUPS aliases channels that are one physical
+    unit so they de-duplicate together. Masks X_mean and df; unparseable windows are kept."""
     import ast
-    from grant_mua_matching import overlap_keep_mask
+    from grant_mua_matching import overlap_keep_mask, unit_key_resolver
+    resolve = unit_key_resolver(SAME_UNIT_GROUPS)
     rows = []
     for i, (_, r) in enumerate(df.iterrows()):
         try:
             lo, hi = ast.literal_eval(str(r['Time Window']))
-            key = (str(r['Date']), int(r['Round No.']), str(r['Cell']))
+            date = pd.to_datetime(r['Date']).strftime('%Y-%m-%d')
+            key = resolve(date, r['Round No.'], r['Cell'])
             lo, hi = float(lo), float(hi)
         except Exception:
             key, lo, hi = ('__row__', i), 0.0, 0.0   # unparseable -> singleton, always kept
@@ -132,7 +139,7 @@ def _drop_overlapping_grant_windows(X_mean, df):
     n_drop = mask.count(False)
     if n_drop:
         drop_df = df[[not m for m in mask]][['Date', 'Round No.', 'Cell', 'Time Window']]
-        print(f"  DROP_OVERLAPPING_WINDOWS: removed {n_drop} narrower overlapping window(s):")
+        print(f"  DROP_OVERLAPPING_WINDOWS: removed {n_drop} narrower/duplicate window(s):")
         print(drop_df.to_string(index=False))
     keep = np.array(mask, dtype=bool)
     return X_mean[keep], df[keep].reset_index(drop=True)
@@ -152,7 +159,8 @@ def load_neural_data():
         return load_data_from_cache(list_name)
     if DATA_SOURCE == 'cache_mua_grantcells':
         from spike_count_connector import load_grant_mua_from_cache
-        return load_grant_mua_from_cache(dedup_overlapping=DROP_OVERLAPPING_WINDOWS)
+        return load_grant_mua_from_cache(dedup_overlapping=DROP_OVERLAPPING_WINDOWS,
+                                         same_unit_groups=SAME_UNIT_GROUPS)
     if DATA_SOURCE == 'cache_mua_grant_detected':
         from spike_count_connector import load_grant_mua_detected_windows
         return load_grant_mua_detected_windows()
