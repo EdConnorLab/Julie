@@ -93,6 +93,10 @@ from common import (
 #                     threshold-MUA cache over each cell's own grant window (matched to
 #                     NeuronIDs by date/round/channel). Use CELL_SUBSET='all'; compare
 #                     against DATA_SOURCE='grant_xlsx' + CELL_SUBSET='multiunit'.
+#   'cache_mua_grant_detected' - same grant MUA cells, but each cell's window(s) come from
+#                     the in-house response-window DETECTOR (threshold_window_detection) run
+#                     on the threshold-MUA source, not the grant xlsx. Row count differs from
+#                     37 (detector yields 0/1/several windows per neuron). Use CELL_SUBSET='all'.
 DATA_SOURCE = 'cache_kw'
 NCELLS      = 74             # 'grant_xlsx' only: his hardcoded value; None/0 for all rows
 CELL_SUBSET = 'all'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
@@ -114,6 +118,9 @@ def load_neural_data():
     if DATA_SOURCE == 'cache_mua_grantcells':
         from spike_count_connector import load_grant_mua_from_cache
         return load_grant_mua_from_cache()
+    if DATA_SOURCE == 'cache_mua_grant_detected':
+        from spike_count_connector import load_grant_mua_detected_windows
+        return load_grant_mua_detected_windows()
     raise ValueError(f"unknown DATA_SOURCE={DATA_SOURCE!r}")
 
 

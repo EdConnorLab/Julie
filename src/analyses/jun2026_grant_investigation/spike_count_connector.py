@@ -60,6 +60,8 @@ MONKEY_NAME = ['7124', '69X', '72X', '94B', '110E', '67G', '81G', '143H', '87J',
 SUBJECT = 6                                     # 81G, excluded as a stimulus column
 ORDER9 = [m for i, m in enumerate(MONKEY_NAME) if i != SUBJECT]  # matches common.MONKEY_NAME order
 GRANT_NCELLS = 74                               # grant xlsx: first 74 rows (== replicate_analysis.NCELLS)
+DETECT_BIN_SIZE = 0.05                           # in-house response-window detector params
+DETECT_THRESHOLD = 0.5                           # (match threshold_window_detection defaults / run_mua_preprocessing)
 
 # per-list spike sources (factories -> a fresh instance per use)
 def _si_sorted_source():
@@ -224,39 +226,10 @@ def _write_match_rows_csv(rows, out_csv=None):
     return out_csv
 
 
-def export_grant_mua_match_table(out_csv=None):
-    """Match the grant's UNSORTED (MUA) cells to their threshold-MUA NeuronIDs and write a
-    CSV you can eyeball: one row per grant MUA cell with its matched NeuronID and status
-    (matched / no_match / ambiguous / missing_session / no_window). Matching ONLY -- no
-    count extraction -- so it is fast. Same match logic Run B uses, so the CSV is an exact
-    audit of the mapping. Returns (rows, path)."""
-    from analyses.zombies_raster_review.unit_lists import load_mixed_manual_requests
-    import common
-
-    reqs = load_mixed_manual_requests(common.HIS_XLSX)
-    reqs = reqs[:GRANT_NCELLS] if GRANT_NCELLS and GRANT_NCELLS > 0 else reqs
-    mua_reqs = [r for r in reqs if is_mua_name(r.match_value)]
-    print(f"[grant-mua] {len(reqs)} grant rows -> {len(mua_reqs)} unsorted (MUA) cells")
-    source = _mua_source()
-    matched, problems = match_grant_cells_to_mua_neuronids(mua_reqs, _mua_session_ids_fn(source))
-    _report_problems(problems)
-    rows = match_rows(matched, problems)
-    path = _write_match_rows_csv(rows, out_csv)
-    print(f"[grant-mua] {len(rows)} grant MUA cells ({len(matched)} matched, "
-          f"{len(problems)} unmatched) -> {path}")
-    return rows, path
-
-
-def load_grant_mua_from_cache(value='count'):
-    """Rebuild replicate_analysis's input for the grant's UNSORTED (MUA) cells, with spike
-    counts recomputed from the threshold-MUA cache over each cell's own grant time window.
-
-    Returns (X_mean (n,9), meta) in the same shape as load_data_from_cache, so it is a
-    drop-in for DATA_SOURCE='cache_mua_grantcells'. Matching never guesses Location -- the
-    NeuronID is taken verbatim from the threshold-MUA source (see grant_mua_matching). Any
-    cell that cannot be matched/completed is reported; the final line reconciles the used
-    count against the grant MUA list so Run A vs Run B cell counts can be compared.
-    """
+def _match_grant_mua(source=None, write_csv=True):
+    """Load the grant's UNSORTED (MUA) cells and match each to its threshold-MUA NeuronID.
+    Reports any problems and (optionally) writes the audit CSV. Shared by every grant-MUA
+    entrypoint. Returns (matched, problems, mua_reqs, source)."""
     from analyses.zombies_raster_review.unit_lists import load_mixed_manual_requests
     import common
 
@@ -265,23 +238,33 @@ def load_grant_mua_from_cache(value='count'):
     mua_reqs = [r for r in reqs if is_mua_name(r.match_value)]
     print(f"[grant-mua] {len(reqs)} grant rows -> {len(mua_reqs)} unsorted (MUA) cells "
           f"({len(reqs) - len(mua_reqs)} sorted units skipped)")
-
-    source = _mua_source()
+    source = source or _mua_source()
     matched, problems = match_grant_cells_to_mua_neuronids(mua_reqs, _mua_session_ids_fn(source))
     _report_problems(problems)
-    csv_path = _write_match_rows_csv(match_rows(matched, problems))   # audit table, even on failure
-    print(f"[grant-mua] match table -> {csv_path}")
-    if not matched:
-        raise RuntimeError("[grant-mua] no grant MUA cell matched the threshold-MUA cache -- "
-                           "check that the cache/recordings exist for these sessions")
+    if write_csv:
+        print(f"[grant-mua] match table -> {_write_match_rows_csv(match_rows(matched, problems))}")
+    return matched, problems, mua_reqs, source
 
-    windows = pd.DataFrame([{
-        'NeuronID': m['neuron_id'],
-        'WindowStart_ms': m['window_ms'][0],
-        'WindowEnd_ms': m['window_ms'][1],
-        'Date': m['cell'].date,
-        'Round No.': int(m['cell'].round_no),
-    } for m in matched])
+
+def export_grant_mua_match_table(out_csv=None):
+    """Match the grant's UNSORTED (MUA) cells to their threshold-MUA NeuronIDs and write a
+    CSV you can eyeball: one row per grant MUA cell with its matched NeuronID and status
+    (matched / no_match / ambiguous / missing_session / no_window). Matching ONLY -- no
+    count extraction -- so it is fast. Same match logic Run B uses, so the CSV is an exact
+    audit of the mapping. Returns (rows, path)."""
+    matched, problems, _mua_reqs, _source = _match_grant_mua(write_csv=False)
+    rows = match_rows(matched, problems)
+    path = _write_match_rows_csv(rows, out_csv)
+    print(f"[grant-mua] {len(rows)} grant MUA cells ({len(matched)} matched, "
+          f"{len(problems)} unmatched) -> {path}")
+    return rows, path
+
+
+def _counts_from_windows(windows, source, value='count'):
+    """Extract threshold-MUA counts for a (NeuronID, window) table and pivot to
+    (X_mean (n,9), meta). Collapses duplicate (NeuronID, window) rows and drops -- with a
+    warning -- any cell missing one of the 9 stimulus monkeys. Shared by the grant-window
+    and detected-window MUA loaders so both apply identical extraction/QC."""
     dup = windows.duplicated(subset=KEY, keep=False)
     if dup.any():
         print(f"[grant-mua][warn] {int(dup.sum())} duplicate (NeuronID, window) row(s) collapsed:")
@@ -298,8 +281,7 @@ def load_grant_mua_from_cache(value='count'):
     full = piv.reindex(columns=ORDER9)                       # require all 9 stimulus monkeys
     incomplete = full[full.isna().any(axis=1)]
     if len(incomplete):
-        print(f"[grant-mua][warn] {len(incomplete)} matched cell(s) dropped for missing "
-              f"stimulus monkeys:")
+        print(f"[grant-mua][warn] {len(incomplete)} cell(s) dropped for missing stimulus monkeys:")
         for idx, row in incomplete.iterrows():
             miss = [m for m in ORDER9 if pd.isna(row[m])]
             print(f"        {idx[0]}  win={idx[1]}-{idx[2]}ms  missing={miss}")
@@ -309,9 +291,114 @@ def load_grant_mua_from_cache(value='count'):
     meta = full.reset_index()[KEY].copy()
     meta['Cell'] = meta['NeuronID']
     meta['Time Window'] = list(zip(meta['WindowStart_ms'], meta['WindowEnd_ms']))
+    return X_mean, meta
+
+
+def load_grant_mua_from_cache(value='count'):
+    """Rebuild replicate_analysis's input for the grant's UNSORTED (MUA) cells, with spike
+    counts recomputed from the threshold-MUA cache over each cell's own GRANT time window.
+
+    Returns (X_mean (n,9), meta), a drop-in for DATA_SOURCE='cache_mua_grantcells'. Matching
+    never guesses Location -- the NeuronID is taken verbatim from the threshold-MUA source
+    (see grant_mua_matching). The final line reconciles the used count against the grant MUA
+    list so Run A vs Run B cell counts can be compared.
+    """
+    matched, _problems, mua_reqs, source = _match_grant_mua()
+    if not matched:
+        raise RuntimeError("[grant-mua] no grant MUA cell matched the threshold-MUA cache -- "
+                           "check that the cache/recordings exist for these sessions")
+
+    windows = pd.DataFrame([{
+        'NeuronID': m['neuron_id'],
+        'WindowStart_ms': m['window_ms'][0],
+        'WindowEnd_ms': m['window_ms'][1],
+        'Date': m['cell'].date,
+        'Round No.': int(m['cell'].round_no),
+    } for m in matched])
+    X_mean, meta = _counts_from_windows(windows, source, value=value)
     print(f"[grant-mua] matched {len(matched)}/{len(mua_reqs)} MUA cells; used {len(meta)} "
           f"after requiring all {len(ORDER9)} stimulus monkeys "
           f"(Run A 'grant_xlsx'+multiunit uses {len(mua_reqs)} cells).")
+    return X_mean, meta
+
+
+def _detect_windows_for_matched(matched, source):
+    """Run the in-house response-window detector (threshold_window_detection) on the sessions
+    of the matched grant MUA neurons and keep only those neurons' windows. Detection is per
+    neuron and can yield 0, 1, or several windows each. Returns a DataFrame with columns
+    NeuronID / WindowStart_ms / WindowEnd_ms / Date / Round No.; neurons with no window are
+    reported and simply absent."""
+    from analyses.response_window_finder.threshold_window_detection import (
+        detect_response_windows_for_session,
+    )
+    target_nids = sorted({m['neuron_id'] for m in matched})
+    sessions = sorted({(m['cell'].date, int(m['cell'].round_no)) for m in matched})
+    print(f"[grant-mua][detect] detecting response windows for {len(target_nids)} MUA neurons "
+          f"across {len(sessions)} sessions (bin={DETECT_BIN_SIZE}s, z>{DETECT_THRESHOLD})")
+
+    parts = []
+    for date, rnd in sessions:
+        df = detect_response_windows_for_session(
+            date, rnd, source=source, bin_size=DETECT_BIN_SIZE,
+            monkey_group=GROUP, threshold=DETECT_THRESHOLD, plot=False)
+        if df is not None and not getattr(df, 'empty', True):
+            parts.append(df)
+    detected = (pd.concat(parts, ignore_index=True) if parts
+                else pd.DataFrame(columns=KEY + ['Date', 'Round No.']))
+    detected = detected[detected['NeuronID'].isin(target_nids)].reset_index(drop=True)
+
+    have = set(detected['NeuronID']) if not detected.empty else set()
+    zero = [n for n in target_nids if n not in have]
+    print(f"[grant-mua][detect] {len(detected)} detected window(s) across "
+          f"{len(target_nids) - len(zero)}/{len(target_nids)} neurons; "
+          f"{len(zero)} neuron(s) had NO detected window")
+    for n in zero:
+        print(f"        [no-window] {n}")
+    return detected
+
+
+def _write_detected_windows_csv(detected, out_csv=None):
+    out_csv = out_csv or os.path.join(_HERE, 'output', 'grant_mua_detected_windows.csv')
+    os.makedirs(os.path.dirname(out_csv), exist_ok=True)
+    df = detected.copy()
+    cols = ['Date', 'Round No.', 'NeuronID', 'WindowStart_ms', 'WindowEnd_ms']
+    if not df.empty:
+        df = df[cols].sort_values(['Date', 'Round No.', 'NeuronID', 'WindowStart_ms'])
+    df.to_csv(out_csv, index=False)
+    return out_csv
+
+
+def export_grant_mua_detected_windows(out_csv=None):
+    """Detect in-house response windows for the grant MUA neurons and write them to CSV --
+    detection ONLY, no count extraction, no analysis. Returns (detected_df, path)."""
+    matched, _problems, _mua_reqs, source = _match_grant_mua()
+    if not matched:
+        raise RuntimeError("[grant-mua] no grant MUA cell matched the threshold-MUA cache")
+    detected = _detect_windows_for_matched(matched, source)
+    path = _write_detected_windows_csv(detected, out_csv)
+    print(f"[grant-mua][detect] detected windows -> {path}")
+    return detected, path
+
+
+def load_grant_mua_detected_windows(value='count'):
+    """Like load_grant_mua_from_cache, but each cell's window(s) come from the in-house
+    response-window DETECTOR run on the threshold-MUA source, NOT from the grant xlsx.
+    Drop-in for DATA_SOURCE='cache_mua_grant_detected'. Because detection yields 0/1/several
+    windows per neuron, the row count differs from the 37 grant windows; the detected windows
+    are also written to output/grant_mua_detected_windows.csv for inspection."""
+    matched, _problems, _mua_reqs, source = _match_grant_mua()
+    if not matched:
+        raise RuntimeError("[grant-mua] no grant MUA cell matched the threshold-MUA cache -- "
+                           "check that the cache/recordings exist for these sessions")
+
+    detected = _detect_windows_for_matched(matched, source)
+    print(f"[grant-mua][detect] detected windows -> {_write_detected_windows_csv(detected)}")
+    if detected.empty:
+        raise RuntimeError("[grant-mua][detect] no response windows detected for the grant MUA cells")
+
+    X_mean, meta = _counts_from_windows(detected, source, value=value)
+    print(f"[grant-mua][detect] used {len(meta)} (neuron x detected-window) rows after "
+          f"requiring all {len(ORDER9)} stimulus monkeys")
     return X_mean, meta
 
 
