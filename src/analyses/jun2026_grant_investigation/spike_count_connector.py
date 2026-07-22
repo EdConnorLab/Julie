@@ -328,13 +328,19 @@ def _detect_windows_for_matched(matched, source):
     neuron and can yield 0, 1, or several windows each. Returns a DataFrame with columns
     NeuronID / WindowStart_ms / WindowEnd_ms / Date / Round No.; neurons with no window are
     reported and simply absent."""
+    from collections import Counter
     from analyses.response_window_finder.threshold_window_detection import (
         detect_response_windows_for_session,
     )
     target_nids = sorted({m['neuron_id'] for m in matched})
     sessions = sorted({(m['cell'].date, int(m['cell'].round_no)) for m in matched})
-    print(f"[grant-mua][detect] detecting response windows for {len(target_nids)} MUA neurons "
-          f"across {len(sessions)} sessions (bin={DETECT_BIN_SIZE}s, z>{DETECT_THRESHOLD})")
+    multi = {n: c for n, c in Counter(m['neuron_id'] for m in matched).items() if c > 1}
+    print(f"[grant-mua][detect] {len(matched)} grant MUA cell x window rows -> "
+          f"{len(target_nids)} unique neurons across {len(sessions)} sessions "
+          f"(detection is per NEURON; bin={DETECT_BIN_SIZE}s, z>{DETECT_THRESHOLD})")
+    if multi:
+        print(f"[grant-mua][detect]   {len(multi)} channel(s) collapsed (same neuron, >1 grant "
+              f"window): " + ", ".join(f"{n}(x{c})" for n, c in sorted(multi.items())))
 
     parts = []
     for date, rnd in sessions:
@@ -368,13 +374,24 @@ def _write_detected_windows_csv(detected, out_csv=None):
     return out_csv
 
 
+def grant_mua_detected_windows(write_default_csv=True):
+    """Match the grant MUA cells and run the in-house detector on their neurons. Returns
+    (detected_windows_df, source). Shared by the detected-window loader, the CSV exporter,
+    and the window-significance driver so all three see the identical detected windows."""
+    matched, _problems, _mua_reqs, source = _match_grant_mua()
+    if not matched:
+        raise RuntimeError("[grant-mua] no grant MUA cell matched the threshold-MUA cache -- "
+                           "check that the cache/recordings exist for these sessions")
+    detected = _detect_windows_for_matched(matched, source)
+    if write_default_csv:
+        print(f"[grant-mua][detect] detected windows -> {_write_detected_windows_csv(detected)}")
+    return detected, source
+
+
 def export_grant_mua_detected_windows(out_csv=None):
     """Detect in-house response windows for the grant MUA neurons and write them to CSV --
     detection ONLY, no count extraction, no analysis. Returns (detected_df, path)."""
-    matched, _problems, _mua_reqs, source = _match_grant_mua()
-    if not matched:
-        raise RuntimeError("[grant-mua] no grant MUA cell matched the threshold-MUA cache")
-    detected = _detect_windows_for_matched(matched, source)
+    detected, _source = grant_mua_detected_windows(write_default_csv=False)
     path = _write_detected_windows_csv(detected, out_csv)
     print(f"[grant-mua][detect] detected windows -> {path}")
     return detected, path
@@ -386,16 +403,9 @@ def load_grant_mua_detected_windows(value='count'):
     Drop-in for DATA_SOURCE='cache_mua_grant_detected'. Because detection yields 0/1/several
     windows per neuron, the row count differs from the 37 grant windows; the detected windows
     are also written to output/grant_mua_detected_windows.csv for inspection."""
-    matched, _problems, _mua_reqs, source = _match_grant_mua()
-    if not matched:
-        raise RuntimeError("[grant-mua] no grant MUA cell matched the threshold-MUA cache -- "
-                           "check that the cache/recordings exist for these sessions")
-
-    detected = _detect_windows_for_matched(matched, source)
-    print(f"[grant-mua][detect] detected windows -> {_write_detected_windows_csv(detected)}")
+    detected, source = grant_mua_detected_windows()
     if detected.empty:
         raise RuntimeError("[grant-mua][detect] no response windows detected for the grant MUA cells")
-
     X_mean, meta = _counts_from_windows(detected, source, value=value)
     print(f"[grant-mua][detect] used {len(meta)} (neuron x detected-window) rows after "
           f"requiring all {len(ORDER9)} stimulus monkeys")
