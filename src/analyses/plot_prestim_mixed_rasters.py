@@ -12,8 +12,10 @@ just read it. Same stacked layout as the SI-sorted rasters.
 
 NOTE: only manually-sorted units get a real pre-stimulus baseline (their indices
 live un-windowed in sorted_spikes.pkl). Unsorted channels come from the already-
-clipped compiled.pkl, so their pre-window (left of t=0) stays empty. spike.dat is
-not used.
+clipped compiled.pkl and have NO pre-stimulus spikes, so they are plotted from t=0
+(no empty [-pre, 0) band that could be mistaken for silence). For pre-stimulus
+baselines on unsorted channels, use plot_prestim_mua_rasters.py instead. spike.dat
+is not used.
 """
 from pathlib import Path
 
@@ -65,17 +67,26 @@ def main():
         if len(neuron_df) < MIN_TRIALS:
             print(f"  skip {neuron_id}: only {len(neuron_df)} trials")
             continue
+        # Manually-sorted units (Channel carries a "_Unit" suffix) have real
+        # pre-stimulus spikes from sorted_spikes.pkl; unsorted channels come from the
+        # clipped compiled.pkl and have none. Show the pre-stimulus axis only for the
+        # manual units — plot unsorted channels from t=0 so their empty [-pre, 0) band
+        # isn't mistaken for silence (use plot_prestim_mua_rasters.py for unsorted pre-stim).
+        is_manual = "_Unit" in neuron_id
+        pre = PRE_STIMULUS_TIME if is_manual else 0.0
         n_spikes = sum(len(s) for s in neuron_df["SpikeTimes"])
-        print(f"  plotting {neuron_id} — {len(neuron_df)} trials, {n_spikes} spikes")
+        print(f"  plotting {neuron_id} [{'manual' if is_manual else 'unsorted'}] "
+              f"— {len(neuron_df)} trials, {n_spikes} spikes")
+        pre_label = f"pre-stim {int(pre * 1000)} ms" if pre > 0 else "no pre-stim (unsorted)"
         save_path = str(save_dir / f"{neuron_id}.png") if SAVE else None
         plot_stacked_raster(
             neuron_df,
             xlim=XLIM,
-            pre_stimulus_time=PRE_STIMULUS_TIME,
+            pre_stimulus_time=pre,
             columns=COLUMNS,
             exclude_monkeys=EXCLUDE,
             annotate=LABEL,
-            title=f"Mixed manual/unsorted raster (pre-stim {int(PRE_STIMULUS_TIME * 1000)} ms): {neuron_id}",
+            title=f"Mixed manual/unsorted raster ({pre_label}): {neuron_id}",
             save_path=save_path,
         )
 
