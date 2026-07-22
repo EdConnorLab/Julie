@@ -298,24 +298,32 @@ def _counts_from_windows(windows, source, value='count'):
     return X_mean, meta
 
 
-def _drop_overlapping_windows(windows):
-    """Per NeuronID, drop narrower windows that overlap a wider one (keep the widest);
-    disjoint windows are kept. Reuses the pure overlap_keep_mask. Returns the filtered df."""
-    from grant_mua_matching import overlap_keep_mask
-    rows = list(zip(windows['NeuronID'].astype(str),
-                    windows['WindowStart_ms'].astype(float),
-                    windows['WindowEnd_ms'].astype(float)))
+def _drop_overlapping_windows(windows, same_unit_groups=()):
+    """Per unit, drop narrower windows that overlap a wider one (keep the widest); disjoint
+    windows are kept. `same_unit_groups` aliases channels that are one physical unit (see
+    grant_mua_matching.unit_key_resolver) so their windows de-duplicate together. Returns the
+    filtered df."""
+    from grant_mua_matching import overlap_keep_mask, unit_key_resolver
+    resolve = unit_key_resolver(same_unit_groups)
+
+    def _unit_key(nid):
+        parts = str(nid).split('_', 3)   # Location, Date, Round, Channel
+        return resolve(parts[1], parts[2], parts[3]) if len(parts) == 4 else str(nid)
+
+    rows = [(_unit_key(nid), float(s), float(e))
+            for nid, s, e in zip(windows['NeuronID'], windows['WindowStart_ms'],
+                                 windows['WindowEnd_ms'])]
     mask = overlap_keep_mask(rows)
     n_drop = mask.count(False)
     if n_drop:
         dropped = windows[[not m for m in mask]][['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']]
-        print(f"[grant-mua] DROP_OVERLAPPING_WINDOWS: removed {n_drop} narrower overlapping "
+        print(f"[grant-mua] DROP_OVERLAPPING_WINDOWS: removed {n_drop} narrower/duplicate "
               f"window(s):")
         print(dropped.to_string(index=False))
     return windows[mask].reset_index(drop=True)
 
 
-def load_grant_mua_from_cache(value='count', dedup_overlapping=False):
+def load_grant_mua_from_cache(value='count', dedup_overlapping=False, same_unit_groups=()):
     """Rebuild replicate_analysis's input for the grant's UNSORTED (MUA) cells, with spike
     counts recomputed from the threshold-MUA cache over each cell's own GRANT time window.
 
@@ -338,7 +346,7 @@ def load_grant_mua_from_cache(value='count', dedup_overlapping=False):
         'Round No.': int(m['cell'].round_no),
     } for m in matched])
     if dedup_overlapping:
-        windows = _drop_overlapping_windows(windows)
+        windows = _drop_overlapping_windows(windows, same_unit_groups=same_unit_groups)
     X_mean, meta = _counts_from_windows(windows, source, value=value)
     print(f"[grant-mua] matched {len(matched)}/{len(mua_reqs)} MUA cells; used {len(meta)} "
           f"after requiring all {len(ORDER9)} stimulus monkeys "

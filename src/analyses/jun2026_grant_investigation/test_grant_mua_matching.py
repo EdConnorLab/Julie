@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from grant_mua_matching import (  # noqa: E402
     is_mua_name, mua_neuron_ids, match_channel,
     match_grant_cells_to_mua_neuronids, summarize_problems,
-    match_rows, MATCH_TABLE_COLUMNS, overlap_keep_mask,
+    match_rows, MATCH_TABLE_COLUMNS, overlap_keep_mask, unit_key_resolver,
 )
 
 # Minimal duck-type for a grant cell (unit_lists.RasterRequest exposes the same names).
@@ -202,6 +202,44 @@ class TestOverlapKeepMask(unittest.TestCase):
     def test_single_and_empty(self):
         self.assertEqual(overlap_keep_mask([('A', 0, 100)]), [True])
         self.assertEqual(overlap_keep_mask([]), [])
+
+
+class TestUnitKeyResolver(unittest.TestCase):
+    GROUPS = [[("2023-10-27", 4, "Channel.C_011"), ("2023-10-27", 4, "Channel.C_020")]]
+
+    def test_aliased_channels_share_key(self):
+        resolve = unit_key_resolver(self.GROUPS)
+        self.assertEqual(resolve("2023-10-27", 4, "Channel.C_011"),
+                         resolve("2023-10-27", 4, "Channel.C_020"))
+
+    def test_non_member_unchanged(self):
+        resolve = unit_key_resolver(self.GROUPS)
+        self.assertEqual(resolve("2023-10-27", 4, "Channel.C_099"),
+                         ("2023-10-27", 4, "Channel.C_099"))
+        self.assertNotEqual(resolve("2023-10-27", 4, "Channel.C_099"),
+                            resolve("2023-10-27", 4, "Channel.C_011"))
+
+    def test_round_str_int_equivalent(self):
+        resolve = unit_key_resolver(self.GROUPS)
+        self.assertEqual(resolve("2023-10-27", "4", "Channel.C_011"),
+                         resolve("2023-10-27", 4, "Channel.C_020"))
+
+    def test_empty_groups_returns_base(self):
+        resolve = unit_key_resolver()
+        self.assertEqual(resolve("2023-10-27", 4, "Channel.C_011"),
+                         ("2023-10-27", 4, "Channel.C_011"))
+
+    def test_alias_collapses_windows_across_channels(self):
+        # C_011 and C_020 aliased -> their 4 windows collapse to the single widest (0,750)
+        resolve = unit_key_resolver(self.GROUPS)
+        d, rn = "2023-10-27", 4
+        rows = [
+            (resolve(d, rn, "Channel.C_011"), 200, 700),
+            (resolve(d, rn, "Channel.C_011"), 0, 750),
+            (resolve(d, rn, "Channel.C_020"), 200, 650),
+            (resolve(d, rn, "Channel.C_020"), 0, 750),
+        ]
+        self.assertEqual(overlap_keep_mask(rows), [False, True, False, False])
 
 
 class TestRealNeuronIDs(unittest.TestCase):
