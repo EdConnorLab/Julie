@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, Protocol
 import pandas as pd
 
-from data_access.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager, ThresholdSpikeCacheManager
+from data_access.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager
 
 
 class SpikeSource(Protocol):
@@ -65,35 +65,6 @@ class SISortedSpikeSource:
 
 
 @dataclass(frozen=True)
-class ThresholdSpikeSource:
-    """
-    Unsorted spikes detected from raw amplifier.dat using the Quian Quiroga (2004)
-    threshold method:  threshold = -multiplier * median(|signal|) / 0.6745
-
-    Parameters
-    ----------
-    threshold_multiplier : float
-        Sigma multiplier (default 4 → -4*sigma_noise).  Typical range: 4-5.
-    force_recompute : bool
-        Re-run detection even if a cache exists.
-    """
-    threshold_multiplier: float = 4.5
-    force_recompute: bool = False
-    name: str = "threshold"
-
-    def load(self, date: str, round_no: int) -> Optional[pd.DataFrame]:
-        df = ThresholdSpikeCacheManager().load_or_compute(
-            date,
-            round_no,
-            threshold_multiplier=self.threshold_multiplier,
-            force_recompute=self.force_recompute,
-        )
-        if df is None or getattr(df, "empty", True):
-            return None
-        return df
-
-
-@dataclass(frozen=True)
 class ThresholdMUASpikeSource:
     """Multi-unit activity (MUA) from OFFLINE MAD/RMS negative-crossing detection on
     the raw amplifier signal (threshold_detection.detect_mad_spikes).
@@ -103,7 +74,7 @@ class ThresholdMUASpikeSource:
     inaccurate. Here the threshold is recomputed from the data per channel
     (median/RMS noise * multiplier), so it doesn't rely on the live settings.
 
-    Distinct from ThresholdSpikeSource (Quian-Quiroga), which is left untouched.
+    Replaces the old Quian-Quiroga ThresholdSpikeSource (now removed).
     pre_filtered=True so the single-unit ISI QC is skipped (this is multiunit).
     """
     noise_method: str = "mad"          # 'mad' = median(|v|)/0.6745, or 'rms'
