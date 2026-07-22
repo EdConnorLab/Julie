@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from grant_mua_matching import (  # noqa: E402
     is_mua_name, mua_neuron_ids, match_channel,
     match_grant_cells_to_mua_neuronids, summarize_problems,
-    match_rows, MATCH_TABLE_COLUMNS,
+    match_rows, MATCH_TABLE_COLUMNS, overlap_keep_mask,
 )
 
 # Minimal duck-type for a grant cell (unit_lists.RasterRequest exposes the same names).
@@ -169,6 +169,39 @@ class TestMatchRows(unittest.TestCase):
         self.assertEqual(by_cell['Channel.C_018']['status'], 'matched')
         self.assertEqual(by_cell['Channel.C_099']['status'], 'no_match')
         self.assertEqual(by_cell['Channel.C_099']['neuron_id'], '')
+
+
+class TestOverlapKeepMask(unittest.TestCase):
+    def test_containment_keeps_wider(self):
+        # C_002 grant case: (100,500) contains (150,400) -> keep the wider (100,500)
+        rows = [('A', 100, 500), ('A', 150, 400)]
+        self.assertEqual(overlap_keep_mask(rows), [True, False])
+
+    def test_disjoint_kept(self):
+        # C_021 grant case: two separate epochs -> both kept
+        rows = [('A', 300, 550), ('A', 1550, 1650)]
+        self.assertEqual(overlap_keep_mask(rows), [True, True])
+
+    def test_three_overlapping_collapse_to_widest(self):
+        rows = [('A', 1650, 1800), ('A', 0, 2000), ('A', 100, 500)]
+        self.assertEqual(overlap_keep_mask(rows), [False, True, False])
+
+    def test_adjacent_touching_not_overlap(self):
+        # half-open windows that only touch at an endpoint are not duplicates
+        rows = [('A', 0, 300), ('A', 300, 600)]
+        self.assertEqual(overlap_keep_mask(rows), [True, True])
+
+    def test_equal_width_partial_overlap_tiebreak_by_start(self):
+        rows = [('A', 300, 600), ('A', 100, 400)]  # same width; earliest start wins
+        self.assertEqual(overlap_keep_mask(rows), [False, True])
+
+    def test_keys_are_independent(self):
+        rows = [('A', 0, 100), ('A', 0, 200), ('B', 0, 100)]
+        self.assertEqual(overlap_keep_mask(rows), [False, True, True])
+
+    def test_single_and_empty(self):
+        self.assertEqual(overlap_keep_mask([('A', 0, 100)]), [True])
+        self.assertEqual(overlap_keep_mask([]), [])
 
 
 class TestRealNeuronIDs(unittest.TestCase):

@@ -105,16 +105,46 @@ from common import (
 DATA_SOURCE = 'cache_kw'
 NCELLS      = 74             # 'grant_xlsx' only: his hardcoded value; None/0 for all rows
 CELL_SUBSET = 'all'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
+DROP_OVERLAPPING_WINDOWS = False  # 'grant_xlsx' & 'cache_mua_grantcells' only: when a cell has
+#                            overlapping time windows, keep only the WIDEST (drops narrower dups)
 THRESH      = 0.5             # R^2 cutoff
 NPERM       = 10000           # drop to 1000 for fast smoke-tests
 RANDOM_SEED = 20251121
 # =====================================================================
 
 
+def _drop_overlapping_grant_windows(X_mean, df):
+    """grant_xlsx post-filter for DROP_OVERLAPPING_WINDOWS: when a cell (Date, Round No.,
+    Cell) has overlapping time windows, keep only the widest. Masks X_mean and df together.
+    Reuses the pure overlap_keep_mask; unparseable windows are always kept."""
+    import ast
+    from grant_mua_matching import overlap_keep_mask
+    rows = []
+    for i, (_, r) in enumerate(df.iterrows()):
+        try:
+            lo, hi = ast.literal_eval(str(r['Time Window']))
+            key = (str(r['Date']), int(r['Round No.']), str(r['Cell']))
+            lo, hi = float(lo), float(hi)
+        except Exception:
+            key, lo, hi = ('__row__', i), 0.0, 0.0   # unparseable -> singleton, always kept
+        rows.append((key, lo, hi))
+    mask = overlap_keep_mask(rows)
+    n_drop = mask.count(False)
+    if n_drop:
+        drop_df = df[[not m for m in mask]][['Date', 'Round No.', 'Cell', 'Time Window']]
+        print(f"  DROP_OVERLAPPING_WINDOWS: removed {n_drop} narrower overlapping window(s):")
+        print(drop_df.to_string(index=False))
+    keep = np.array(mask, dtype=bool)
+    return X_mean[keep], df[keep].reset_index(drop=True)
+
+
 def load_neural_data():
     """Dispatch on DATA_SOURCE. Returns (X_mean (ncells,9), df with 'Cell')."""
     if DATA_SOURCE == 'grant_xlsx':
-        return load_data(HIS_XLSX, ncells=NCELLS)
+        X_mean, df = load_data(HIS_XLSX, ncells=NCELLS)
+        if DROP_OVERLAPPING_WINDOWS:
+            X_mean, df = _drop_overlapping_grant_windows(X_mean, df)
+        return X_mean, df
     if DATA_SOURCE in ('cache_kw', 'cache_anova', 'cache_mua_kw', 'cache_mua_anova'):
         from spike_count_connector import load_data_from_cache
         list_name = {'cache_kw': 'KW', 'cache_anova': 'ANOVA',
@@ -122,7 +152,7 @@ def load_neural_data():
         return load_data_from_cache(list_name)
     if DATA_SOURCE == 'cache_mua_grantcells':
         from spike_count_connector import load_grant_mua_from_cache
-        return load_grant_mua_from_cache()
+        return load_grant_mua_from_cache(dedup_overlapping=DROP_OVERLAPPING_WINDOWS)
     if DATA_SOURCE == 'cache_mua_grant_detected':
         from spike_count_connector import load_grant_mua_detected_windows
         return load_grant_mua_detected_windows()

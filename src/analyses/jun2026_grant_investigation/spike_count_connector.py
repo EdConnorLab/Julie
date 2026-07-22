@@ -298,14 +298,32 @@ def _counts_from_windows(windows, source, value='count'):
     return X_mean, meta
 
 
-def load_grant_mua_from_cache(value='count'):
+def _drop_overlapping_windows(windows):
+    """Per NeuronID, drop narrower windows that overlap a wider one (keep the widest);
+    disjoint windows are kept. Reuses the pure overlap_keep_mask. Returns the filtered df."""
+    from grant_mua_matching import overlap_keep_mask
+    rows = list(zip(windows['NeuronID'].astype(str),
+                    windows['WindowStart_ms'].astype(float),
+                    windows['WindowEnd_ms'].astype(float)))
+    mask = overlap_keep_mask(rows)
+    n_drop = mask.count(False)
+    if n_drop:
+        dropped = windows[[not m for m in mask]][['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']]
+        print(f"[grant-mua] DROP_OVERLAPPING_WINDOWS: removed {n_drop} narrower overlapping "
+              f"window(s):")
+        print(dropped.to_string(index=False))
+    return windows[mask].reset_index(drop=True)
+
+
+def load_grant_mua_from_cache(value='count', dedup_overlapping=False):
     """Rebuild replicate_analysis's input for the grant's UNSORTED (MUA) cells, with spike
     counts recomputed from the threshold-MUA cache over each cell's own GRANT time window.
 
     Returns (X_mean (n,9), meta), a drop-in for DATA_SOURCE='cache_mua_grantcells'. Matching
     never guesses Location -- the NeuronID is taken verbatim from the threshold-MUA source
-    (see grant_mua_matching). The final line reconciles the used count against the grant MUA
-    list so Run A vs Run B cell counts can be compared.
+    (see grant_mua_matching). With dedup_overlapping=True a cell's overlapping windows are
+    collapsed to the widest (see DROP_OVERLAPPING_WINDOWS). The final line reconciles the used
+    count against the grant MUA list so Run A vs Run B cell counts can be compared.
     """
     matched, _problems, mua_reqs, source = _match_grant_mua()
     if not matched:
@@ -319,6 +337,8 @@ def load_grant_mua_from_cache(value='count'):
         'Date': m['cell'].date,
         'Round No.': int(m['cell'].round_no),
     } for m in matched])
+    if dedup_overlapping:
+        windows = _drop_overlapping_windows(windows)
     X_mean, meta = _counts_from_windows(windows, source, value=value)
     print(f"[grant-mua] matched {len(matched)}/{len(mua_reqs)} MUA cells; used {len(meta)} "
           f"after requiring all {len(ORDER9)} stimulus monkeys "

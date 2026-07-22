@@ -138,6 +138,40 @@ MATCH_TABLE_COLUMNS = ('grant_cell', 'date', 'round_no', 'time_window',
                        'neuron_id', 'status', 'detail')
 
 
+def _intervals_overlap(a_start, a_end, b_start, b_end):
+    """True if [a_start, a_end) and [b_start, b_end) share an interior point. Touching
+    endpoints (e.g. (0,300) & (300,600)) do NOT count -- spike counting is half-open, so
+    adjacent windows don't double-count."""
+    return a_start < b_end and b_start < a_end
+
+
+def overlap_keep_mask(rows):
+    """Decide which windows to keep when a cell has overlapping ones.
+
+    rows: sequence of (key, start, end). Windows are grouped by `key` (the cell identity);
+    within a group, whenever two windows overlap the WIDER one is kept and the narrower is
+    dropped. Disjoint windows are all kept (distinct response epochs). Deterministic order:
+    widest first, then earliest start, then original position. Returns a list[bool] aligned
+    to `rows` (True = keep). This is how DROP_OVERLAPPING_WINDOWS collapses grant windows.
+    """
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for i, (key, _s, _e) in enumerate(rows):
+        groups[key].append(i)
+    keep = [True] * len(rows)
+    for idxs in groups.values():
+        # widest first (so it wins), then earliest start, then original order -- deterministic
+        order = sorted(idxs, key=lambda i: (-(rows[i][2] - rows[i][1]), rows[i][1], i))
+        kept = []
+        for i in order:
+            s, e = rows[i][1], rows[i][2]
+            if any(_intervals_overlap(s, e, rows[j][1], rows[j][2]) for j in kept):
+                keep[i] = False
+            else:
+                kept.append(i)
+    return keep
+
+
 def match_rows(matched, problems):
     """Flatten (matched, problems) into ordered, CSV-ready row dicts -- one per grant
     cell, matched first then problems, all sorted by (date, round, channel). Columns
