@@ -26,24 +26,31 @@ Two problems make it miss responses that are obvious in the raster:
 |------|------|-----------|
 | `current` | whole-trial z-score, `z>0.5` (the baseline to beat) | existing code |
 | `cusum` | one-sided CUSUM change detection on the z-scored PSTH | — |
-| `baseline_z` | z-score vs a **robust within-trial baseline**, N-sigma, k-consecutive | classic PSTH practice |
-| `poisson` | per-bin Poisson surprise that firing exceeds baseline | Hanes et al. 1995; Legéndy & Salcman 1985 |
-| `cluster_perm` | per-bin stat vs baseline, temporal clustering, permutation null (FWE over time) | Maris & Oostenveld 2007 |
+| `baseline_z` | z-score vs the **real pre-stimulus baseline**, N-sigma, k-consecutive | classic PSTH practice |
+| `poisson` | per-bin Poisson surprise that firing exceeds the pre-stim baseline | Hanes et al. 1995; Legéndy & Salcman 1985 |
+| `cluster_perm` | per-bin stat vs each trial's pre-stim baseline, temporal clustering, permutation null (FWE over time) | Maris & Oostenveld 2007 |
 | `zeta` | binning-free deviation of the cumulative spike distribution from stationarity | Montijn et al. 2021 (eLife 71969) |
 
-These epochs start **at stimulus onset** (no pre-stimulus period), which is exactly
-why the stationarity/robust-baseline methods are expected to beat the self-baseline
-z-score. All detectors are pure numpy/scipy — nothing new to install on the lab
-machine beyond the pinned scientific stack.
+The baseline comes **directly from the pre-stimulus window** (the SI-sorted
+pre-stim caches, e.g. `sorted_spike_cache_pre1000ms`, store spikes from
+`onset - pre` onward). There is no within-trial baseline estimation — the
+`baseline_z` / `poisson` / `cluster_perm` detectors require a pre-stim period and
+refuse without one. All detectors are pure numpy/scipy — nothing new to install
+on the lab machine beyond the pinned scientific stack.
+
+Scope: this first pass targets **SI-sorted units** from the pre-stim cache. Other
+sources (MUA, mixed) will slot in once their pre-stim caches exist.
 
 ## Workflow
 
 ```bash
 cd src
 
-# 1) pick ~20 cells (stratified across region / unit-type / session),
-#    render UNMARKED rasters for you to inspect, and write a blank template
-python -m analyses.response_window_benchmark.run_benchmark --mode select --n 20
+# 1) pick ~20 SI-sorted cells from the pre-stim cache (stratified across
+#    region / session), render UNMARKED rasters (baseline shown) to inspect,
+#    and write a blank template
+python -m analyses.response_window_benchmark.run_benchmark --mode select --n 20 \
+    --cache-subdir sorted_spike_cache_pre1000ms --pre-stim 1.0
 
 #    -> output/candidate_cells.csv
 #    -> output/ground_truth_template.xlsx      (fill in the windows you SEE)
@@ -82,7 +89,7 @@ principled ones recover it, and renders a comparison figure — no lab data need
 
 ## Files
 
-- `psth.py` — trial extraction, PSTH matrix, robust baseline, optimal bin width
+- `psth.py` — trial extraction (keeps pre-stim), PSTH matrix, pre-stim baseline, optimal bin width
 - `detectors.py` — the six detectors behind one `WindowDetector` interface
 - `plotting.py` — the per-cell raster + PSTH + window-lane comparison figure
 - `cell_selection.py` — stratified candidate sampling from the five cell lists

@@ -13,7 +13,7 @@ CurrentThreshold   the existing detector: z-score the summed PSTH over the WHOLE
                    trial, keep bins with z > thr (its own mean is the baseline).
                    Included verbatim as the baseline to beat.
 UpwardCusum        one-sided CUSUM change detection on the z-scored PSTH.
-BaselineZScore     z-score against a robust within-trial baseline (not the whole
+BaselineZScore     z-score against the real pre-stimulus baseline (not the whole
                    trial), N-sigma threshold, k-consecutive-bin rule.
 PoissonBaseline    Hanes / Poisson-surprise: per-bin p that firing exceeds the
                    baseline Poisson rate; keep runs of significant bins.
@@ -42,7 +42,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from .psth import (
-    TrialData, bin_edges, binned_matrix, estimate_baseline, optimal_bin_width,
+    TrialData, bin_edges, binned_matrix, analysis_edges, prestim_baseline,
 )
 
 Window = Tuple[float, float]
@@ -186,7 +186,7 @@ class CurrentThresholdDetector(WindowDetector):
 
     def detect(self, td: TrialData) -> DetectorResult:
         counts, centers = binned_matrix(td, self.bin_s)
-        edges = bin_edges(td.t_start, td.t_stop, self.bin_s)
+        edges = analysis_edges(td, self.bin_s)
         if counts.shape[0] == 0:
             return DetectorResult([], curve=None, centers=centers)
         summed = counts.sum(axis=0)
@@ -219,7 +219,7 @@ class UpwardCusumDetector(WindowDetector):
 
     def detect(self, td: TrialData) -> DetectorResult:
         counts, centers = binned_matrix(td, self.bin_s)
-        edges = bin_edges(td.t_start, td.t_stop, self.bin_s)
+        edges = analysis_edges(td, self.bin_s)
         if counts.shape[0] == 0:
             return DetectorResult([], centers=centers)
         z = _zscore(counts.sum(axis=0))
@@ -235,34 +235,32 @@ class UpwardCusumDetector(WindowDetector):
 # 3. Baseline-relative z-score
 # --------------------------------------------------------------------------- #
 class BaselineZScoreDetector(WindowDetector):
-    """z-score against a ROBUST within-trial baseline, not the whole trial.
+    """z-score against the real PRE-STIMULUS baseline, not the whole trial.
 
     Fixes the current detector's core flaw (a strong response inflates its own
-    baseline): baseline mean/SD come from the low part of the PSTH (see
-    :func:`psth.estimate_baseline`). A bin is flagged when its summed count is
+    baseline): baseline mean/SD come from the real PRE-STIMULUS window (see
+    :func:`psth.prestim_baseline`). A bin is flagged when its summed count is
     ``n_sigma`` SDs above baseline (SD floored at the Poisson expectation
-    ``sqrt(mean)`` so a flat baseline can't make the z blow up). Runs must be at
+    ``sqrt(mean)`` so a quiet baseline can't make the z blow up). Runs must be at
     least ``min_consec`` bins; gaps up to ``max_gap`` bins are bridged.
     """
     name = "baseline_z"
     color = "#2F80ED"
 
     def __init__(self, bin_s: float = 0.05, n_sigma: float = 3.0,
-                 min_consec: int = 2, max_gap_bins: int = 1,
-                 baseline_method: str = "robust"):
+                 min_consec: int = 2, max_gap_bins: int = 1):
         self.bin_s = bin_s
         self.n_sigma = n_sigma
         self.min_consec = min_consec
         self.max_gap_bins = max_gap_bins
-        self.baseline_method = baseline_method
 
     def detect(self, td: TrialData) -> DetectorResult:
         counts, centers = binned_matrix(td, self.bin_s)
-        edges = bin_edges(td.t_start, td.t_stop, self.bin_s)
+        edges = analysis_edges(td, self.bin_s)
         if counts.shape[0] == 0:
             return DetectorResult([], centers=centers)
         summed = counts.sum(axis=0)
-        base = estimate_baseline(td, self.bin_s, method=self.baseline_method)
+        base = prestim_baseline(td, self.bin_s)
         sd = max(base.std_count, np.sqrt(max(base.mean_count, 1e-9)), 1e-9)
         z = (summed - base.mean_count) / sd
         mask = z > self.n_sigma
@@ -280,8 +278,8 @@ class BaselineZScoreDetector(WindowDetector):
 class PoissonBaselineDetector(WindowDetector):
     """Per-bin Poisson surprise that firing EXCEEDS the baseline rate.
 
-    Baseline rate ``lambda`` (Hz) is estimated robustly; the expected summed
-    count in a bin is ``mu = lambda * bin_s * n_trials``. The surprise of an
+    Baseline rate ``lambda`` (Hz) comes from the pre-stimulus window; the
+    expected summed count in a bin is ``mu = lambda * bin_s * n_trials``. The surprise of an
     observed summed count ``k`` is ``S = -log10 P(X >= k | Poisson(mu))``. Bins
     with ``S > surprise_thr`` (default 2 -> p < 0.01) are kept as runs. This is
     the Hanes/Legendy family: a real per-bin false-positive rate instead of an
@@ -291,22 +289,20 @@ class PoissonBaselineDetector(WindowDetector):
     color = "#27AE60"
 
     def __init__(self, bin_s: float = 0.05, surprise_thr: float = 2.0,
-                 min_consec: int = 2, max_gap_bins: int = 1,
-                 baseline_method: str = "robust"):
+                 min_consec: int = 2, max_gap_bins: int = 1):
         self.bin_s = bin_s
         self.surprise_thr = surprise_thr
         self.min_consec = min_consec
         self.max_gap_bins = max_gap_bins
-        self.baseline_method = baseline_method
 
     def detect(self, td: TrialData) -> DetectorResult:
         from scipy import stats
         counts, centers = binned_matrix(td, self.bin_s)
-        edges = bin_edges(td.t_start, td.t_stop, self.bin_s)
+        edges = analysis_edges(td, self.bin_s)
         if counts.shape[0] == 0:
             return DetectorResult([], centers=centers)
         summed = counts.sum(axis=0)
-        base = estimate_baseline(td, self.bin_s, method=self.baseline_method)
+        base = prestim_baseline(td, self.bin_s)
         mu = max(base.rate_hz * self.bin_s * td.n_trials, 1e-9)
         # P(X >= k) = sf(k-1); surprise = -log10(p)
         p = stats.poisson.sf(summed - 1, mu)
@@ -344,14 +340,13 @@ class ClusterPermutationDetector(WindowDetector):
 
     def __init__(self, bin_s: float = 0.05, t_thresh: float = 2.0,
                  n_perm: int = 500, alpha: float = 0.05, seed: int = 0,
-                 mode: str = "baseline", baseline_method: str = "robust"):
+                 mode: str = "baseline"):
         self.bin_s = bin_s
         self.t_thresh = t_thresh
         self.n_perm = n_perm
         self.alpha = alpha
         self.seed = seed
         self.mode = mode
-        self.baseline_method = baseline_method
 
     # -- per-bin statistics -------------------------------------------------- #
     @staticmethod
@@ -398,7 +393,7 @@ class ClusterPermutationDetector(WindowDetector):
 
     def detect(self, td: TrialData) -> DetectorResult:
         counts, centers = binned_matrix(td, self.bin_s)
-        edges = bin_edges(td.t_start, td.t_stop, self.bin_s)
+        edges = analysis_edges(td, self.bin_s)
         if counts.shape[0] < 2:
             return DetectorResult([], centers=centers)
         rate = counts / self.bin_s
@@ -414,8 +409,9 @@ class ClusterPermutationDetector(WindowDetector):
                 cl = self._clusters(self._oneway_f(rate, perm), self.t_thresh)
                 null_max[p] = max((m for _, _, m in cl), default=0.0)
         else:  # baseline
-            base = estimate_baseline(td, self.bin_s, method=self.baseline_method)
-            d = rate - base.rate_hz                      # per-trial deviation (Hz)
+            base = prestim_baseline(td, self.bin_s)
+            # subtract EACH trial's own pre-stim rate (within-trial baseline)
+            d = rate - base.per_trial_rate[:, None]      # per-trial deviation (Hz)
             obs = self._one_sample_t(d)
             clusters = self._clusters(obs, self.t_thresh)
             null_max = np.zeros(self.n_perm)
@@ -482,7 +478,7 @@ class ZetaDetector(WindowDetector):
         return s, d - d.mean()
 
     def detect(self, td: TrialData) -> DetectorResult:
-        t0, t1 = td.t_start, td.t_stop
+        t0, t1 = 0.0, td.t_stop          # response window only (onset -> t_stop)
         pooled = np.concatenate(td.trials) if td.n_trials else np.asarray([])
         pooled = pooled[(pooled >= t0) & (pooled <= t1)]
         centers = 0.5 * (bin_edges(t0, t1, self.smooth_s)[:-1]
