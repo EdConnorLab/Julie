@@ -24,13 +24,21 @@ def load_manually_sorted_spikes(path):
     return data
 
 
-def calculate_spike_timestamps(df, spike_indices_by_unit_by_channel, sample_rate):
+def calculate_spike_timestamps(df, spike_indices_by_unit_by_channel, sample_rate,
+                               pre_stimulus_time=0.0):
     """
     Add a 'SpikeTimes' column: dict mapping unit names to spike-time lists
     filtered to each trial's epoch.
+
+    ``pre_stimulus_time`` (seconds) widens the lower bound to
+    ``epoch_start - pre_stimulus_time`` (clamped to recording start) so a
+    pre-stimulus baseline is retained; these manual-sort spike indices are stored
+    un-windowed in sorted_spikes.pkl, so the baseline is genuinely recoverable.
+    pre_stimulus_time=0.0 reproduces the original strict window.
     """
     def _for_row(epoch_start_stop):
         epoch_start, epoch_stop = epoch_start_stop
+        lower_bound = max(epoch_start - pre_stimulus_time, 0.0)  # clamp to recording start
         result = {}
         for channel, units in reversed(spike_indices_by_unit_by_channel.items()):
             for unit_name, spike_indices in units.items():
@@ -38,7 +46,7 @@ def calculate_spike_timestamps(df, spike_indices_by_unit_by_channel, sample_rate
                 result[key] = [
                     idx / sample_rate
                     for idx in spike_indices
-                    if epoch_start <= idx / sample_rate < epoch_stop
+                    if lower_bound <= idx / sample_rate < epoch_stop
                 ]
         return result
 
@@ -50,7 +58,8 @@ def calculate_spike_timestamps(df, spike_indices_by_unit_by_channel, sample_rate
 
 def read_sorted_data(round_path,
                      manually_sorted_spikes_filename="sorted_spikes.pkl",
-                     compiled_trials_filename="compiled.pkl"):
+                     compiled_trials_filename="compiled.pkl",
+                     pre_stimulus_time=0.0):
     """Load compiled trials and attach per-unit spike timestamps."""
     raw = pd.read_pickle(os.path.join(round_path, compiled_trials_filename)).reset_index(drop=True)
     sorted_spikes = load_manually_sorted_spikes(os.path.join(round_path, manually_sorted_spikes_filename))
@@ -58,7 +67,8 @@ def read_sorted_data(round_path,
     rhd_path = os.path.join(round_path, "info.rhd")
     sample_rate = load_intan_rhd_format.read_data(rhd_path)["frequency_parameters"]["amplifier_sample_rate"]
 
-    return calculate_spike_timestamps(raw, sorted_spikes, sample_rate)
+    return calculate_spike_timestamps(raw, sorted_spikes, sample_rate,
+                                      pre_stimulus_time=pre_stimulus_time)
 
 
 
@@ -70,14 +80,14 @@ def get_raw_spike_tstamp_data(date, round_number):
     return spike_tstamps_for_channels, sample_rate
 
 
-def load_raw_data(date, round_number):
+def load_raw_data(date, round_number, pre_stimulus_time=0.0):
     reader = RecordingMetadataReader()
     pickle_filepath, curated_channels, round_path = reader.get_metadata_for_spike_analysis(date, round_number)
     raw_trial_data = pd.read_pickle(pickle_filepath)
 
     sorted_file = round_path / 'sorted_spikes.pkl'
     if sorted_file.exists():
-        sorted_data = read_sorted_data(round_path)
+        sorted_data = read_sorted_data(round_path, pre_stimulus_time=pre_stimulus_time)
     else:
         sorted_data = None
 
@@ -135,9 +145,14 @@ def combine_unsorted_with_sorted(raw_unsorted_data, sorted_data):
     return combined_df
 
 
-def load_and_combine_data(date, round_no):
-    """Load and combine raw unsorted and sorted spike data."""
-    raw_unsorted_data, _, sorted_data = load_raw_data(date, round_no)
+def load_and_combine_data(date, round_no, pre_stimulus_time=0.0):
+    """Load and combine raw unsorted and sorted spike data.
+
+    ``pre_stimulus_time`` widens only the manually-sorted stream (from
+    sorted_spikes.pkl, which holds un-windowed indices). Unsorted spikes come from
+    the already-clipped compiled.pkl and keep the strict [onset, offset] window.
+    """
+    raw_unsorted_data, _, sorted_data = load_raw_data(date, round_no, pre_stimulus_time=pre_stimulus_time)
     combined_data = combine_unsorted_with_sorted(raw_unsorted_data, sorted_data)
     return combined_data
 

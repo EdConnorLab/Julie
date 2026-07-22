@@ -13,7 +13,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from analyses.enums.monkey_names import get_monkeys_by_rank
-from data_access.spike_source import SISortedSpikeSource, ThresholdSpikeSource, MixedManualSpikeSource
+from data_access.spike_source import SISortedSpikeSource, ThresholdMUASpikeSource, MixedManualSpikeSource
 
 
 # Core binning
@@ -296,7 +296,7 @@ if __name__ == "__main__":
     date_str = "2023-09-26"
     round_no = 3
     # plot_spike_rates_for_source(si_sorted, date_str, round_no, bin_size=0.2)
-    threshold = ThresholdSpikeSource()
+    threshold = ThresholdMUASpikeSource()
     plot_spike_rates_for_source(threshold, date_str, round_no, bin_size=0.2)
     mixed = MixedManualSpikeSource()
     # plot_spike_rates_for_source(mixed, date_str, round_no, bin_size=0.2)
