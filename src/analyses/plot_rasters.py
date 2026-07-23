@@ -11,7 +11,7 @@ from analyses.data_readers.recording_metadata_reader import RecordingMetadataRea
 from analyses.plotting_util import extract_target_channel_data, raster_save_path
 from analyses.raster_plotting import plot_raster_by_group, plot_multiunit_raster_sidebyside, \
     plot_multiunit_raster_overlaid
-from data_access.spike_source import SpikeSource, MixedManualSpikeSource, SISortedSpikeSource, ThresholdSpikeSource
+from data_access.spike_source import SpikeSource, MixedManualSpikeSource, SISortedSpikeSource, ThresholdMUASpikeSource
 from project_util import SUBJECT_MONKEY, PROJECT_BASE_PATH
 
 RASTER_SAVE_DIR = "raster_plots"
@@ -165,7 +165,7 @@ if __name__ == "__main__":
     # plot_mixed_manual_rasters("2023-09-26", 2, save=True)
     # plot_rasters_for_round("2023-09-26", 3, save=True)
     # source = MixedManualSpikeSource()
-    source= ThresholdSpikeSource()
+    source= ThresholdMUASpikeSource()
     date = "2023-09-26"
     round_no = 3
     # plot_rasters_for_source(source, date, round_no)

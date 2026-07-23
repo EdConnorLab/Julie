@@ -381,7 +381,8 @@ def _draw_stacked_column(ax, blocks, *, xlim, pre_stimulus_time, annotate, ymax)
         group_spans.setdefault(group, [y, y])[1] = y + n
         y += n
 
-    ax.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7, zorder=3)  # stimulus onset
+    if pre_stimulus_time and pre_stimulus_time > 0:
+        ax.axvline(0, color="k", lw=1.0, ls="--", alpha=0.7, zorder=3)  # stimulus onset
     ax.set_xlim(left, xlim)
     ax.set_ylim(-0.5, max(ymax, 1) - 0.5)
     ax.invert_yaxis()  # first block (dominant monkey / first group) on top

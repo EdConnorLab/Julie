@@ -97,19 +97,61 @@ from common import (
 #                     the in-house response-window DETECTOR (threshold_window_detection) run
 #                     on the threshold-MUA source, not the grant xlsx. Row count differs from
 #                     37 (detector yields 0/1/several windows per neuron). Use CELL_SUBSET='all'.
+#   'cache_mua_grant_detected_sig_anova' - the detected windows that PASSED the permutation
+#                     ANOVA test (uncorrected p<alpha). Run grant_mua_window_significance.py
+#                     first to build output/grant_mua_window_significance.csv. CELL_SUBSET='all'.
+#   'cache_mua_grant_detected_sig_kw' - same, but windows that passed the permutation KW test
+#                     (uncorrected p<alpha). CELL_SUBSET='all'.
 DATA_SOURCE = 'cache_kw'
 NCELLS      = 74             # 'grant_xlsx' only: his hardcoded value; None/0 for all rows
 CELL_SUBSET = 'all'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
+DROP_OVERLAPPING_WINDOWS = False  # 'grant_xlsx' & 'cache_mua_grantcells' only: when a cell has
+#                            overlapping time windows, keep only the WIDEST (drops narrower dups)
+SAME_UNIT_GROUPS = [             # channels that are the SAME physical unit within a session ->
+    #                            collapsed together by DROP_OVERLAPPING_WINDOWS. Each inner list
+    #                            = one unit's (date, round, channel) aliases.
+    [("2023-10-27", 4, "Channel.C_011"), ("2023-10-27", 4, "Channel.C_020")],
+]
 THRESH      = 0.5             # R^2 cutoff
 NPERM       = 10000           # drop to 1000 for fast smoke-tests
 RANDOM_SEED = 20251121
 # =====================================================================
 
 
+def _drop_overlapping_grant_windows(X_mean, df):
+    """grant_xlsx post-filter for DROP_OVERLAPPING_WINDOWS: when a cell has overlapping time
+    windows, keep only the widest. SAME_UNIT_GROUPS aliases channels that are one physical
+    unit so they de-duplicate together. Masks X_mean and df; unparseable windows are kept."""
+    import ast
+    from grant_mua_matching import overlap_keep_mask, unit_key_resolver
+    resolve = unit_key_resolver(SAME_UNIT_GROUPS)
+    rows = []
+    for i, (_, r) in enumerate(df.iterrows()):
+        try:
+            lo, hi = ast.literal_eval(str(r['Time Window']))
+            date = pd.to_datetime(r['Date']).strftime('%Y-%m-%d')
+            key = resolve(date, r['Round No.'], r['Cell'])
+            lo, hi = float(lo), float(hi)
+        except Exception:
+            key, lo, hi = ('__row__', i), 0.0, 0.0   # unparseable -> singleton, always kept
+        rows.append((key, lo, hi))
+    mask = overlap_keep_mask(rows)
+    n_drop = mask.count(False)
+    if n_drop:
+        drop_df = df[[not m for m in mask]][['Date', 'Round No.', 'Cell', 'Time Window']]
+        print(f"  DROP_OVERLAPPING_WINDOWS: removed {n_drop} narrower/duplicate window(s):")
+        print(drop_df.to_string(index=False))
+    keep = np.array(mask, dtype=bool)
+    return X_mean[keep], df[keep].reset_index(drop=True)
+
+
 def load_neural_data():
     """Dispatch on DATA_SOURCE. Returns (X_mean (ncells,9), df with 'Cell')."""
     if DATA_SOURCE == 'grant_xlsx':
-        return load_data(HIS_XLSX, ncells=NCELLS)
+        X_mean, df = load_data(HIS_XLSX, ncells=NCELLS)
+        if DROP_OVERLAPPING_WINDOWS:
+            X_mean, df = _drop_overlapping_grant_windows(X_mean, df)
+        return X_mean, df
     if DATA_SOURCE in ('cache_kw', 'cache_anova', 'cache_mua_kw', 'cache_mua_anova'):
         from spike_count_connector import load_data_from_cache
         list_name = {'cache_kw': 'KW', 'cache_anova': 'ANOVA',
@@ -117,10 +159,17 @@ def load_neural_data():
         return load_data_from_cache(list_name)
     if DATA_SOURCE == 'cache_mua_grantcells':
         from spike_count_connector import load_grant_mua_from_cache
-        return load_grant_mua_from_cache()
+        return load_grant_mua_from_cache(dedup_overlapping=DROP_OVERLAPPING_WINDOWS,
+                                         same_unit_groups=SAME_UNIT_GROUPS)
     if DATA_SOURCE == 'cache_mua_grant_detected':
         from spike_count_connector import load_grant_mua_detected_windows
         return load_grant_mua_detected_windows()
+    if DATA_SOURCE == 'cache_mua_grant_detected_sig_anova':
+        from spike_count_connector import load_grant_mua_significant_windows
+        return load_grant_mua_significant_windows(test='ANOVA', corrected=False)
+    if DATA_SOURCE == 'cache_mua_grant_detected_sig_kw':
+        from spike_count_connector import load_grant_mua_significant_windows
+        return load_grant_mua_significant_windows(test='KW', corrected=False)
     raise ValueError(f"unknown DATA_SOURCE={DATA_SOURCE!r}")
 
 

@@ -219,6 +219,10 @@ def _default_match_csv():
     return os.path.join(_HERE, 'output', 'grant_mua_match_table.csv')   # 'output/' is gitignored
 
 
+def _default_significance_csv():
+    return os.path.join(_HERE, 'output', 'grant_mua_window_significance.csv')   # 'output/' is gitignored
+
+
 def _write_match_rows_csv(rows, out_csv=None):
     out_csv = out_csv or _default_match_csv()
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
@@ -294,14 +298,40 @@ def _counts_from_windows(windows, source, value='count'):
     return X_mean, meta
 
 
-def load_grant_mua_from_cache(value='count'):
+def _drop_overlapping_windows(windows, same_unit_groups=()):
+    """Per unit, drop narrower windows that overlap a wider one (keep the widest); disjoint
+    windows are kept. `same_unit_groups` aliases channels that are one physical unit (see
+    grant_mua_matching.unit_key_resolver) so their windows de-duplicate together. Returns the
+    filtered df."""
+    from grant_mua_matching import overlap_keep_mask, unit_key_resolver
+    resolve = unit_key_resolver(same_unit_groups)
+
+    def _unit_key(nid):
+        parts = str(nid).split('_', 3)   # Location, Date, Round, Channel
+        return resolve(parts[1], parts[2], parts[3]) if len(parts) == 4 else str(nid)
+
+    rows = [(_unit_key(nid), float(s), float(e))
+            for nid, s, e in zip(windows['NeuronID'], windows['WindowStart_ms'],
+                                 windows['WindowEnd_ms'])]
+    mask = overlap_keep_mask(rows)
+    n_drop = mask.count(False)
+    if n_drop:
+        dropped = windows[[not m for m in mask]][['NeuronID', 'WindowStart_ms', 'WindowEnd_ms']]
+        print(f"[grant-mua] DROP_OVERLAPPING_WINDOWS: removed {n_drop} narrower/duplicate "
+              f"window(s):")
+        print(dropped.to_string(index=False))
+    return windows[mask].reset_index(drop=True)
+
+
+def load_grant_mua_from_cache(value='count', dedup_overlapping=False, same_unit_groups=()):
     """Rebuild replicate_analysis's input for the grant's UNSORTED (MUA) cells, with spike
     counts recomputed from the threshold-MUA cache over each cell's own GRANT time window.
 
     Returns (X_mean (n,9), meta), a drop-in for DATA_SOURCE='cache_mua_grantcells'. Matching
     never guesses Location -- the NeuronID is taken verbatim from the threshold-MUA source
-    (see grant_mua_matching). The final line reconciles the used count against the grant MUA
-    list so Run A vs Run B cell counts can be compared.
+    (see grant_mua_matching). With dedup_overlapping=True a cell's overlapping windows are
+    collapsed to the widest (see DROP_OVERLAPPING_WINDOWS). The final line reconciles the used
+    count against the grant MUA list so Run A vs Run B cell counts can be compared.
     """
     matched, _problems, mua_reqs, source = _match_grant_mua()
     if not matched:
@@ -315,6 +345,8 @@ def load_grant_mua_from_cache(value='count'):
         'Date': m['cell'].date,
         'Round No.': int(m['cell'].round_no),
     } for m in matched])
+    if dedup_overlapping:
+        windows = _drop_overlapping_windows(windows, same_unit_groups=same_unit_groups)
     X_mean, meta = _counts_from_windows(windows, source, value=value)
     print(f"[grant-mua] matched {len(matched)}/{len(mua_reqs)} MUA cells; used {len(meta)} "
           f"after requiring all {len(ORDER9)} stimulus monkeys "
@@ -409,6 +441,45 @@ def load_grant_mua_detected_windows(value='count'):
     X_mean, meta = _counts_from_windows(detected, source, value=value)
     print(f"[grant-mua][detect] used {len(meta)} (neuron x detected-window) rows after "
           f"requiring all {len(ORDER9)} stimulus monkeys")
+    return X_mean, meta
+
+
+def load_grant_mua_significant_windows(test='ANOVA', corrected=False, sig_csv=None, value='count'):
+    """Run replicate_analysis on ONLY the detected windows that PASSED the permutation
+    significance test. Reads the per-window table written by grant_mua_window_significance.py
+    (run that first), keeps windows significant by `test` ('KW' | 'ANOVA') and `corrected`
+    (False = uncorrected p<alpha, True = Benjamini-Hochberg FDR), re-extracts threshold-MUA
+    counts for them, and returns (X_mean, meta). Drop-in for
+    DATA_SOURCE='cache_mua_grant_detected_sig_{kw,anova}'.
+
+    NOTE: this trusts the CSV's (neuron, window) list -- re-run the significance script if you
+    change the detector params so the table stays in sync.
+    """
+    tag = test.upper()
+    sig_csv = sig_csv or _default_significance_csv()
+    if not os.path.exists(sig_csv):
+        raise FileNotFoundError(
+            f"[grant-mua][sig] significance table not found: {sig_csv} -- "
+            f"run `python grant_mua_window_significance.py` first")
+    tbl = pd.read_csv(sig_csv)
+    col = f"{tag}_sig_fdr" if corrected else f"{tag}_sig"
+    if col not in tbl.columns:
+        raise ValueError(f"[grant-mua][sig] column {col!r} not in {sig_csv} "
+                         f"(present: {list(tbl.columns)}); re-run the significance script with "
+                         f"that test enabled")
+    # robust bool parse (CSV may hold True/False/blank across the outer-merged tests)
+    mask = tbl[col].astype(str).str.strip().str.lower() == 'true'
+    sig = tbl[mask]
+    kind = 'FDR-corrected' if corrected else 'uncorrected'
+    print(f"[grant-mua][sig] {tag} {kind}: {len(sig)}/{len(tbl)} detected windows significant "
+          f"(from {sig_csv})")
+    if sig.empty:
+        raise RuntimeError(f"[grant-mua][sig] no windows significant by {tag} {kind} -- nothing to analyze")
+
+    windows = sig[['NeuronID', 'WindowStart_ms', 'WindowEnd_ms', 'Date', 'Round No.']].copy()
+    X_mean, meta = _counts_from_windows(windows, _mua_source(), value=value)
+    print(f"[grant-mua][sig] used {len(meta)} significant (neuron x window) rows across "
+          f"{meta['NeuronID'].nunique()} neurons after requiring all {len(ORDER9)} stimulus monkeys")
     return X_mean, meta
 
 
