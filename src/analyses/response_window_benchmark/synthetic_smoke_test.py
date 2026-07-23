@@ -104,8 +104,8 @@ def test_plot_and_score_roundtrip():
     detectors = default_detectors()
     results = {d.name: d.detect(td) for d in detectors}
     fig = plot_cell_with_windows(
-        df, detectors, results, truth_windows=[TRUE_WINDOW],
-        title="synthetic smoke test (pre-stim 1000 ms)", pre_stimulus_time=PRE,
+        td, detectors, results, truth_windows=[TRUE_WINDOW],
+        title="synthetic smoke test (pre-stim 1000 ms)",
         save_path=os.path.join(_OUT, "synthetic_comparison.png"))
     assert fig is not None or os.path.exists(os.path.join(_OUT, "synthetic_comparison.png"))
 
@@ -113,6 +113,22 @@ def test_plot_and_score_roundtrip():
     truth = {"cellA": [TRUE_WINDOW]}
     per_cell, scoreboard = scoring.score_all(preds, truth, [d.name for d in detectors])
     assert not scoreboard.empty and "F1" in scoreboard.columns
+
+
+def test_answer_key_parsing_if_available():
+    """If the handpicked xlsx is reachable, check it parses to seconds + skips
+    online-thresholded cells. Skipped silently when the file isn't present."""
+    from analyses.response_window_benchmark.answer_key import load_answer_key, _parse_window_ms
+    assert _parse_window_ms("(100.0, 500.0)") == (0.1, 0.5)
+    assert _parse_window_ms((0.0, 2000.0)) == (0.0, 2.0)
+    path = os.environ.get("ANSWER_KEY_XLSX")
+    if not path or not os.path.exists(path):
+        return
+    cands, truth, skipped = load_answer_key(path)
+    assert not cands.empty and len(truth) == len(cands)
+    for wins in truth.values():
+        for lo, hi in wins:
+            assert 0.0 <= lo < hi <= 3.0
 
 
 def main():
@@ -126,6 +142,7 @@ def main():
     test_baseline_detector_needs_prestim()
     test_optimal_bin_width_positive()
     test_plot_and_score_roundtrip()
+    test_answer_key_parsing_if_available()
     print(f"\nAll smoke checks passed. Figure -> {_OUT}/synthetic_comparison.png")
 
 

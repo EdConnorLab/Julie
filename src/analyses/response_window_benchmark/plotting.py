@@ -24,7 +24,7 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
 
 from analyses.zombies_raster_review.zombies_raster import zombies_monkey_order
-from .psth import extract_trials, trial_averaged_rate, TrialData
+from .psth import trial_averaged_rate, TrialData
 from .detectors import WindowDetector, DetectorResult
 
 Window = Tuple[float, float]
@@ -99,17 +99,16 @@ def _save_or_keep(fig, save_path):
         plt.close(fig)
 
 
-def plot_cell_raster(neuron_df, *, title="", bin_s=0.05, xlim=2.4,
-                     pre_stimulus_time=0.0, spike_col="SpikeTimes", save_path=None):
+def plot_cell_raster(td: TrialData, *, title="", bin_s=0.05, xlim=None, save_path=None):
     """Raster + PSTH only (no algorithm windows) — for unbiased annotation."""
-    td = extract_trials(neuron_df, spike_col=spike_col, t_stop=xlim,
-                        pre_stimulus_time=pre_stimulus_time)
+    pre = td.pre_stimulus_time
+    xlim = td.t_stop if xlim is None else xlim
     fig = plt.figure(figsize=(9, 8))
     gs = GridSpec(2, 1, height_ratios=[3.2, 1.1], hspace=0.1, figure=fig)
     ax_r = fig.add_subplot(gs[0])
     ax_p = fig.add_subplot(gs[1], sharex=ax_r)
     total = _draw_raster_psth(ax_r, ax_p, td, truth_windows=None,
-                              pre=pre_stimulus_time, xlim=xlim, bin_s=bin_s)
+                              pre=pre, xlim=xlim, bin_s=bin_s)
     if total == 0:
         print(f"[skip] {title}: no trials")
         plt.close(fig)
@@ -127,26 +126,26 @@ def _draw_windows_lane(ax, y, windows, color, *, height=0.72):
 
 
 def plot_cell_with_windows(
-    neuron_df,
+    td: TrialData,
     detectors: Sequence[WindowDetector],
     results: Dict[str, DetectorResult],
     *,
     truth_windows: Optional[List[Window]] = None,
     title: str = "",
     bin_s: float = 0.05,
-    xlim: float = 2.4,
-    pre_stimulus_time: float = 0.0,
-    spike_col: str = "SpikeTimes",
+    xlim: Optional[float] = None,
     save_path: Optional[str] = None,
 ):
     """Raster + PSTH + per-method window lanes for one unit.
 
-    ``results`` maps ``detector.name`` -> :class:`DetectorResult`. ``detectors``
-    fixes lane order/colours. ``truth_windows`` (if given) is a bold top lane and
-    is faintly shaded across raster/PSTH.
+    ``td`` is the SAME :class:`TrialData` the detectors ran on, so the plotted
+    trials and the detected windows are guaranteed consistent. ``results`` maps
+    ``detector.name`` -> :class:`DetectorResult`; ``detectors`` fixes lane
+    order/colours. ``truth_windows`` (if given) is a bold top lane and is faintly
+    shaded across raster/PSTH.
     """
-    td = extract_trials(neuron_df, spike_col=spike_col, t_stop=xlim,
-                        pre_stimulus_time=pre_stimulus_time)
+    pre_stimulus_time = td.pre_stimulus_time
+    xlim = td.t_stop if xlim is None else xlim
     left = -pre_stimulus_time if pre_stimulus_time > 0 else 0.0
     n_lanes = len(detectors) + (1 if truth_windows is not None else 0)
     fig = plt.figure(figsize=(9, 10))
