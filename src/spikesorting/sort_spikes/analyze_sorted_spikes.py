@@ -16,7 +16,9 @@ from clat.intan.marker_channels import epoch_using_marker_channels
 
 from compile.compile_common import SUBJECT_MONKEY
 from data_access.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager
-from spikesorting.sort_spikes.sort_spikes import build_intan_session_path, get_recording_session_info
+from spikesorting.sort_spikes.sort_spikes import (
+    build_intan_session_path, get_recording_session_info, SORT_SPIKES_INTAN_BASE_PATH,
+)
 
 
 def load_sorting_results(intan_dir):
@@ -176,8 +178,8 @@ def default_cache_subdir(pre_stimulus_time=0.0):
 
 
 def analyze_sorted_spikes(date_str, round_no, monkey=SUBJECT_MONKEY,
-                          pre_stimulus_time=0.0, cache_subdir=None):
-    intan_dir = build_intan_session_path(date_str, round_no, monkey)
+                          pre_stimulus_time=0.0, cache_subdir=None, base_path=None):
+    intan_dir = build_intan_session_path(date_str, round_no, monkey, base_path)
     sampling_frequency, _ = get_recording_session_info(intan_dir)
 
     date_obj = datetime.strptime(date_str, "%Y-%m-%d")
@@ -228,8 +230,14 @@ if __name__ == "__main__":
     p.add_argument("--cache-subdir", default=None,
                    help="Override output cache subdir (default: sorted_spike_cache, or "
                         "sorted_spike_cache_pre{ms}ms when --pre-stimulus-time > 0).")
+    p.add_argument("--intan-base-path", default=None, dest="base_path",
+                   help="Folder holding <monkey>/<date>/<session> Intan sessions and their "
+                        "sorter/analyzer outputs. "
+                        f"Default: {SORT_SPIKES_INTAN_BASE_PATH} "
+                        "(overridable via the SORT_SPIKES_INTAN_BASE_PATH env var).")
     args = p.parse_args()
 
     analyze_sorted_spikes(args.date, args.round_no, args.monkey,
                           pre_stimulus_time=args.pre_stimulus_time,
-                          cache_subdir=args.cache_subdir)
+                          cache_subdir=args.cache_subdir,
+                          base_path=args.base_path)

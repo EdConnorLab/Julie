@@ -8,7 +8,7 @@ __pycache__/
 # jun2026 grant investigation generated outputs
 src/analyses/jun2026_grant_investigation/investigation_outputs/
 src/analyses/jun2026_grant_investigation/regenerated_inputs/
-
+src/analyses/jun2026_grant_investigation/output
 # eye data analysis
 src/analyses/eye_data_analysis/eye_track_plots
 
@@ -36,6 +36,8 @@ Cortana/analysis_results/
 Cortana/behavior_matrix_cache/
 Cortana/psth_heatmaps/
 Cortana/sorted_spike_cache_pre1000ms
+Cortana/threshold_mua_spike_cache_pre1000ms
+Cortana/exploded_spike_cache_pre1000ms
 
 # Cortana source data kept external, not in git (not regeneratable in-repo)
 Cortana/compiled/
