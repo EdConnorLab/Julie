@@ -10,8 +10,8 @@ Each value selects a different *cell list* and the spike source behind it. This
 module bridges those five lists into the plotting engine of
 ``analyses.zombies_raster_review`` so you can see the units, not just the numbers.
 
-Two products
-------------
+Three products
+--------------
 * **Singles** (``run_singles``) — for every unit in a source's list, one figure:
   raster + PSTH (left) and probe map + cross-channel waveform footprint (right),
   rendered by :func:`zombies_raster.plot_overlay_raster` used single-lane. One
@@ -20,6 +20,11 @@ Two products
   two sorts of each neuron per session and overlay them on one figure (raster +
   PSTH + probe + footprint). Drives the three requested pairs:
   ``grant_xlsx`` vs ``cache_kw`` / ``cache_anova`` / ``cache_mua_anova``.
+* **Pairs** (``run_pairs``) — for each matched grant MUA channel, the SAME channel
+  from both spike sources overlaid on one figure: lane A = ``original`` unsorted
+  (``grant_xlsx``/``MixedManualSpikeSource``), lane B = ``grant_mua`` threshold-MUA
+  (``cache_mua_grantcells``/``ThresholdMUASpikeSource``). Paired directly by channel
+  (no coincidence match), so both lanes are the same electrode by construction.
 
 How each DATA_SOURCE maps to plottable data
 -------------------------------------------
@@ -414,6 +419,114 @@ def run_overlay(
 
 
 # --------------------------------------------------------------------------- #
+# Pairs — original (unsorted) vs grant_mua (threshold-MUA), same channel, one figure
+# --------------------------------------------------------------------------- #
+def run_pairs(
+    out_dir: str,
+    *,
+    show_waveforms: bool = True,
+    xlim: float = 2.4,
+    psth_bin_ms: float = 50.0,
+) -> Dict[str, int]:
+    """One two-lane figure per matched grant MUA channel: the SAME channel drawn from both
+    spike sources and overlaid by ``plot_overlay_raster`` on shared axes.
+
+    * lane A — ``original`` unsorted spikes (``grant_xlsx`` / ``MixedManualSpikeSource``,
+      matched by ``Channel``);
+    * lane B — ``grant_mua`` threshold-MUA spikes (``cache_mua_grantcells`` /
+      ``ThresholdMUASpikeSource``, matched by ``NeuronID``).
+
+    Cells are paired DIRECTLY by channel (the matched NeuronID carries the channel), so no
+    coincidence matching is needed -- the two lanes are the same electrode by construction.
+    One figure per neuron (windows deduped; the grant window is shaded). Sessions load once
+    and footprints are cut once per session.
+    """
+    a, b = SOURCES["grant_xlsx"], SOURCES["cache_mua_grantcells"]
+    requests = dedup_by_unit(b.load_requests())      # matched grant-MUA cells, one per neuron
+    os.makedirs(out_dir, exist_ok=True)
+    print(f"[pairs {a.display} x {b.display}] {len(requests)} unit(s) → {out_dir}")
+
+    by_session: Dict[tuple, List[RasterRequest]] = defaultdict(list)
+    for r in requests:
+        by_session[(r.date, r.round_no)].append(r)
+
+    stats = {"plotted": 0, "skipped_no_rows": 0, "skipped_no_trials": 0, "sessions_failed": 0}
+    for (date, round_no), reqs in sorted(by_session.items()):
+        try:
+            a_session = a.make_source().load(date, round_no)
+            b_session = b.make_source().load(date, round_no)
+        except Exception as e:                        # missing cache / recording / DB
+            print(f"[pairs {date} r{round_no}] load failed: {e}")
+            stats["sessions_failed"] += 1
+            continue
+        if (a_session is None or getattr(a_session, "empty", True)
+                or b_session is None or getattr(b_session, "empty", True)):
+            print(f"[pairs {date} r{round_no}] need both sources; one is missing/empty")
+            stats["sessions_failed"] += 1
+            continue
+
+        # pass 1: resolve each unit's two lanes; gather all lanes for one-shot footprints
+        resolved: List[tuple] = []
+        all_lanes: Dict[str, "object"] = {}
+        for rb in reqs:
+            nid = rb.match_value
+            channel = "Channel." + _cell_token(nid)   # NeuronID -> "Channel.C_020"
+            ra = RasterRequest(
+                source_kind="mixed", date=date, round_no=round_no,
+                match_column="Channel", match_value=channel, label=channel,
+                window_ms=rb.window_ms, p_value=None)
+            rows_a = _select_unit_rows(a_session, ra)
+            rows_b = _select_unit_rows(b_session, rb)
+            if rows_a.empty and rows_b.empty:
+                print(f"[{nid}] no rows in either source")
+                stats["skipped_no_rows"] += 1
+                continue
+            lab_a = _lane_label(a.prefix, channel)    # "original: C_020 (unsorted)"
+            lab_b = _lane_label(b.prefix, nid)        # "grant_mua: C_020 (MU)"
+            resolved.append((nid, lab_a, rows_a, lab_b, rows_b, rb.window_s))
+            if not rows_a.empty:
+                all_lanes[lab_a] = rows_a
+            if not rows_b.empty:
+                all_lanes[lab_b] = rows_b
+
+        footprints: dict = {}
+        if show_waveforms and all_lanes:
+            footprints = extract_footprints(all_lanes, date, round_no)
+
+        # pass 2: one figure per neuron, both lanes overlaid
+        for nid, lab_a, rows_a, lab_b, rows_b, window_s in resolved:
+            lanes, locations = {}, {}
+            if not rows_a.empty:
+                lanes[lab_a] = rows_a
+                locations[lab_a] = _unit_location(rows_a)
+            if not rows_b.empty:
+                lanes[lab_b] = rows_b
+                locations[lab_b] = _unit_location(rows_b)
+            loc = next((v for v in locations.values() if v), None)
+            token = _cell_token(nid)
+            title = f"{a.display} vs {b.display}  ·  {token}  ·  {date}_r{round_no}"
+            if loc:
+                title += f"   ·   {loc}"
+            save_path = os.path.join(out_dir, f"pair_{date}_{round_no}_{_safe(token)}.png")
+            fig = plot_overlay_raster(
+                lanes,
+                title=title,
+                window_s=window_s,
+                footprints=({lab: footprints.get(lab) for lab in lanes}
+                            if show_waveforms else None),
+                locations=locations,
+                show_probe=True,
+                xlim=xlim,
+                psth_bin_ms=psth_bin_ms,
+                save_path=save_path,
+            )
+            stats["plotted" if fig is not None else "skipped_no_trials"] += 1
+
+    print(f"[pairs {a.display} x {b.display}] done: {stats}")
+    return stats
+
+
+# --------------------------------------------------------------------------- #
 # Batch helpers
 # --------------------------------------------------------------------------- #
 def _singles_dir(out_dir: str, key: str) -> str:
@@ -422,6 +535,11 @@ def _singles_dir(out_dir: str, key: str) -> str:
 
 def _overlay_dir(out_dir: str, a: str, b: str) -> str:
     return os.path.join(out_dir, "overlay", f"{SOURCES[a].display}_vs_{SOURCES[b].display}")
+
+
+def _pairs_dir(out_dir: str) -> str:
+    return os.path.join(out_dir, "pairs",
+                        f"{SOURCES['grant_xlsx'].display}_vs_{SOURCES['cache_mua_grantcells'].display}")
 
 
 def run_all_singles(out_dir: str, **kw) -> None:
@@ -439,7 +557,7 @@ def run_all_overlays(out_dir: str, **kw) -> None:
 def _cli(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--mode", choices=["singles", "overlay", "all"], default="singles")
+    p.add_argument("--mode", choices=["singles", "overlay", "pairs", "all"], default="singles")
     p.add_argument("--source", choices=list(SOURCES), help="singles: which DATA_SOURCE")
     p.add_argument("--pair", nargs=2, metavar=("A", "B"), help="overlay: two DATA_SOURCE keys")
     p.add_argument("--out", default=os.path.join(_HERE, "output"))
@@ -464,6 +582,9 @@ def _cli(argv=None):
         src = args.source or "grant_xlsx"
         run_singles(src, _singles_dir(args.out, src),
                     show_waveforms=show_wf, xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
+    elif args.mode == "pairs":
+        run_pairs(_pairs_dir(args.out),
+                  show_waveforms=show_wf, xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
     else:  # overlay
         a, b = tuple(args.pair) if args.pair else OVERLAY_PAIRS[0]
         run_overlay(a, b, _overlay_dir(args.out, a, b),
@@ -478,9 +599,11 @@ if __name__ == "__main__":
     #  MODE options:
     #    "singles"  one raster+PSTH+probe+footprint figure per unit in ONE list.
     #    "overlay"  overlay ONE pair of sources, coincidence-matched per session.
+    #    "pairs"    original (unsorted) vs grant_mua (threshold-MUA) for the SAME channel,
+    #               two lanes on one figure (direct channel pairing, no coincidence match).
     #    "all"      every source's singles + all three overlay pairs.
     # ========================================================================
-    MODE = "singles"                       # "singles" | "overlay" | "all"
+    MODE = "singles"                       # "singles" | "overlay" | "pairs" | "all"
 
     OUT_DIR = os.path.join(_HERE, "output")
 
@@ -522,6 +645,9 @@ if __name__ == "__main__":
                     listed_only=LISTED_ONLY, show_waveforms=SHOW_WAVEFORMS,
                     only_date=ONLY_DATE, only_round=ONLY_ROUND,
                     xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS, **_overlay_kw)
+    elif MODE == "pairs":
+        run_pairs(_pairs_dir(OUT_DIR),
+                  show_waveforms=SHOW_WAVEFORMS, xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
     elif MODE == "all":
         run_all_singles(OUT_DIR, show_waveforms=SHOW_WAVEFORMS,
                         xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
