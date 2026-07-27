@@ -80,12 +80,25 @@ def _make_source(source_key: str, cache_subdir: str):
     if source_key == "mixed_prestim":
         from data_access.spike_source import MixedManualSpikeSource
         return MixedManualSpikeSource(cache_subdir=cache_subdir)
+    if source_key == "mua_prestim":
+        from data_access.spike_source import ThresholdMUASpikeSource
+        try:
+            return ThresholdMUASpikeSource(cache_subdir=cache_subdir)  # if supported
+        except TypeError:
+            return ThresholdMUASpikeSource()
     from analyses.jun2026_grant_investigation.raster_review_by_source import SOURCES
     return SOURCES[source_key].make_source()
 
 
 def _unit_rows(session_df, row):
-    req = SimpleNamespace(match_column=row["_match_column"], match_value=row["_match_value"])
+    mc, mv = row["_match_column"], row["_match_value"]
+    if mc == "NeuronID_regionless":
+        # match on the NeuronID with its {Region}_ prefix stripped, so the sheet's
+        # region (even "Unknown") never has to equal the cache's region.
+        nid = session_df["NeuronID"].astype(str)
+        regionless = nid.str.split("_", n=1).str[1]
+        return session_df[regionless == mv]
+    req = SimpleNamespace(match_column=mc, match_value=mv)
     return _select_unit_rows(session_df, req)
 
 
@@ -117,6 +130,7 @@ def _benchmark(cands: pd.DataFrame, truth: Dict[str, list], out_dir: str, *,
     detectors = default_detectors(bin_s=bin_s)
     comp_dir = os.path.join(out_dir, plot_subdir)
     results_by_cell: Dict[str, Dict[str, list]] = {}
+    meta_by_cell: Dict[str, dict] = {}
 
     for (sk, csub, date, rnd), rows in _sessions(cands).items():
         try:
@@ -142,6 +156,8 @@ def _benchmark(cands: pd.DataFrame, truth: Dict[str, list], out_dir: str, *,
                 print(f"[bench][warn] {key}: pre-stim window empty — vs-baseline "
                       f"detectors will be unreliable/skipped")
             nid = _resolved_neuron_id(unit, row.get("NeuronID", key))
+            meta_by_cell[key] = {"NeuronID": nid, "UnitType": row.get("UnitType", "?"),
+                                 "Region": row.get("Region", "?")}
             results = {}
             for d in detectors:
                 try:
@@ -158,15 +174,20 @@ def _benchmark(cands: pd.DataFrame, truth: Dict[str, list], out_dir: str, *,
                 title=title, bin_s=bin_s, xlim=xlim,
                 save_path=os.path.join(comp_dir, f"{_safe(key)}.png"))
 
+    method_names = [d.name for d in detectors]
     if truth:
         scored = {k: v for k, v in truth.items() if k in results_by_cell}
         per_cell, scoreboard = scoring.score_all(
-            results_by_cell, scored, [d.name for d in detectors], iou_thresh=iou_thresh)
+            results_by_cell, scored, method_names, iou_thresh=iou_thresh)
+        diag = scoring.diagnostic_table(results_by_cell, scored, method_names,
+                                        meta_by_cell=meta_by_cell, iou_thresh=iou_thresh)
         per_cell.to_csv(os.path.join(out_dir, "scores_per_cell.csv"), index=False)
         scoreboard.to_csv(os.path.join(out_dir, "scoreboard.csv"), index=False)
+        diag.to_csv(os.path.join(out_dir, "diagnostic_table.csv"), index=False)
         scoring.plot_scoreboard(scoreboard, os.path.join(out_dir, "scoreboard.png"))
         print("\n=== SCOREBOARD (best first) ===")
         print(scoreboard.to_string(index=False))
+        print(f"\n[bench] per-cell diagnostic table -> {os.path.join(out_dir, 'diagnostic_table.csv')}")
     print(f"[bench] comparison figures -> {comp_dir}/")
     return results_by_cell
 

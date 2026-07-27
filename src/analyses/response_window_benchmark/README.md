@@ -41,7 +41,42 @@ on the lab machine beyond the pinned scientific stack.
 Scope: this first pass targets **SI-sorted units** from the pre-stim cache. Other
 sources (MUA, mixed) will slot in once their pre-stim caches exist.
 
-## Workflow
+## Main workflow — score against a hand-picked answer key
+
+Give it a spreadsheet of cells with their true windows; it runs every detector on
+each cell and compares.
+
+```bash
+cd src
+python -m analyses.response_window_benchmark.run_benchmark --mode answerkey \
+    --answer-key /path/to/window_test.xlsx --out output_set1
+```
+
+Outputs in `output_set1/`:
+- `comparison/<cell>.png` — raster + PSTH + one window-lane per method + a **TRUTH** lane.
+- `scoreboard.csv` + `scoreboard.png` — per method: hits / misses / `false_alarms` /
+  `off_target_fa` / precision / recall / **F1** / `mean_coverage` / `mean_iou` / onset error.
+- `diagnostic_table.csv` — **one row per cell**: the truth window(s) next to EACH
+  method's raw detected window(s) + per-method hit / off-target / coverage. This is
+  where you SEE over-detection (a response split into several windows).
+- `scores_per_cell.csv`, `answerkey_cells.csv`, `answerkey_skipped.csv`.
+
+Two answer-key layouts are auto-detected:
+- **NeuronID layout** (`window_test.xlsx`): `NeuronID | Source | WindowStart | WindowStop`
+  (ms). `Source` picks the cache (`SI sorted` → `sorted_spike_cache_pre1000ms`,
+  `mixed`/`manual` → `exploded_spike_cache_pre1000ms`, `mua` →
+  `threshold_mua_spike_cache_pre1000ms`). A NeuronID on several rows = several windows.
+- **Cell layout** (`Ed_handpicked_..._ANOVA_passed_Zombies.xlsx`):
+  `Date | Round No. | Time Window | Cell | [P Value]`; loaded from the pre-stim
+  exploded cache. Online-thresholded channels (no `_Unit`) have no pre-stim and are skipped.
+
+Region is never matched: cells resolve by `{Date}_{Round}_Channel.C_XXX[_Unit N]`, so a
+sheet `Unknown_…` still matches the cache's real `AMG_…`. Partial caches are fine —
+sessions you haven't built yet print "session not in cache — skipped". Use a separate
+`--out` per answer key so you can keep a **dev set** and a **held-out set** distinct
+(the fair comparison is on the set a method was *not* tuned on).
+
+## Optional workflow — auto-select SI cells for blind annotation
 
 ```bash
 cd src
