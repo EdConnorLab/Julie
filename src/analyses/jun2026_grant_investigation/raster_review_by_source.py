@@ -135,6 +135,29 @@ def _cache_requests(list_name: str, source_key: str) -> List[RasterRequest]:
     return reqs
 
 
+def _grant_mua_matched_requests() -> List[RasterRequest]:
+    """The grant MUA (unsorted) cells matched to their threshold-MUA NeuronIDs, as
+    NeuronID-matched requests. Spike times come from the threshold-MUA cache. Same matching
+    (hence the same unique neurons) that DATA_SOURCE='cache_mua_grantcells' / replicate_analysis
+    use; ``dedup_by_unit`` collapses the grant cell x window rows to one figure per neuron.
+    """
+    reqs: List[RasterRequest] = []
+    for m in scc.grant_mua_matched_neurons():
+        c = m["cell"]
+        neuron_id = str(m["neuron_id"]).strip()
+        reqs.append(RasterRequest(
+            source_kind="cache_mua_grantcells",
+            date=c.date,
+            round_no=int(c.round_no),
+            match_column="NeuronID",
+            match_value=neuron_id,
+            label=neuron_id,
+            window_ms=m.get("window_ms"),
+            p_value=None,
+        ))
+    return reqs
+
+
 # --------------------------------------------------------------------------- #
 # Source registry — one entry per DATA_SOURCE
 # --------------------------------------------------------------------------- #
@@ -178,6 +201,13 @@ SOURCES: Dict[str, SourceSpec] = {
         "cache_mua_anova", "updated_mua_anova", "NeuronID",
         scc._mua_source,
         lambda: _cache_requests("MUA_ANOVA", "cache_mua_anova"),
+    ),
+    # the grant MUA cells matched to threshold-MUA NeuronIDs (not a significance list);
+    # spikes from threshold_mua_spike_cache. Singles-only view of the cache_mua_grantcells set.
+    "cache_mua_grantcells": SourceSpec(
+        "cache_mua_grantcells", "grant_mua", "NeuronID",
+        scc._mua_source,
+        _grant_mua_matched_requests,
     ),
 }
 
@@ -457,6 +487,7 @@ if __name__ == "__main__":
     # -- MODE == "singles" --  (one of SOURCES)
     SINGLES_SOURCE = "cache_anova"            # grant_xlsx | cache_kw | cache_anova
     #                                       | cache_mua_kw | cache_mua_anova
+    #                                       | cache_mua_grantcells  (grant MUA cells, threshold-MUA spikes)
 
     # -- MODE == "overlay" --  (side A = grant, side B = a cache list)
     OVERLAY_PAIR = ("grant_xlsx", "cache_anova")   # or (.., "cache_anova"),
