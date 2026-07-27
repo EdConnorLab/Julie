@@ -250,6 +250,13 @@ def _match_grant_mua(source=None, write_csv=True):
     return matched, problems, mua_reqs, source
 
 
+def grant_mua_matched_neurons():
+    """Return the matched grant MUA cells as a list of {cell, neuron_id, window_ms} (no CSV
+    side effect). Public entry for callers that only need the match -- e.g. raster plotting."""
+    matched, _problems, _mua_reqs, _source = _match_grant_mua(write_csv=False)
+    return matched
+
+
 def export_grant_mua_match_table(out_csv=None):
     """Match the grant's UNSORTED (MUA) cells to their threshold-MUA NeuronIDs and write a
     CSV you can eyeball: one row per grant MUA cell with its matched NeuronID and status
