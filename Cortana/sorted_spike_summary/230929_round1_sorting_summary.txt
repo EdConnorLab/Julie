@@ -1,0 +1,2 @@
+Channel mismatch: TDC unit 9 Ch 5, MS5 unit 7.0 Ch 20, KS4 unit 21.0 Ch 5
+Using KS4 for spike trains. Units in agreement: 8
