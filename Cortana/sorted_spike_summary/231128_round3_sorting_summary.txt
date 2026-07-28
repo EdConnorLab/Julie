@@ -1,8 +1,4 @@
-Channels do NOT match!
-TDC unit_id 1 Ch 15, MS5 unit_id 34 Ch 16, KS4 unit_id 91 Ch 15
-Channels do NOT match!
-TDC unit_id 6 Ch 15, MS5 unit_id 33 Ch 16, KS4 unit_id 90 Ch 15
-Channels do NOT match!
-TDC unit_id 12 Ch 3, MS5 unit_id 46 Ch 24, KS4 unit_id 53 Ch 24
-Using... KiloSortSortingExtractor: 92 units - 1 segments - 20.0kHz for getting the original channels that sorted units belong to
-Units in agreement: 15
+Channel mismatch: TDC unit 0 Ch 15, MS5 unit 34.0 Ch 16, KS4 unit 95.0 Ch 15
+Channel mismatch: TDC unit 7 Ch 15, MS5 unit 35.0 Ch 16, KS4 unit 92.0 Ch 15
+Channel mismatch: TDC unit 13 Ch 3, MS5 unit 49.0 Ch 3, KS4 unit 60.0 Ch 24
+Using KS4 for spike trains. Units in agreement: 14

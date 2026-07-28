@@ -22,9 +22,19 @@ from spikesorting.sort_spikes.sort_spikes import (
 
 
 def load_sorting_results(intan_dir):
-    sorting_KS4 = ss.read_sorter_folder(os.path.join(intan_dir, 'kilosort4_output'))
-    sorting_MS5 = ss.read_sorter_folder(os.path.join(intan_dir, 'mountainsort5_output'))
-    sorting_TDC = ss.read_sorter_folder(os.path.join(intan_dir, 'tridesclous_output'))
+    # register_recording=False: only the spike trains are needed here, and the
+    # containerized sorters (whose spikeinterface can differ from this host's)
+    # serialize the recording with kwargs the host may not accept -- e.g. a
+    # newer container writes bandpass_filter's 'ignore_low_freq_error', which an
+    # older host rejects with TypeError while re-reading the sorter folder.
+    # Skipping the recording sidesteps that mismatch entirely; the recording used
+    # downstream comes from the analyzer folders loaded below.
+    sorting_KS4 = ss.read_sorter_folder(os.path.join(intan_dir, 'kilosort4_output'),
+                                        register_recording=False)
+    sorting_MS5 = ss.read_sorter_folder(os.path.join(intan_dir, 'mountainsort5_output'),
+                                        register_recording=False)
+    sorting_TDC = ss.read_sorter_folder(os.path.join(intan_dir, 'tridesclous_output'),
+                                        register_recording=False)
 
     analyzer_KS4 = si.load_sorting_analyzer(os.path.join(intan_dir, 'analyzer_KS4_binary'))
     analyzer_MS5 = si.load_sorting_analyzer(os.path.join(intan_dir, 'analyzer_MS5_binary'))
