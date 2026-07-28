@@ -15,6 +15,26 @@ def get_raw_spike_tstamp_data(date, round_number):
     return spike_tstamps_for_channels, sample_rate
 
 
+def normalize_trial_columns(df, source_path=""):
+    """Rename the task-id column to 'TaskField' if it arrived as 'TaskId'.
+
+    compiled.pkl column names track the installed clat version: newer
+    TaskIdField.get_name() returns "TaskId" where older ones returned
+    "TaskField". Downstream (combine_unsorted_with_sorted) keys trials on
+    'TaskField', so a pickle compiled under a newer clat fails with
+    KeyError: 'TaskField'. Normalize here, at the single point where compiled
+    trial data enters the pipeline, so both vintages load the same way.
+    """
+    if "TaskField" in df.columns:
+        return df
+    if "TaskId" in df.columns:
+        return df.rename(columns={"TaskId": "TaskField"})
+    raise KeyError(
+        f"Compiled trial data{' at ' + str(source_path) if source_path else ''} has "
+        f"neither 'TaskField' nor 'TaskId'; got {list(df.columns)}"
+    )
+
+
 def load_manually_sorted_spikes(path):
     """Load a dict of manually sorted spike indices from a pickle file."""
     with open(path, "rb") as f:
@@ -61,7 +81,9 @@ def read_sorted_data(round_path,
                      compiled_trials_filename="compiled.pkl",
                      pre_stimulus_time=0.0):
     """Load compiled trials and attach per-unit spike timestamps."""
-    raw = pd.read_pickle(os.path.join(round_path, compiled_trials_filename)).reset_index(drop=True)
+    compiled_path = os.path.join(round_path, compiled_trials_filename)
+    raw = pd.read_pickle(compiled_path).reset_index(drop=True)
+    raw = normalize_trial_columns(raw, compiled_path)
     sorted_spikes = load_manually_sorted_spikes(os.path.join(round_path, manually_sorted_spikes_filename))
 
     rhd_path = os.path.join(round_path, "info.rhd")
@@ -83,7 +105,7 @@ def get_raw_spike_tstamp_data(date, round_number):
 def load_raw_data(date, round_number, pre_stimulus_time=0.0):
     reader = RecordingMetadataReader()
     pickle_filepath, curated_channels, round_path = reader.get_metadata_for_spike_analysis(date, round_number)
-    raw_trial_data = pd.read_pickle(pickle_filepath)
+    raw_trial_data = normalize_trial_columns(pd.read_pickle(pickle_filepath), pickle_filepath)
 
     sorted_file = round_path / 'sorted_spikes.pkl'
     if sorted_file.exists():
