@@ -29,7 +29,6 @@ src/analyses/zombies_raster_review/output
 
 # Cortana regeneratable caches and generated outputs (recomputable from source)
 Cortana/threshold_mua_spike_cache/
-Cortana/exploded_spike_cache/
 Cortana/sorted_spike_cache_filtered/
 Cortana/analysis_cache/
 Cortana/analysis_results/
