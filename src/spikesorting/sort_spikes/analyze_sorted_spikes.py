@@ -152,40 +152,119 @@ def assign_spikes_to_trials(sorted_df, intan_dir, sampling_frequency, pre_stimul
 META_COLS = ['TaskField', 'MonkeyGroup', 'MonkeyId', 'MonkeyName', 'Date', 'Round No.', 'Location']
 
 
+def _monkey_id_from_spec(spec_xml):
+    """filePath in a StimSpec -> the MonkeyId that MonkeyIdField would return.
+
+    Same rules as compile.julie_database_fields: a new-monkey/macaque path yields -1,
+    otherwise the digits before the extension, as a string.
+    """
+    import re
+    import xmltodict
+
+    picture_path = xmltodict.parse(spec_xml)['StimSpec']['filePath']
+    if "new_monkey" in picture_path or "macaque" in picture_path:
+        return -1
+    match = re.search(r'([^/]+)$', picture_path)
+    file_name = match.group(1) if match else ""
+    digits = re.search(r'(\d+)\.', file_name)
+    if digits is None:
+        print(f"  [warn] no monkey id in file name: {file_name}")
+        return None
+    return digits.group(1)
+
+
 def fetch_trial_metadata_from_db(task_ids, date_str):
     """Per-trial stimulus identity straight from MySQL: TaskField, MonkeyId,
-    MonkeyName, MonkeyGroup.
+    MonkeyName, MonkeyGroup — the same source compiled.pkl was built from, so no
+    compiled.pkl or exploded_spike_cache is needed on this machine.
 
-    This is the same source compiled.pkl was built from (compile_common.base_fields),
-    queried directly for just the task ids we already have, so no compiled.pkl or
-    exploded_spike_cache needs to exist on this machine.
+    The queries mirror compile.julie_database_fields exactly (TaskToDo -> StimSpec ->
+    filePath -> monkey id -> photo_metadata), but are issued directly and in batches
+    instead of through clat's CachedTaskFieldList. Two reasons: the installed clat's
+    StimSpecIdField does `self.conn.fetch_one()[0]` while Connection.fetch_one already
+    unwraps the row, so every lookup dies with "'int' object is not subscriptable"; and
+    the per-field path costs three round trips per trial plus writes to a TaskFieldCache
+    table, where this needs about five queries per session and writes nothing.
     """
-    from clat.compile.task.cached_task_fields import CachedTaskFieldList
     from clat.util.connection import Connection
 
     from compile.compile_common import DB_HOST
-    from compile.julie_database_fields import MonkeyGroupField, MonkeyIdField, MonkeyNameField
-    from data_access.data_loader import normalize_trial_columns
+
+    task_ids = [int(t) for t in task_ids]
+    if not task_ids:
+        return pd.DataFrame(columns=['TaskField', 'MonkeyId', 'MonkeyName', 'MonkeyGroup'])
 
     date_key = datetime.strptime(date_str, "%Y-%m-%d").strftime("%Y%m%d")
     conn_xper = Connection(f"{date_key}_recording", host=DB_HOST)
     conn_photo = Connection("photo_metadata", host=DB_HOST)
 
-    # NB: no TaskIdField here — CachedTaskFieldList.to_data already prepends the task
-    # id as its first column. Its name tracks the installed clat ("TaskId" on newer
-    # versions), so normalize it to TaskField the same way compiled.pkl is normalized.
-    fields = CachedTaskFieldList()
-    fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
-    fields.append(MonkeyGroupField(conn_xper=conn_xper, conn_photo=conn_photo))
+    def fetch(conn, query, params):
+        conn.execute(query, tuple(params))
+        return conn.fetch_all() or []
 
-    df = fields.to_data(list(task_ids))
-    return normalize_trial_columns(df, f"{date_key}_recording@{DB_HOST}")
+    # task_id -> stim_id -> spec XML -> monkey id
+    holes = ",".join(["%s"] * len(task_ids))
+    stim_by_task = {int(t): int(s) for t, s in
+                    fetch(conn_xper, f"SELECT task_id, stim_id FROM TaskToDo WHERE task_id IN ({holes})",
+                          task_ids) if s is not None}
+    stim_ids = sorted(set(stim_by_task.values()))
+    spec_by_stim = {}
+    if stim_ids:
+        holes = ",".join(["%s"] * len(stim_ids))
+        spec_by_stim = {int(i): s for i, s in
+                        fetch(conn_xper, f"SELECT id, spec FROM StimSpec WHERE id IN ({holes})", stim_ids)}
+    monkey_id_by_task = {}
+    for task_id, stim_id in stim_by_task.items():
+        spec = spec_by_stim.get(stim_id)
+        if spec is not None:
+            monkey_id_by_task[task_id] = _monkey_id_from_spec(spec)
+
+    # monkey id -> name + jpg id -> group ("new monkey" pictures short-circuit, as in
+    # MonkeyNameField/MonkeyGroupField)
+    real_ids = sorted({m for m in monkey_id_by_task.values() if m not in (None, -1)})
+    name_by_monkey, jpg_by_monkey = {}, {}
+    if real_ids:
+        holes = ",".join(["%s"] * len(real_ids))
+        for monkey_id, monkey_name, jpg_id in fetch(
+                conn_photo,
+                f"SELECT monkey_id, monkey_name, jpg_id FROM photo_metadata.combined_view "
+                f"WHERE monkey_id IN ({holes})", real_ids):
+            name_by_monkey.setdefault(str(monkey_id), monkey_name)
+            jpg_by_monkey.setdefault(str(monkey_id), jpg_id)
+    group_by_jpg = {}
+    jpg_ids = sorted({j for j in jpg_by_monkey.values() if j is not None})
+    if jpg_ids:
+        holes = ",".join(["%s"] * len(jpg_ids))
+        group_by_jpg = {int(j): g for j, g in fetch(
+            conn_photo,
+            f"SELECT jpg_id, monkey_group FROM photo_metadata.photos WHERE jpg_id IN ({holes})", jpg_ids)}
+
+    rows, missing = [], 0
+    for task_id in task_ids:
+        monkey_id = monkey_id_by_task.get(task_id)
+        if monkey_id is None:
+            missing += 1
+            rows.append({'TaskField': task_id, 'MonkeyId': None,
+                         'MonkeyName': None, 'MonkeyGroup': None})
+        elif monkey_id == -1:
+            rows.append({'TaskField': task_id, 'MonkeyId': -1,
+                         'MonkeyName': "NewMonkey", 'MonkeyGroup': "Zombies"})
+        else:
+            jpg_id = jpg_by_monkey.get(str(monkey_id))
+            rows.append({'TaskField': task_id, 'MonkeyId': monkey_id,
+                         'MonkeyName': name_by_monkey.get(str(monkey_id)),
+                         'MonkeyGroup': group_by_jpg.get(int(jpg_id)) if jpg_id is not None else None})
+    if missing:
+        print(f"  [warn] {missing}/{len(task_ids)} task ids had no stimulus in "
+              f"{date_key}_recording; their metadata will be blank")
+    return pd.DataFrame(rows)
 
 
 def lookup_location(date_str, round_no):
     """Brain region for a session, from the recording metadata workbook — the same
     'InitialRegression' sheet and Date/Round join that explode_spike_data uses."""
+    from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+
     meta = RecordingMetadataReader().get_metadata_for_preliminary_analysis().copy()
     meta['Date'] = pd.to_datetime(meta['Date']).dt.strftime('%Y-%m-%d')
     hit = meta[(meta['Date'] == str(date_str)) & (meta['Round No.'] == int(round_no))]
