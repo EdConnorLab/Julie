@@ -149,12 +149,82 @@ def assign_spikes_to_trials(sorted_df, intan_dir, sampling_frequency, pre_stimul
     return pd.DataFrame(rows)
 
 
-def merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey=SUBJECT_MONKEY):
-    exploded_cache = ExplodedSpikeCacheManager(monkey)
-    unsorted = exploded_cache.load_or_compute(date_str, round_no)
+META_COLS = ['TaskField', 'MonkeyGroup', 'MonkeyId', 'MonkeyName', 'Date', 'Round No.', 'Location']
 
-    meta_cols = ['TaskField', 'MonkeyGroup', 'MonkeyId', 'MonkeyName', 'Date', 'Round No.', 'Location']
-    metadata_uniq = unsorted[meta_cols].drop_duplicates(subset=['TaskField'])
+
+def fetch_trial_metadata_from_db(task_ids, date_str):
+    """Per-trial stimulus identity straight from MySQL: TaskField, MonkeyId,
+    MonkeyName, MonkeyGroup.
+
+    This is the same source compiled.pkl was built from (compile_common.base_fields),
+    queried directly for just the task ids we already have, so no compiled.pkl or
+    exploded_spike_cache needs to exist on this machine.
+    """
+    from clat.compile.task.cached_task_fields import CachedTaskFieldList
+    from clat.util.connection import Connection
+
+    from compile.compile_common import DB_HOST
+    from compile.julie_database_fields import MonkeyGroupField, MonkeyIdField, MonkeyNameField
+    from data_access.data_loader import normalize_trial_columns
+
+    date_key = datetime.strptime(date_str, "%Y-%m-%d").strftime("%Y%m%d")
+    conn_xper = Connection(f"{date_key}_recording", host=DB_HOST)
+    conn_photo = Connection("photo_metadata", host=DB_HOST)
+
+    # NB: no TaskIdField here — CachedTaskFieldList.to_data already prepends the task
+    # id as its first column. Its name tracks the installed clat ("TaskId" on newer
+    # versions), so normalize it to TaskField the same way compiled.pkl is normalized.
+    fields = CachedTaskFieldList()
+    fields.append(MonkeyIdField(conn_xper=conn_xper, conn_photo=conn_photo))
+    fields.append(MonkeyNameField(conn_xper=conn_xper, conn_photo=conn_photo))
+    fields.append(MonkeyGroupField(conn_xper=conn_xper, conn_photo=conn_photo))
+
+    df = fields.to_data(list(task_ids))
+    return normalize_trial_columns(df, f"{date_key}_recording@{DB_HOST}")
+
+
+def lookup_location(date_str, round_no):
+    """Brain region for a session, from the recording metadata workbook — the same
+    'InitialRegression' sheet and Date/Round join that explode_spike_data uses."""
+    meta = RecordingMetadataReader().get_metadata_for_preliminary_analysis().copy()
+    meta['Date'] = pd.to_datetime(meta['Date']).dt.strftime('%Y-%m-%d')
+    hit = meta[(meta['Date'] == str(date_str)) & (meta['Round No.'] == int(round_no))]
+    return str(hit['Location'].iloc[0]) if len(hit) else 'Unknown'
+
+
+def merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey=SUBJECT_MONKEY,
+                        metadata_source="auto"):
+    """Attach stimulus identity + NeuronID to each trial.
+
+    metadata_source:
+      "db"       — query MySQL directly (no exploded_spike_cache needed).
+      "exploded" — the original path, reading Cortana/exploded_spike_cache.
+      "auto"     — try the DB, fall back to the exploded cache with a warning.
+
+    Only these are ever needed: MonkeyId/MonkeyName/MonkeyGroup per task id (MySQL,
+    which is where compiled.pkl got them), Location (metadata workbook), and Date /
+    Round No. (the arguments). The exploded cache never contributed anything of its
+    own — it just happened to carry all seven columns already joined.
+    """
+    metadata_uniq = None
+    if metadata_source in ("db", "auto"):
+        try:
+            db_meta = fetch_trial_metadata_from_db(
+                sorted_spikes_df['TaskField'].drop_duplicates().tolist(), date_str)
+            db_meta['Date'] = str(date_str)
+            db_meta['Round No.'] = int(round_no)
+            db_meta['Location'] = lookup_location(date_str, round_no)
+            metadata_uniq = db_meta[META_COLS].drop_duplicates(subset=['TaskField'])
+        except Exception as exc:
+            if metadata_source == "db":
+                raise
+            print(f"  [warn] DB metadata unavailable ({type(exc).__name__}: {exc}); "
+                  f"falling back to exploded_spike_cache")
+
+    if metadata_uniq is None:
+        exploded_cache = ExplodedSpikeCacheManager(monkey)
+        unsorted = exploded_cache.load_or_compute(date_str, round_no)
+        metadata_uniq = unsorted[META_COLS].drop_duplicates(subset=['TaskField'])
 
     merged = sorted_spikes_df.merge(metadata_uniq, on='TaskField', how='left', validate='many_to_one')
     merged['NeuronID'] = (
@@ -188,7 +258,8 @@ def default_cache_subdir(pre_stimulus_time=0.0):
 
 
 def analyze_sorted_spikes(date_str, round_no, monkey=SUBJECT_MONKEY,
-                          pre_stimulus_time=0.0, cache_subdir=None, base_path=None):
+                          pre_stimulus_time=0.0, cache_subdir=None, base_path=None,
+                          metadata_source="auto"):
     intan_dir = build_intan_session_path(date_str, round_no, monkey, base_path)
     sampling_frequency, _ = get_recording_session_info(intan_dir)
 
@@ -217,7 +288,8 @@ def analyze_sorted_spikes(date_str, round_no, monkey=SUBJECT_MONKEY,
     print(f"Sorted spikes shape: {sorted_spikes_df.shape}")
 
     # Merge with metadata from exploded spike cache
-    merged = merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey)
+    merged = merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey,
+                                 metadata_source=metadata_source)
     print(f"Merged shape: {merged.shape}")
 
     # Save to sorted spike cache
@@ -245,9 +317,16 @@ if __name__ == "__main__":
                         "sorter/analyzer outputs. "
                         f"Default: {SORT_SPIKES_INTAN_BASE_PATH} "
                         "(overridable via the SORT_SPIKES_INTAN_BASE_PATH env var).")
+    p.add_argument("--metadata-source", default="auto", dest="metadata_source",
+                   choices=("auto", "db", "exploded"),
+                   help="Where per-trial stimulus identity comes from. 'db' queries MySQL "
+                        "directly (needs no exploded_spike_cache on this machine), 'exploded' "
+                        "reads Cortana/exploded_spike_cache, 'auto' (default) tries the DB and "
+                        "falls back to the exploded cache with a warning.")
     args = p.parse_args()
 
     analyze_sorted_spikes(args.date, args.round_no, args.monkey,
                           pre_stimulus_time=args.pre_stimulus_time,
                           cache_subdir=args.cache_subdir,
-                          base_path=args.base_path)
+                          base_path=args.base_path,
+                          metadata_source=args.metadata_source)
