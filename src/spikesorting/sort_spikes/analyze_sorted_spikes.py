@@ -149,12 +149,161 @@ def assign_spikes_to_trials(sorted_df, intan_dir, sampling_frequency, pre_stimul
     return pd.DataFrame(rows)
 
 
-def merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey=SUBJECT_MONKEY):
-    exploded_cache = ExplodedSpikeCacheManager(monkey)
-    unsorted = exploded_cache.load_or_compute(date_str, round_no)
+META_COLS = ['TaskField', 'MonkeyGroup', 'MonkeyId', 'MonkeyName', 'Date', 'Round No.', 'Location']
 
-    meta_cols = ['TaskField', 'MonkeyGroup', 'MonkeyId', 'MonkeyName', 'Date', 'Round No.', 'Location']
-    metadata_uniq = unsorted[meta_cols].drop_duplicates(subset=['TaskField'])
+
+def _monkey_id_from_spec(spec_xml):
+    """filePath in a StimSpec -> the MonkeyId that MonkeyIdField would return.
+
+    Same rules as compile.julie_database_fields: a new-monkey/macaque path yields -1,
+    otherwise the digits before the extension, as a string.
+    """
+    import re
+    import xmltodict
+
+    picture_path = xmltodict.parse(spec_xml)['StimSpec']['filePath']
+    if "new_monkey" in picture_path or "macaque" in picture_path:
+        return -1
+    match = re.search(r'([^/]+)$', picture_path)
+    file_name = match.group(1) if match else ""
+    digits = re.search(r'(\d+)\.', file_name)
+    if digits is None:
+        print(f"  [warn] no monkey id in file name: {file_name}")
+        return None
+    return digits.group(1)
+
+
+def fetch_trial_metadata_from_db(task_ids, date_str):
+    """Per-trial stimulus identity straight from MySQL: TaskField, MonkeyId,
+    MonkeyName, MonkeyGroup — the same source compiled.pkl was built from, so no
+    compiled.pkl or exploded_spike_cache is needed on this machine.
+
+    The queries mirror compile.julie_database_fields exactly (TaskToDo -> StimSpec ->
+    filePath -> monkey id -> photo_metadata), but are issued directly and in batches
+    instead of through clat's CachedTaskFieldList. Two reasons: the installed clat's
+    StimSpecIdField does `self.conn.fetch_one()[0]` while Connection.fetch_one already
+    unwraps the row, so every lookup dies with "'int' object is not subscriptable"; and
+    the per-field path costs three round trips per trial plus writes to a TaskFieldCache
+    table, where this needs about five queries per session and writes nothing.
+    """
+    from clat.util.connection import Connection
+
+    from compile.compile_common import DB_HOST
+
+    task_ids = [int(t) for t in task_ids]
+    if not task_ids:
+        return pd.DataFrame(columns=['TaskField', 'MonkeyId', 'MonkeyName', 'MonkeyGroup'])
+
+    date_key = datetime.strptime(date_str, "%Y-%m-%d").strftime("%Y%m%d")
+    conn_xper = Connection(f"{date_key}_recording", host=DB_HOST)
+    conn_photo = Connection("photo_metadata", host=DB_HOST)
+
+    def fetch(conn, query, params):
+        conn.execute(query, tuple(params))
+        return conn.fetch_all() or []
+
+    # task_id -> stim_id -> spec XML -> monkey id
+    holes = ",".join(["%s"] * len(task_ids))
+    stim_by_task = {int(t): int(s) for t, s in
+                    fetch(conn_xper, f"SELECT task_id, stim_id FROM TaskToDo WHERE task_id IN ({holes})",
+                          task_ids) if s is not None}
+    stim_ids = sorted(set(stim_by_task.values()))
+    spec_by_stim = {}
+    if stim_ids:
+        holes = ",".join(["%s"] * len(stim_ids))
+        spec_by_stim = {int(i): s for i, s in
+                        fetch(conn_xper, f"SELECT id, spec FROM StimSpec WHERE id IN ({holes})", stim_ids)}
+    monkey_id_by_task = {}
+    for task_id, stim_id in stim_by_task.items():
+        spec = spec_by_stim.get(stim_id)
+        if spec is not None:
+            monkey_id_by_task[task_id] = _monkey_id_from_spec(spec)
+
+    # monkey id -> name + jpg id -> group ("new monkey" pictures short-circuit, as in
+    # MonkeyNameField/MonkeyGroupField)
+    real_ids = sorted({m for m in monkey_id_by_task.values() if m not in (None, -1)})
+    name_by_monkey, jpg_by_monkey = {}, {}
+    if real_ids:
+        holes = ",".join(["%s"] * len(real_ids))
+        for monkey_id, monkey_name, jpg_id in fetch(
+                conn_photo,
+                f"SELECT monkey_id, monkey_name, jpg_id FROM photo_metadata.combined_view "
+                f"WHERE monkey_id IN ({holes})", real_ids):
+            name_by_monkey.setdefault(str(monkey_id), monkey_name)
+            jpg_by_monkey.setdefault(str(monkey_id), jpg_id)
+    group_by_jpg = {}
+    jpg_ids = sorted({j for j in jpg_by_monkey.values() if j is not None})
+    if jpg_ids:
+        holes = ",".join(["%s"] * len(jpg_ids))
+        group_by_jpg = {int(j): g for j, g in fetch(
+            conn_photo,
+            f"SELECT jpg_id, monkey_group FROM photo_metadata.photos WHERE jpg_id IN ({holes})", jpg_ids)}
+
+    rows, missing = [], 0
+    for task_id in task_ids:
+        monkey_id = monkey_id_by_task.get(task_id)
+        if monkey_id is None:
+            missing += 1
+            rows.append({'TaskField': task_id, 'MonkeyId': None,
+                         'MonkeyName': None, 'MonkeyGroup': None})
+        elif monkey_id == -1:
+            rows.append({'TaskField': task_id, 'MonkeyId': -1,
+                         'MonkeyName': "NewMonkey", 'MonkeyGroup': "Zombies"})
+        else:
+            jpg_id = jpg_by_monkey.get(str(monkey_id))
+            rows.append({'TaskField': task_id, 'MonkeyId': monkey_id,
+                         'MonkeyName': name_by_monkey.get(str(monkey_id)),
+                         'MonkeyGroup': group_by_jpg.get(int(jpg_id)) if jpg_id is not None else None})
+    if missing:
+        print(f"  [warn] {missing}/{len(task_ids)} task ids had no stimulus in "
+              f"{date_key}_recording; their metadata will be blank")
+    return pd.DataFrame(rows)
+
+
+def lookup_location(date_str, round_no):
+    """Brain region for a session, from the recording metadata workbook — the same
+    'InitialRegression' sheet and Date/Round join that explode_spike_data uses."""
+    from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
+
+    meta = RecordingMetadataReader().get_metadata_for_preliminary_analysis().copy()
+    meta['Date'] = pd.to_datetime(meta['Date']).dt.strftime('%Y-%m-%d')
+    hit = meta[(meta['Date'] == str(date_str)) & (meta['Round No.'] == int(round_no))]
+    return str(hit['Location'].iloc[0]) if len(hit) else 'Unknown'
+
+
+def merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey=SUBJECT_MONKEY,
+                        metadata_source="auto"):
+    """Attach stimulus identity + NeuronID to each trial.
+
+    metadata_source:
+      "db"       — query MySQL directly (no exploded_spike_cache needed).
+      "exploded" — the original path, reading Cortana/exploded_spike_cache.
+      "auto"     — try the DB, fall back to the exploded cache with a warning.
+
+    Only these are ever needed: MonkeyId/MonkeyName/MonkeyGroup per task id (MySQL,
+    which is where compiled.pkl got them), Location (metadata workbook), and Date /
+    Round No. (the arguments). The exploded cache never contributed anything of its
+    own — it just happened to carry all seven columns already joined.
+    """
+    metadata_uniq = None
+    if metadata_source in ("db", "auto"):
+        try:
+            db_meta = fetch_trial_metadata_from_db(
+                sorted_spikes_df['TaskField'].drop_duplicates().tolist(), date_str)
+            db_meta['Date'] = str(date_str)
+            db_meta['Round No.'] = int(round_no)
+            db_meta['Location'] = lookup_location(date_str, round_no)
+            metadata_uniq = db_meta[META_COLS].drop_duplicates(subset=['TaskField'])
+        except Exception as exc:
+            if metadata_source == "db":
+                raise
+            print(f"  [warn] DB metadata unavailable ({type(exc).__name__}: {exc}); "
+                  f"falling back to exploded_spike_cache")
+
+    if metadata_uniq is None:
+        exploded_cache = ExplodedSpikeCacheManager(monkey)
+        unsorted = exploded_cache.load_or_compute(date_str, round_no)
+        metadata_uniq = unsorted[META_COLS].drop_duplicates(subset=['TaskField'])
 
     merged = sorted_spikes_df.merge(metadata_uniq, on='TaskField', how='left', validate='many_to_one')
     merged['NeuronID'] = (
@@ -188,7 +337,8 @@ def default_cache_subdir(pre_stimulus_time=0.0):
 
 
 def analyze_sorted_spikes(date_str, round_no, monkey=SUBJECT_MONKEY,
-                          pre_stimulus_time=0.0, cache_subdir=None, base_path=None):
+                          pre_stimulus_time=0.0, cache_subdir=None, base_path=None,
+                          metadata_source="auto"):
     intan_dir = build_intan_session_path(date_str, round_no, monkey, base_path)
     sampling_frequency, _ = get_recording_session_info(intan_dir)
 
@@ -217,7 +367,8 @@ def analyze_sorted_spikes(date_str, round_no, monkey=SUBJECT_MONKEY,
     print(f"Sorted spikes shape: {sorted_spikes_df.shape}")
 
     # Merge with metadata from exploded spike cache
-    merged = merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey)
+    merged = merge_with_metadata(sorted_spikes_df, date_str, round_no, monkey,
+                                 metadata_source=metadata_source)
     print(f"Merged shape: {merged.shape}")
 
     # Save to sorted spike cache
@@ -245,9 +396,16 @@ if __name__ == "__main__":
                         "sorter/analyzer outputs. "
                         f"Default: {SORT_SPIKES_INTAN_BASE_PATH} "
                         "(overridable via the SORT_SPIKES_INTAN_BASE_PATH env var).")
+    p.add_argument("--metadata-source", default="auto", dest="metadata_source",
+                   choices=("auto", "db", "exploded"),
+                   help="Where per-trial stimulus identity comes from. 'db' queries MySQL "
+                        "directly (needs no exploded_spike_cache on this machine), 'exploded' "
+                        "reads Cortana/exploded_spike_cache, 'auto' (default) tries the DB and "
+                        "falls back to the exploded cache with a warning.")
     args = p.parse_args()
 
     analyze_sorted_spikes(args.date, args.round_no, args.monkey,
                           pre_stimulus_time=args.pre_stimulus_time,
                           cache_subdir=args.cache_subdir,
-                          base_path=args.base_path)
+                          base_path=args.base_path,
+                          metadata_source=args.metadata_source)
