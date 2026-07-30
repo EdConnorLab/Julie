@@ -39,12 +39,16 @@ Spike times in both caches come from the same recording clock, so coincidence is
 a valid identity test. By default only post-onset spikes are compared, so the
 pre-stim cache's extra baseline spikes don't skew the ratio.
 
-Run::
+Run it
+------
+In PyCharm: open this file, edit the RUN CONFIG block at the bottom, press ▶ Run.
+It defaults to every session in ``response_window_test/window_test.xlsx``.
+
+Or from a shell::
 
     cd src
     python -m analyses.response_window_benchmark.cache_diagnostics \
         --date 2023-09-26 --round 2
-    # or every session in the answer key:
     python -m analyses.response_window_benchmark.cache_diagnostics \
         --answer-key ../response_window_test/window_test.xlsx
 """
@@ -169,6 +173,13 @@ def compare_session(
     return name, match
 
 
+def sessions_from_answer_key(xlsx_path: str) -> List[Tuple[str, int]]:
+    """Every (date, round) named in an answer-key spreadsheet."""
+    from analyses.response_window_benchmark.answer_key import load_answer_key
+    cands, _, _ = load_answer_key(xlsx_path)
+    return sorted({(r["Date"], int(r["Round No."])) for _, r in cands.iterrows()})
+
+
 def run(sessions: List[Tuple[str, int]], out_dir: str, **kw) -> None:
     names, matches = [], []
     for date, rnd in sessions:
@@ -210,9 +221,7 @@ def _cli(argv=None):
     a = p.parse_args(argv)
 
     if a.answer_key:
-        from analyses.response_window_benchmark.answer_key import load_answer_key
-        cands, _, _ = load_answer_key(a.answer_key)
-        sessions = sorted({(r["Date"], int(r["Round No."])) for _, r in cands.iterrows()})
+        sessions = sessions_from_answer_key(a.answer_key)
     elif a.date and a.round_no is not None:
         sessions = [(a.date, a.round_no)]
     else:
@@ -221,5 +230,46 @@ def _cli(argv=None):
         coincidence_threshold=a.coincidence, ratio_threshold=a.ratio)
 
 
+DEFAULT_ANSWER_KEY = os.path.abspath(
+    os.path.join(_HERE, "..", "..", "..", "response_window_test", "window_test.xlsx"))
+
+
 if __name__ == "__main__":
-    _cli()
+    # Command-line args -> argparse; a bare ▶ Run in PyCharm -> RUN CONFIG below.
+    if len(sys.argv) > 1:
+        _cli()
+    else:
+        # ====================================================================
+        #  RUN CONFIG — edit these, then just press ▶ Run in PyCharm.
+        #
+        #  Asks: does a NeuronID mean the SAME neuron in both caches?
+        #  Writes to OUT_DIR:
+        #    cache_compare_by_name.csv — per unit, rate in each cache +
+        #                                RATE_MISMATCH flag (the smoking gun)
+        #    cache_unit_remap.csv      — units matched by spike-train
+        #                                coincidence + NAME_AGREES flag
+        # ====================================================================
+        # Which sessions? Set ANSWER_KEY to check every session in a key, OR
+        # set it to None and fill in DATE/ROUND_NO for a single session.
+        ANSWER_KEY = DEFAULT_ANSWER_KEY     # None -> use DATE / ROUND_NO below
+        DATE = "2023-09-26"                 # used only when ANSWER_KEY is None
+        ROUND_NO = 2
+
+        # Which two caches to compare.
+        CACHE_A = REFERENCE_CACHE           # "sorted_spike_cache_filtered"
+        #                                     (what the answer key was drawn from)
+        CACHE_B = PRESTIM_CACHE             # "sorted_spike_cache_pre1000ms"
+        #                                     (what run_benchmark reads)
+
+        RATE_TOL = 2.0        # flag same-named units differing by more than this factor
+        COINCIDENCE = 0.2     # spike-time coincidence floor for calling it the same neuron
+        RATIO = 1.5           # chance-ratio floor; lower if high-rate units go unmatched
+        OUT_DIR = os.path.join(_HERE, "output")
+        # ====================================================================
+
+        _sessions = (sessions_from_answer_key(ANSWER_KEY) if ANSWER_KEY
+                     else [(DATE, ROUND_NO)])
+        print(f"[cache-diag] comparing '{CACHE_A}' vs '{CACHE_B}' "
+              f"over {len(_sessions)} session(s)")
+        run(_sessions, OUT_DIR, cache_a=CACHE_A, cache_b=CACHE_B,
+            rate_tol=RATE_TOL, coincidence_threshold=COINCIDENCE, ratio_threshold=RATIO)
