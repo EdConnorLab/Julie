@@ -67,12 +67,27 @@ def extract_trials(
     group: str = GROUP,
     t_stop: Optional[float] = None,
     pre_stimulus_time: float = 0.0,
+    keep_frac: float = 0.9,
+    verbose: bool = True,
 ) -> TrialData:
     """Per-trial spikes for one unit, aligned to onset, keeping ``pre_stimulus_time``
     seconds of baseline before onset (as negative times).
 
     Mirrors ``raster_plotting._align_spikes_to_epoch``: keep spikes in
     ``[start - pre_stimulus_time, stop]`` and re-zero to ``start`` (onset).
+
+    Analysis window
+    ---------------
+    When ``t_stop`` is None it is set so that at least ``keep_frac`` of trials span
+    the full window (i.e. the ``1 - keep_frac`` quantile of trial durations), and
+    any trial SHORTER than that is dropped.
+
+    This replaces an earlier ``min(durations)`` rule, which let a single short or
+    aborted trial collapse the analysis window for every cell in a session (one
+    0.25 s trial truncated whole sessions to 250 ms). Dropping the short trials
+    instead of shortening the window is the right trade: a trial that ends early
+    would otherwise contribute zero counts for the missing time and bias the rate
+    downward.
     """
     df = neuron_df[neuron_df["MonkeyGroup"] == group]
     trials: List[np.ndarray] = []
@@ -86,8 +101,19 @@ def extract_trials(
         labels.append(r["MonkeyName"])
         durations.append(stop - start)
 
+    durations = np.asarray(durations, dtype=float)
     if t_stop is None:
-        t_stop = float(min(durations)) if durations else 0.0
+        t_stop = float(np.quantile(durations, 1.0 - keep_frac)) if durations.size else 0.0
+
+    # drop trials that don't span the analysis window (they'd zero-pad and bias)
+    if durations.size:
+        keep = durations >= (t_stop - 1e-9)
+        n_drop = int((~keep).sum())
+        if n_drop and verbose:
+            print(f"[psth] dropped {n_drop}/{durations.size} trial(s) shorter than "
+                  f"the {t_stop:.2f}s analysis window (min was {durations.min():.2f}s)")
+        trials = [t for t, k in zip(trials, keep) if k]
+        labels = [l for l, k in zip(labels, keep) if k]
 
     nid = str(df["NeuronID"].iloc[0]) if ("NeuronID" in df.columns and len(df)) else ""
     return TrialData(trials=trials, labels=np.asarray(labels, dtype=object),

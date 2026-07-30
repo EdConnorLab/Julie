@@ -43,6 +43,7 @@ import numpy as np
 
 from .psth import (
     TrialData, bin_edges, binned_matrix, analysis_edges, prestim_baseline,
+    optimal_bin_width,
 )
 
 Window = Tuple[float, float]
@@ -226,7 +227,10 @@ class UpwardCusumDetector(WindowDetector):
         s = np.zeros(z.size)
         for t in range(1, z.size):
             s[t] = max(0.0, s[t - 1] + z[t] - self.k)
-        mask = s > self.h
+        # A cumulative sum stays high long after firing returns to baseline, which
+        # made windows run hundreds of ms past the response. Require the rate to
+        # still be elevated (z > 0) for a bin to belong to the window.
+        mask = (s > self.h) & (z > 0)
         windows = filter_min_duration(runs_from_mask(mask, edges), self.min_dur_s)
         return DetectorResult(windows, curve=s, centers=centers, threshold=self.h)
 
@@ -552,3 +556,24 @@ def default_detectors(bin_s: float = 0.05) -> List[WindowDetector]:
         ClusterPermutationDetector(bin_s=bin_s, mode="baseline"),
         ZetaDetector(),
     ]
+
+
+def auto_bin_s(td: TrialData, *, clamp=(0.02, 0.30)) -> float:
+    """Per-cell PSTH bin width chosen from the data (Shimazaki & Shinomoto 2007).
+
+    Why this matters: at a hardcoded 50 ms bin a 2-4 Hz cell contributes 0 or 1
+    spikes per trial per bin, and the discreteness swamps the response — a real
+    2.5 -> 4.2 Hz modulation sits at z = 2.3 (below a 3-sigma cut) at 50 ms but
+    z = 3.2 at 100 ms and z = 4.6 at 200 ms. Choosing the bin by minimising the
+    MISE picks a sensible width per cell instead.
+
+    Crucially this is decided from the cell's own pooled PSTH — it never sees the
+    stimulus labels or the answer key, so it is not tuning to ground truth.
+    """
+    best, _, _ = optimal_bin_width(td)
+    return float(np.clip(best, clamp[0], clamp[1]))
+
+
+def build_detectors(td: TrialData, bin_s: Optional[float] = None) -> List[WindowDetector]:
+    """Detector suite for one cell. ``bin_s=None`` -> per-cell :func:`auto_bin_s`."""
+    return default_detectors(bin_s=auto_bin_s(td) if bin_s is None else bin_s)

@@ -49,7 +49,9 @@ from analyses.response_window_benchmark import ground_truth as gt               
 from analyses.response_window_benchmark import answer_key as ak                   # noqa: E402
 from analyses.response_window_benchmark import scoring                            # noqa: E402
 from analyses.response_window_benchmark.psth import extract_trials               # noqa: E402
-from analyses.response_window_benchmark.detectors import default_detectors        # noqa: E402
+from analyses.response_window_benchmark.detectors import (                        # noqa: E402
+    default_detectors, build_detectors,
+)
 from analyses.response_window_benchmark.plotting import (                         # noqa: E402
     plot_cell_raster, plot_cell_with_windows,
 )
@@ -127,10 +129,11 @@ def _n_prestim_spikes(td) -> int:
 def _benchmark(cands: pd.DataFrame, truth: Dict[str, list], out_dir: str, *,
                bin_s: float, xlim: Optional[float], iou_thresh: float,
                plot_subdir: str = "comparison") -> Dict[str, Dict[str, list]]:
-    detectors = default_detectors(bin_s=bin_s)
+    # bin_s=None -> per-cell Shimazaki-Shinomoto width (see detectors.auto_bin_s)
     comp_dir = os.path.join(out_dir, plot_subdir)
     results_by_cell: Dict[str, Dict[str, list]] = {}
     meta_by_cell: Dict[str, dict] = {}
+    method_names = [d.name for d in default_detectors()]
 
     for (sk, csub, date, rnd), rows in _sessions(cands).items():
         try:
@@ -156,8 +159,13 @@ def _benchmark(cands: pd.DataFrame, truth: Dict[str, list], out_dir: str, *,
                 print(f"[bench][warn] {key}: pre-stim window empty — vs-baseline "
                       f"detectors will be unreliable/skipped")
             nid = _resolved_neuron_id(unit, row.get("NeuronID", key))
+            detectors = build_detectors(td, bin_s)
+            cell_bin = detectors[0].bin_s
             meta_by_cell[key] = {"NeuronID": nid, "UnitType": row.get("UnitType", "?"),
-                                 "Region": row.get("Region", "?")}
+                                 "Region": row.get("Region", "?"),
+                                 "bin_ms": round(cell_bin * 1000, 1),
+                                 "n_trials": td.n_trials,
+                                 "t_stop_s": round(td.t_stop, 2)}
             results = {}
             for d in detectors:
                 try:
@@ -165,16 +173,15 @@ def _benchmark(cands: pd.DataFrame, truth: Dict[str, list], out_dir: str, *,
                 except Exception as e:
                     print(f"[bench] {d.name} failed on {key}: {e}")
             results_by_cell[key] = {name: r.windows for name, r in results.items()}
-            title = f"{nid}   ({row.get('UnitType','?')})"
+            title = f"{nid}   ({row.get('UnitType','?')})   bin={cell_bin*1000:.0f}ms"
             if key in truth:
                 title += "   truth=" + ",".join(
                     f"{int(a*1000)}-{int(b*1000)}ms" for a, b in truth[key])
             plot_cell_with_windows(
                 td, detectors, results, truth_windows=truth.get(key),
-                title=title, bin_s=bin_s, xlim=xlim,
+                title=title, bin_s=cell_bin, xlim=xlim,
                 save_path=os.path.join(comp_dir, f"{_safe(key)}.png"))
 
-    method_names = [d.name for d in detectors]
     if truth:
         scored = {k: v for k, v in truth.items() if k in results_by_cell}
         per_cell, scoreboard = scoring.score_all(
@@ -197,7 +204,7 @@ def _benchmark(cands: pd.DataFrame, truth: Dict[str, list], out_dir: str, *,
 # --------------------------------------------------------------------------- #
 def run_answer_key(xlsx_path: str, out_dir: str = OUT_DIR, *,
                    cache_subdir: str = ak.DEFAULT_CACHE_SUBDIR, pre_stim: float = 1.0,
-                   bin_s: float = 0.05, xlim: Optional[float] = None,
+                   bin_s: Optional[float] = None, xlim: Optional[float] = None,
                    iou_thresh: float = 0.3, skip_unsorted: bool = True) -> None:
     os.makedirs(out_dir, exist_ok=True)
     cands, truth, skipped = ak.load_answer_key(
@@ -209,6 +216,57 @@ def run_answer_key(xlsx_path: str, out_dir: str = OUT_DIR, *,
     pd.DataFrame(skipped, columns=["cell_key", "reason"]).to_csv(
         os.path.join(out_dir, "answerkey_skipped.csv"), index=False)
     _benchmark(cands, truth, out_dir, bin_s=bin_s, xlim=xlim, iou_thresh=iou_thresh)
+
+
+# --------------------------------------------------------------------------- #
+# Mode: inspect — why didn't a requested cell match?
+# --------------------------------------------------------------------------- #
+def run_inspect(xlsx_path: str, out_dir: str = OUT_DIR, *,
+                cache_subdir: str = ak.DEFAULT_CACHE_SUBDIR, pre_stim: float = 1.0) -> pd.DataFrame:
+    """For every answer-key cell, report whether its session loaded, whether the
+    unit was found, and — when not — which units that session actually contains.
+
+    Answers "[bench] cell not found in session" without guessing: usually the SI
+    sort produced different unit numbers than the answer key expects.
+    """
+    cands, truth, _ = ak.load_answer_key(xlsx_path, cache_subdir=cache_subdir, pre_stim=pre_stim)
+    rows = []
+    for (sk, csub, date, rnd), reqs in _sessions(cands).items():
+        try:
+            session_df = _make_source(sk, csub).load(date, rnd)
+            err = ""
+        except Exception as e:
+            session_df, err = None, str(e)
+        available = []
+        if session_df is not None and not getattr(session_df, "empty", True):
+            available = sorted(session_df["NeuronID"].astype(str).unique())
+        for row in reqs:
+            want = row["_match_value"]                       # regionless id
+            found = not _unit_rows(session_df, row).empty if available else False
+            # same base channel, different unit number?
+            base = str(want).split("_Unit")[0]
+            near = [a for a in available if base in a]
+            rows.append({
+                "cell_key": row["cell_key"], "Date": date, "Round No.": rnd,
+                "requested": want,
+                "session_loaded": bool(available), "unit_found": found,
+                "n_units_in_session": len(available),
+                "same_channel_units": "; ".join(near) or "(none)",
+                "error": err,
+            })
+    rep = pd.DataFrame(rows)
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, "inspect_matching.csv")
+    rep.to_csv(path, index=False)
+    miss = rep[~rep["unit_found"]]
+    print(f"\n[inspect] {len(rep) - len(miss)}/{len(rep)} cells matched; "
+          f"{len(miss)} did not")
+    for _, r in miss.iterrows():
+        why = ("session not in cache" if not r["session_loaded"]
+               else f"unit absent; same-channel units present: {r['same_channel_units']}")
+        print(f"    {r['requested']}  —  {why}")
+    print(f"[inspect] full report -> {path}")
+    return rep
 
 
 # --------------------------------------------------------------------------- #
@@ -250,7 +308,7 @@ def run_select(out_dir: str = OUT_DIR, *, n: int = 20, seed: int = 0,
 
 
 def run_score(out_dir: str = OUT_DIR, *, truth_path: Optional[str] = None,
-              bin_s: float = 0.05, xlim: Optional[float] = None,
+              bin_s: Optional[float] = None, xlim: Optional[float] = None,
               iou_thresh: float = 0.3) -> None:
     cand_csv = os.path.join(out_dir, "candidate_cells.csv")
     if not os.path.exists(cand_csv):
@@ -269,7 +327,8 @@ def run_score(out_dir: str = OUT_DIR, *, truth_path: Optional[str] = None,
 def _cli(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--mode", choices=["answerkey", "select", "score"], default="answerkey")
+    p.add_argument("--mode", choices=["answerkey", "inspect", "select", "score"],
+                   default="answerkey")
     p.add_argument("--answer-key", default=None, help="answerkey: path to the xlsx")
     p.add_argument("--n", type=int, default=20, help="select: how many cells")
     p.add_argument("--seed", type=int, default=0)
@@ -279,24 +338,32 @@ def _cli(argv=None):
     p.add_argument("--pre-stim", type=float, default=DEFAULT_PRE_STIM,
                    help="seconds of pre-stimulus baseline (must match the cache)")
     p.add_argument("--truth", default=None, help="score: path to filled template")
-    p.add_argument("--bin-ms", type=float, default=50.0)
+    p.add_argument("--bin-ms", type=float, default=None,
+                   help="PSTH bin in ms; omit for a per-cell optimal width "
+                        "(Shimazaki-Shinomoto), which is the default")
     p.add_argument("--xlim", type=float, default=None,
                    help="analysis/plot end (s); default = each cell's epoch end")
     p.add_argument("--iou", type=float, default=0.3)
     args = p.parse_args(argv)
 
-    if args.mode == "answerkey":
+    if args.mode == "inspect":
+        if not args.answer_key:
+            p.error("--answer-key is required for --mode inspect")
+        run_inspect(args.answer_key, args.out,
+                    cache_subdir=args.cache_subdir or ak.DEFAULT_CACHE_SUBDIR,
+                    pre_stim=args.pre_stim)
+    elif args.mode == "answerkey":
         if not args.answer_key:
             p.error("--answer-key is required for --mode answerkey")
         run_answer_key(args.answer_key, args.out,
                        cache_subdir=args.cache_subdir or ak.DEFAULT_CACHE_SUBDIR,
-                       pre_stim=args.pre_stim, bin_s=args.bin_ms / 1000.0,
+                       pre_stim=args.pre_stim, bin_s=(args.bin_ms / 1000.0 if args.bin_ms else None),
                        xlim=args.xlim, iou_thresh=args.iou)
     elif args.mode == "select":
         run_select(args.out, n=args.n, seed=args.seed, xlim=args.xlim,
                    cache_subdir=args.cache_subdir or DEFAULT_CACHE_SUBDIR, pre_stim=args.pre_stim)
     else:
-        run_score(args.out, truth_path=args.truth, bin_s=args.bin_ms / 1000.0,
+        run_score(args.out, truth_path=args.truth, bin_s=(args.bin_ms / 1000.0 if args.bin_ms else None),
                   xlim=args.xlim, iou_thresh=args.iou)
 
 
@@ -318,17 +385,17 @@ if __name__ == "__main__":
         # -- common --
         PRE_STIM = DEFAULT_PRE_STIM                   # seconds; must match the cache
         XLIM = None                                   # None = each cell's epoch end
-        BIN_MS = 50.0
+        BIN_MS = None   # None = per-cell optimal bin width
         IOU_THRESH = 0.3
         # ====================================================================
         if MODE == "answerkey":
             if not ANSWER_KEY_XLSX:
                 raise SystemExit("set ANSWER_KEY_XLSX (path to the handpicked xlsx)")
             run_answer_key(ANSWER_KEY_XLSX, OUT_DIR, cache_subdir=ANSWERKEY_CACHE,
-                           pre_stim=PRE_STIM, bin_s=BIN_MS / 1000.0, xlim=XLIM,
+                           pre_stim=PRE_STIM, bin_s=(BIN_MS / 1000.0 if BIN_MS else None), xlim=XLIM,
                            iou_thresh=IOU_THRESH)
         elif MODE == "select":
             run_select(OUT_DIR, n=N_CELLS, seed=SEED, xlim=XLIM,
                        cache_subdir=SELECT_CACHE, pre_stim=PRE_STIM, sessions=SESSIONS)
         else:
-            run_score(OUT_DIR, bin_s=BIN_MS / 1000.0, xlim=XLIM, iou_thresh=IOU_THRESH)
+            run_score(OUT_DIR, bin_s=(BIN_MS / 1000.0 if BIN_MS else None), xlim=XLIM, iou_thresh=IOU_THRESH)
