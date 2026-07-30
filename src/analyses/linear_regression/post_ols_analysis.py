@@ -271,8 +271,8 @@ def plot_cross_meta_from_filtered_df(filtered_df, pivot_df, cluster_labels, valu
     plt.show()
 
 if __name__ == '__main__':
-    df = load_significant_ols_results('/Cortana/analysis_results'
-                                      '/Zombies_dir_linreg_on_windows.pkl')
+    df = load_significant_ols_results('/home/connorlab/Documents/JulieData/Cortana/analysis_results'
+                                 '/Zombies_dir_linreg_on_windows.pkl')
     filtered_df = filter_table_for_pivot(df, column='Source_Monkey')
     # Source-monkey-centered
     pivot_df = make_pivot_table(filtered_df, column='Source_Monkey')

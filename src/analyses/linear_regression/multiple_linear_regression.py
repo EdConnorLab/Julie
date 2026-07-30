@@ -207,7 +207,7 @@ if __name__ == '__main__':
     monkey_group = "Zombies"
     subject_monkey_index = 6
     sig_windows = pd.read_pickle(
-        f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl')
+        f'/home/connorlab/Documents/JulieData/Cortana/analysis_cache/{monkey_group}_significant_windows_pANOVAorGLM_passed.pkl')
     ed_sig_windows = pd.read_pickle(
         '/old/Ed and ANOVA/used_for_R01/R01_ed_list_duplicate_removed_without_full_window.pkl')
     mean_spike_rate_windows = compute_mean_spike_rate_for_windows(ed_sig_windows)

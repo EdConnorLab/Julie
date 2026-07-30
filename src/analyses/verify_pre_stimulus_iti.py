@@ -34,6 +34,17 @@ import pandas as pd
 # Repo root = two levels up from this file (…/src/analyses/this.py -> repo root).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Spike caches live outside the repo so git checkouts cannot delete them.
+DATA_ROOT = Path(
+    os.environ.get("JULIE_DATA_PATH", "/home/connorlab/Documents/JulieData")
+) / "Cortana"
+
+
+def _cache_dir(name: str) -> Path:
+    """Prefer the external data tree, falling back to a copy inside the repo."""
+    external = DATA_ROOT / name
+    return external if external.exists() else REPO_ROOT / "Cortana" / name
+
 
 def session_epochs(df: pd.DataFrame) -> list[tuple[float, float]]:
     """Unique (onset, offset) epoch tuples for a session, in chronological order."""
@@ -115,7 +126,8 @@ def main() -> None:
         action="append",
         default=None,
         help="Cache directory of spike pkls (repeatable). "
-        "Defaults to Cortana/sorted_spike_cache and Cortana/exploded_spike_cache under the repo root.",
+        "Defaults to Cortana/sorted_spike_cache and Cortana/exploded_spike_cache "
+        "under the external data root (JULIE_DATA_PATH), falling back to the repo.",
     )
     args = p.parse_args()
 
@@ -123,8 +135,8 @@ def main() -> None:
         cache_dirs = [Path(c) for c in args.cache_dir]
     else:
         cache_dirs = [
-            REPO_ROOT / "Cortana" / "sorted_spike_cache",
-            REPO_ROOT / "Cortana" / "exploded_spike_cache",
+            _cache_dir("sorted_spike_cache"),
+            _cache_dir("exploded_spike_cache"),
         ]
 
     for cache_dir in cache_dirs:

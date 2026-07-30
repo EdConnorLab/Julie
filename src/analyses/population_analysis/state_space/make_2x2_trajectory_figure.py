@@ -203,5 +203,5 @@ def make_2x2(save_path=None):
 
 
 if __name__ == '__main__':
-    SAVE = '/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/state_space_trajectory/progress_report_Jun2026/figure1_2x2.png'
+    SAVE = '/home/connorlab/Documents/JulieData/Cortana/analysis_results/state_space_trajectory/progress_report_Jun2026/figure1_2x2.png'
     make_2x2(save_path=SAVE)

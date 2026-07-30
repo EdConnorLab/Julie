@@ -28,7 +28,7 @@ MONKEY_INFO_PATH = "/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinf
 def main():
     cfg = PklRSAConfig(
         # ── Pkl options ──
-        pkl_path='/Cortana/analysis_cache/'
+        pkl_path='/home/connorlab/Documents/JulieData/Cortana/analysis_cache/'
                  'si_sorted_Zombies_significant_windows_pKW_passed.pkl',
         pkl_window_mode='common',          # 'per_neuron' | 'common'
         pkl_filter_significant=False,          # True → keep only p < pkl_p_threshold

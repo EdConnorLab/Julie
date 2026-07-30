@@ -1,13 +1,20 @@
 # config.py
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+# Spike caches live outside the repo so git checkouts cannot delete them.
+DATA_ROOT = Path(
+    os.environ.get("JULIE_DATA_PATH", "/home/connorlab/Documents/JulieData")
+) / "Cortana"
+
 
 @dataclass
 class TrajectoryConfig:
     # Data
     base_dir: Path = Path(__file__).resolve().parents[4]  # go up to repo root (Julie)
-    data_path: Path = base_dir / "Cortana" / "sorted_spike_cache_filtered"
+    data_path: Path = DATA_ROOT / "sorted_spike_cache_filtered"
     region: str = 'ALL'              # 'AMG', 'ER', or 'ALL'
     session: Optional[str] = None    # None = multi-session; else e.g. 'ER_2023-11-28_4'
 

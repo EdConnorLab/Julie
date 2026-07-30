@@ -15,7 +15,7 @@ from pathlib import Path
 
 from analyses.raster_plotting import plot_stacked_raster
 from data_access.spike_source import SISortedSpikeSource
-from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
+from project_util import DATA_BASE_PATH, SUBJECT_MONKEY
 
 # ===== CONFIG — edit me =======================================================
 DATE = "2023-11-20"
@@ -48,7 +48,7 @@ def main():
     print(f"{DATE} round {ROUND_NO}: {len(neuron_ids)} neuron(s) to plot "
           f"(pre-stimulus {int(PRE_STIMULUS_TIME * 1000)} ms)")
 
-    save_dir = Path(PROJECT_BASE_PATH) / SUBJECT_MONKEY / "raster_plots" / CACHE_SUBDIR
+    save_dir = Path(DATA_BASE_PATH) / SUBJECT_MONKEY / "raster_plots" / CACHE_SUBDIR
     for neuron_id in neuron_ids:
         neuron_df = df[df["NeuronID"] == neuron_id]
         if len(neuron_df) < MIN_TRIALS:

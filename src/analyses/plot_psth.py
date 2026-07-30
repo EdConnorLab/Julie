@@ -17,9 +17,9 @@ from matplotlib.colors import Normalize
 import matplotlib
 matplotlib.use("Qt5Agg")
 from analyses.enums.monkey_names import get_monkeys_by_rank
-from project_util import SUBJECT_MONKEY, PROJECT_BASE_PATH
+from project_util import SUBJECT_MONKEY, DATA_BASE_PATH
 
-SAVE_DIR = Path(PROJECT_BASE_PATH) / SUBJECT_MONKEY / "psth_heatmaps"
+SAVE_DIR = Path(DATA_BASE_PATH) / SUBJECT_MONKEY / "psth_heatmaps"
 
 
 def plot_psth_heatmap(df: pd.DataFrame, *,
@@ -473,7 +473,7 @@ def load_all_trials(pkl_dir):
 
 
 if __name__ == "__main__":
-    PKL_DIR = str(Path(PROJECT_BASE_PATH) / SUBJECT_MONKEY / "sorted_spike_cache_filtered")
+    PKL_DIR = str(Path(DATA_BASE_PATH) / SUBJECT_MONKEY / "sorted_spike_cache_filtered")
 
     df = load_all_trials(PKL_DIR)
     df = df[df["MonkeyName"] != "NewMonkey"]

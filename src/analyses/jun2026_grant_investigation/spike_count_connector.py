@@ -26,8 +26,8 @@ Or regenerate long-format pkls (same schema the old load_data_kw read):
     python spike_count_connector.py              # builds KW + ANOVA, saves + prints
 
 Requirements: run with the repo `src/` on the path (PyCharm sources root, or the
-bootstrap below). Relies on project_util.PROJECT_BASE_PATH pointing at the repo
-(the raw cache lives at <PROJECT_BASE_PATH>/Cortana/sorted_spike_cache_filtered).
+bootstrap below). Relies on project_util.DATA_BASE_PATH pointing at the repo
+(the raw cache lives at <DATA_BASE_PATH>/Cortana/sorted_spike_cache_filtered).
 """
 
 import os
@@ -45,7 +45,7 @@ if _HERE not in sys.path:                     # sibling modules (grant_mua_match
 
 from analyses.spike_count import extract_spike_counts_from_windows   # noqa: E402
 from data_access.spike_source import SISortedSpikeSource, ThresholdMUASpikeSource  # noqa: E402
-from project_util import PROJECT_BASE_PATH                           # noqa: E402
+from project_util import DATA_BASE_PATH                           # noqa: E402
 from grant_mua_matching import (                                     # noqa: E402
     match_grant_cells_to_mua_neuronids, is_mua_name, summarize_problems,
     match_rows, MATCH_TABLE_COLUMNS,
@@ -94,7 +94,7 @@ def _windows_for(list_name):
     """Load a significance-windows pkl and normalize Date/Round No. dtypes so the
     spike-cache label (f'{Date}_round_{Round No.}') matches the cache filenames."""
     rel = LISTS[list_name]['pkl']
-    path = os.path.join(PROJECT_BASE_PATH, rel)
+    path = os.path.join(DATA_BASE_PATH, rel)
     if not os.path.exists(path):                       # fall back to this checkout
         path = os.path.abspath(os.path.join(_HERE, '..', '..', '..', rel))
     w = pd.read_pickle(path).copy()

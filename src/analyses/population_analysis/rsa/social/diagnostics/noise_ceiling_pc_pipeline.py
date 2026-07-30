@@ -40,7 +40,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
 # ── Config (edit to match the run that produced the significant rho) ──────────
-DATA_PATH = '/Cortana/sorted_spike_cache_filtered'
+DATA_PATH = '/home/connorlab/Documents/JulieData/Cortana/sorted_spike_cache_filtered'
 INFO_PATH = '/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv'
 GROUP        = 'Zombies'
 SUBJECT      = '81G'            # dropped (subject, never a stimulus) — matches SocialEncodingConfig

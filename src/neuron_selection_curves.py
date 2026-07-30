@@ -762,9 +762,9 @@ def plot_normalized_curves(all_curves, fractions, output_dir, n_neurons_total):
 
 def main():
     # ─── HARDCODED CONFIG (for PyCharm) ──────────────────────────────────────
-    pkl_dir = r"/Cortana/sorted_spike_cache_filtered"  # <-- EDIT
+    pkl_dir = r"/home/connorlab/Documents/JulieData/Cortana/sorted_spike_cache_filtered"                    # <-- EDIT
     metadata_csv = r"/home/connorlab/Downloads/monkeyinfo.csv"        # <-- EDIT
-    output_dir = r"/Cortana/neuron_selection_curves_output"  # <-- EDIT
+    output_dir = r"/home/connorlab/Documents/JulieData/Cortana/neuron_selection_curves_output"       # <-- EDIT
     min_trials = 10
 
     # Behavioral matrices for RSA-based curves

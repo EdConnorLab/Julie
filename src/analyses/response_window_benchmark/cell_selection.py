@@ -74,8 +74,8 @@ def _stratified_sample(pool: pd.DataFrame, n: int, seed: int,
 # Primary: SI-sorted pre-stim cache
 # --------------------------------------------------------------------------- #
 def _cache_dir(cache_subdir: str) -> Path:
-    from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
-    return Path(PROJECT_BASE_PATH) / SUBJECT_MONKEY / cache_subdir
+    from project_util import DATA_BASE_PATH, SUBJECT_MONKEY
+    return Path(DATA_BASE_PATH) / SUBJECT_MONKEY / cache_subdir
 
 
 def scan_prestim_sessions(cache_subdir: str) -> List[Tuple[str, int]]:

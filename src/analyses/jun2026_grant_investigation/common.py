@@ -34,7 +34,7 @@ def resolve_path(*candidates):
 
 # His original grant cell list: wide-format xlsx, per-trial spike-count lists.
 HIS_XLSX = resolve_path(
-    '/home/connorlab/Documents/GitHub/Julie/Cortana/old/Ed and ANOVA/'
+    '/home/connorlab/Documents/JulieData/Cortana/old/Ed and ANOVA/'
     'used_for_R01/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx',
     REPO_ROOT / 'Cortana' / 'old' / 'Ed and ANOVA' / 'used_for_R01' /
     'zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx',
@@ -42,7 +42,7 @@ HIS_XLSX = resolve_path(
 
 # SI-sorted, KW-passed cell list: long-format pkl, mean spike RATES.
 KW_PKL = resolve_path(
-    '/home/connorlab/Documents/GitHub/Julie/Cortana/old/generated_for_ed_si_sorted/'
+    '/home/connorlab/Documents/JulieData/Cortana/old/generated_for_ed_si_sorted/'
     'si_sorted_Zombies_significant_windows_pKW_passed_mean_spike_rates.pkl',
     REPO_ROOT / 'Cortana' / 'old' / 'generated_for_ed_si_sorted' /
     'si_sorted_Zombies_significant_windows_pKW_passed_mean_spike_rates.pkl',

@@ -222,11 +222,11 @@ if __name__ == "__main__":
 
     # -- MODE == "exploded_session" --
     #   point at ONE exploded-cache pkl:
-    EXPLODED_PKL = "/home/connorlab/Documents/GitHub/Julie/Cortana/exploded_spike_cache/2023-10-03_round_4.pkl"
+    EXPLODED_PKL = "/home/connorlab/Documents/JulieData/Cortana/exploded_spike_cache/2023-10-03_round_4.pkl"
 
     # -- MODE == "exploded_batch" --
     #   point at the folder of exploded-cache pkls:
-    EXPLODED_CACHE_DIR = "/Cortana/exploded_spike_cache"
+    EXPLODED_CACHE_DIR = "/home/connorlab/Documents/JulieData/Cortana/exploded_spike_cache"
 
     # -- thresholds (all modes) --
     WINDOW_MS = 0.4

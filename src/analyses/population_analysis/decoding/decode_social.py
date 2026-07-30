@@ -245,7 +245,7 @@ def plot_all_results(all_results, output_dir):
 def main():
     # ─── CONFIG ──────────────────────────────────────────────────────────
     cfg = DecodeConfig(
-        data_path='/Cortana/sorted_spike_cache_filtered',
+        data_path='/home/connorlab/Documents/JulieData/Cortana/sorted_spike_cache_filtered',
         min_trials=7,
         n_pseudo_draws=10,
         n_pca=50,
