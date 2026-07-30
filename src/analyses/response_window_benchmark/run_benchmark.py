@@ -126,10 +126,46 @@ def _n_prestim_spikes(td) -> int:
 # --------------------------------------------------------------------------- #
 # Core loop shared by score / answerkey
 # --------------------------------------------------------------------------- #
+def _apply_remap(cands: pd.DataFrame, remap: Dict[str, str]) -> pd.DataFrame:
+    """Translate each cell's match value through a cross-cache unit remap.
+
+    The answer key names units as they appear in the cache the windows were drawn
+    from; a different cache can give the SAME neuron a different unit number (see
+    cache_diagnostics). Cells with no confident counterpart are dropped rather
+    than silently scored against the wrong neuron.
+    """
+    out, dropped = [], []
+    for _, r in cands.iterrows():
+        mv = str(r["_match_value"])
+        if mv in remap:
+            r = r.copy()
+            if remap[mv] != mv:
+                r["_remapped_from"] = mv
+            r["_match_value"] = remap[mv]
+            out.append(r)
+        else:
+            dropped.append(mv)
+    if dropped:
+        print(f"[bench] {len(dropped)} cell(s) dropped — no confident counterpart "
+              f"in the target cache:")
+        for d in dropped:
+            print(f"    [no-remap] {d}")
+    df = pd.DataFrame(out).reset_index(drop=True) if out else pd.DataFrame(columns=cands.columns)
+    n_changed = int(df["_remapped_from"].notna().sum()) if "_remapped_from" in df.columns else 0
+    print(f"[bench] remap: {len(df)}/{len(cands)} cell(s) kept, {n_changed} renamed")
+    return df
+
+
 def _benchmark(cands: pd.DataFrame, truth: Dict[str, list], out_dir: str, *,
                bin_s: float, xlim: Optional[float], iou_thresh: float,
-               plot_subdir: str = "comparison") -> Dict[str, Dict[str, list]]:
+               plot_subdir: str = "comparison",
+               remap: Optional[Dict[str, str]] = None) -> Dict[str, Dict[str, list]]:
     # bin_s=None -> per-cell Shimazaki-Shinomoto width (see detectors.auto_bin_s)
+    if remap:
+        cands = _apply_remap(cands, remap)
+        if cands.empty:
+            print("[bench] nothing left to score after remapping")
+            return {}
     comp_dir = os.path.join(out_dir, plot_subdir)
     results_by_cell: Dict[str, Dict[str, list]] = {}
     meta_by_cell: Dict[str, dict] = {}
@@ -205,7 +241,9 @@ def _benchmark(cands: pd.DataFrame, truth: Dict[str, list], out_dir: str, *,
 def run_answer_key(xlsx_path: str, out_dir: str = OUT_DIR, *,
                    cache_subdir: str = ak.DEFAULT_CACHE_SUBDIR, pre_stim: float = 1.0,
                    bin_s: Optional[float] = None, xlim: Optional[float] = None,
-                   iou_thresh: float = 0.3, skip_unsorted: bool = True) -> None:
+                   iou_thresh: float = 0.3, skip_unsorted: bool = True,
+                   remap_csv: Optional[str] = None,
+                   remap_min_coincidence: float = 0.5) -> None:
     os.makedirs(out_dir, exist_ok=True)
     cands, truth, skipped = ak.load_answer_key(
         xlsx_path, cache_subdir=cache_subdir, pre_stim=pre_stim, skip_unsorted=skip_unsorted)
@@ -215,7 +253,16 @@ def run_answer_key(xlsx_path: str, out_dir: str = OUT_DIR, *,
     cs.save_candidates(cands, os.path.join(out_dir, "answerkey_cells.csv"))
     pd.DataFrame(skipped, columns=["cell_key", "reason"]).to_csv(
         os.path.join(out_dir, "answerkey_skipped.csv"), index=False)
-    _benchmark(cands, truth, out_dir, bin_s=bin_s, xlim=xlim, iou_thresh=iou_thresh)
+    remap = None
+    if remap_csv:
+        if os.path.exists(remap_csv):
+            from analyses.response_window_benchmark.cache_diagnostics import load_unit_remap
+            remap = load_unit_remap(remap_csv, min_coincidence=remap_min_coincidence)
+        else:
+            print(f"[answerkey] remap CSV not found: {remap_csv} — "
+                  f"run cache_diagnostics first, or set REMAP_CSV = None")
+    _benchmark(cands, truth, out_dir, bin_s=bin_s, xlim=xlim, iou_thresh=iou_thresh,
+               remap=remap)
 
 
 # --------------------------------------------------------------------------- #
@@ -344,6 +391,10 @@ def _cli(argv=None):
     p.add_argument("--xlim", type=float, default=None,
                    help="analysis/plot end (s); default = each cell's epoch end")
     p.add_argument("--iou", type=float, default=0.3)
+    p.add_argument("--remap", default=None,
+                   help="cache_unit_remap.csv from cache_diagnostics; translates "
+                        "answer-key unit names into the target cache's names")
+    p.add_argument("--remap-min-coincidence", type=float, default=0.5)
     args = p.parse_args(argv)
 
     if args.mode == "inspect":
@@ -358,7 +409,9 @@ def _cli(argv=None):
         run_answer_key(args.answer_key, args.out,
                        cache_subdir=args.cache_subdir or ak.DEFAULT_CACHE_SUBDIR,
                        pre_stim=args.pre_stim, bin_s=(args.bin_ms / 1000.0 if args.bin_ms else None),
-                       xlim=args.xlim, iou_thresh=args.iou)
+                       xlim=args.xlim, iou_thresh=args.iou,
+                       remap_csv=args.remap,
+                       remap_min_coincidence=args.remap_min_coincidence)
     elif args.mode == "select":
         run_select(args.out, n=args.n, seed=args.seed, xlim=args.xlim,
                    cache_subdir=args.cache_subdir or DEFAULT_CACHE_SUBDIR, pre_stim=args.pre_stim)
@@ -387,13 +440,20 @@ if __name__ == "__main__":
         XLIM = None                                   # None = each cell's epoch end
         BIN_MS = None   # None = per-cell optimal bin width
         IOU_THRESH = 0.3
+        # Cross-cache unit remap from cache_diagnostics.py. The answer key names
+        # units as they appear in the cache the windows were drawn from; the
+        # pre-stim cache can call the SAME neuron something else. Set to None to
+        # score by raw name (only correct if the caches agree).
+        REMAP_CSV = os.path.join(OUT_DIR, "cache_unit_remap.csv")
+        REMAP_MIN_COINCIDENCE = 0.5
         # ====================================================================
         if MODE == "answerkey":
             if not ANSWER_KEY_XLSX:
                 raise SystemExit("set ANSWER_KEY_XLSX (path to the handpicked xlsx)")
             run_answer_key(ANSWER_KEY_XLSX, OUT_DIR, cache_subdir=ANSWERKEY_CACHE,
                            pre_stim=PRE_STIM, bin_s=(BIN_MS / 1000.0 if BIN_MS else None), xlim=XLIM,
-                           iou_thresh=IOU_THRESH)
+                           iou_thresh=IOU_THRESH, remap_csv=REMAP_CSV,
+                           remap_min_coincidence=REMAP_MIN_COINCIDENCE)
         elif MODE == "select":
             run_select(OUT_DIR, n=N_CELLS, seed=SEED, xlim=XLIM,
                        cache_subdir=SELECT_CACHE, pre_stim=PRE_STIM, sessions=SESSIONS)

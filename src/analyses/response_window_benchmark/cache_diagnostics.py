@@ -173,6 +173,33 @@ def compare_session(
     return name, match
 
 
+def load_unit_remap(path: str, *, min_coincidence: float = 0.5) -> Dict[str, str]:
+    """Read ``cache_unit_remap.csv`` into ``{regionless A id -> regionless B id}``.
+
+    Keys are region-stripped (``2023-09-26_2_Channel.C_014_Unit 1``) so they match
+    the answer key's identifiers regardless of the region prefix. Rows with no
+    match, or a coincidence below ``min_coincidence``, are omitted — a cell with
+    no confident counterpart must be dropped, not guessed at.
+    """
+    from analyses.response_window_benchmark.answer_key import regionless
+    df = pd.read_csv(path)
+    src_cols = [c for c in df.columns if c.endswith("_NeuronID")]
+    dst_cols = [c for c in df.columns if c.startswith("best_match_in_")]
+    if not src_cols or not dst_cols:
+        raise ValueError(f"{path} doesn't look like a cache_unit_remap.csv "
+                         f"(columns: {list(df.columns)})")
+    src, dst = src_cols[0], dst_cols[0]
+    out: Dict[str, str] = {}
+    for _, r in df.iterrows():
+        b, c = r[dst], r.get("coincidence", np.nan)
+        if pd.isna(b) or pd.isna(c) or float(c) < min_coincidence:
+            continue
+        out[regionless(str(r[src]))] = regionless(str(b))
+    print(f"[cache-diag] remap: {len(out)} unit(s) with coincidence >= {min_coincidence} "
+          f"(of {len(df)} rows) loaded from {path}")
+    return out
+
+
 def sessions_from_answer_key(xlsx_path: str) -> List[Tuple[str, int]]:
     """Every (date, round) named in an answer-key spreadsheet."""
     from analyses.response_window_benchmark.answer_key import load_answer_key
