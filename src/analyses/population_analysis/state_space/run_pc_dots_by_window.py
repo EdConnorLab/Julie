@@ -197,7 +197,7 @@ def main():
     SOFT_NORMALIZE = True
     MIN_REPS_PER_COND = 5
     SAVE = True
-    PLOT_SAVE_DIR = f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/population_trajectory/{cfg.analysis}_dots'
+    PLOT_SAVE_DIR = f'/Cortana/analysis_results/population_trajectory/{cfg.analysis}_dots'
 
     # --- load windows ---
     neuron_windows = load_neuron_windows(WINDOWS_PKL)

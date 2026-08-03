@@ -226,7 +226,7 @@ if __name__ == "__main__":
 
     # -- MODE == "exploded_batch" --
     #   point at the folder of exploded-cache pkls:
-    EXPLODED_CACHE_DIR = "/home/connorlab/Documents/GitHub/Julie/Cortana/exploded_spike_cache"
+    EXPLODED_CACHE_DIR = "/Cortana/exploded_spike_cache"
 
     # -- thresholds (all modes) --
     WINDOW_MS = 0.4

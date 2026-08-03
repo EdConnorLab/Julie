@@ -18,7 +18,7 @@ class RSAConfig:
     """
 
     # ── Data ──
-    data_path: str = '/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered'
+    data_path: str = '/Cortana/sorted_spike_cache_filtered'
     monkey_info_path: str = '/home/connorlab/Documents/GitHub/Julie/social_data/monkeyinfo.csv'
     region: str = 'ALL'              # 'AMG', 'ER', or 'ALL'
     session: Optional[str] = None    # None = all sessions → pseudo-population mode

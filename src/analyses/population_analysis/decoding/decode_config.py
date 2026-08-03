@@ -53,7 +53,7 @@ class DecodeConfig:
     """
 
     # ── Data ──────────────────────────────────────────────────────────────
-    data_path: str = '/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered'
+    data_path: str = '/Cortana/sorted_spike_cache_filtered'
     region: str = 'ALL'
     session: Optional[str] = None
     exclude_monkeys: list = field(default_factory=lambda: ['NewMonkey', '70G', '79G', '42Z', '144H'])

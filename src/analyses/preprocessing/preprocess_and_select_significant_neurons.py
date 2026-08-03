@@ -23,7 +23,7 @@ from data_access.spike_source import SpikeSource, SISortedSpikeSource
 class PreprocessConfig:
     group_name: str = "Zombies"
     bin_size: float = 0.05
-    analysis_cache_dir: Path = Path("/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/")
+    analysis_cache_dir: Path = Path("/Cortana/analysis_cache/")
     save: bool = True
 
 
@@ -285,7 +285,7 @@ def detect_significant_windows_using_pKW(
 
 
 if __name__ == "__main__":
-    analysis_cache_dir = "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/"
+    analysis_cache_dir = "/Cortana/analysis_cache/"
 
     reader = RecordingMetadataReader()
     metadata = reader.get_metadata_for_preliminary_analysis()

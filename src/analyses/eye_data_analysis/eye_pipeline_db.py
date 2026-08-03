@@ -29,7 +29,7 @@ SCHEMA           = None                    # set to a specific schema like "2023
 
 # Folder containing pkl files like "2023-09-26_round_1.pkl".
 # Dates are extracted from filenames and converted to schema names.
-PKL_DIR          = "/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered"
+PKL_DIR          = "/Cortana/sorted_spike_cache_filtered"
 N_TRIALS_TO_PLOT = 9                       # how many real trials to plot
 EYE_TO_USE       = "leftIscan"             # 'leftIscan' or 'rightIscan'
 OUTPUT_DIR       = Path("./eye_track_plots")

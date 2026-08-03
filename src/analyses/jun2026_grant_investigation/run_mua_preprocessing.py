@@ -36,7 +36,7 @@ from analyses.preprocessing.preprocess_and_select_significant_neurons import (  
 from data_access.spike_source import ThresholdMUASpikeSource                          # noqa: E402
 
 # ---- edit these ----
-ANALYSIS_CACHE_DIR = "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/"
+ANALYSIS_CACHE_DIR = "/Cortana/analysis_cache/"
 NOISE_METHOD = "mad"         # 'mad' = median(|v|)/0.6745, or 'rms'
 THRESHOLD_MULTIPLIER = 4.0
 REFRACTORY_MS = 1.0

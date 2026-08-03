@@ -208,7 +208,7 @@ def combine_all_pkl_files_in_folder_to_dataframe(pkl_file_dir: Path):
 
 if __name__ == "__main__":
     # Running directional GLMMs on all neurons
-    folder_path = Path('/home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered')
+    folder_path = Path('/Cortana/sorted_spike_cache_filtered')
     all_df = combine_all_pkl_files_in_folder_to_dataframe(folder_path)
     all_df['SpikeCount'] = all_df['SpikeTimes'].apply(len)
 
