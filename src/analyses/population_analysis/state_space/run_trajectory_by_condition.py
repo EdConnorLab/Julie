@@ -192,7 +192,7 @@ def main():
     MEAN_CENTER = True
     SOFT_NORMALIZE = True
     MIN_REPS_PER_COND = 5
-    PLOT_SAVE_DIR = f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/state_space_trajectory/progress_report_Jun2026/{cfg.analysis}'
+    PLOT_SAVE_DIR = f'/home/connorlab/Documents/JulieData/Cortana/analysis_results/state_space_trajectory/progress_report_Jun2026/{cfg.analysis}'
     SAVE = True
     # ----------------------------------
 

@@ -24,6 +24,8 @@ PROJECT_ROOT="/home/connorlab/Documents/GitHub/Julie"
 INTAN_BASE="/data/IntanData"
 MONKEY="Cortana"
 LOG_BASE="${INTAN_BASE}/sorting_logs"
+# Data lives outside the repo so git checkouts cannot delete it.
+DATA_ROOT="${JULIE_DATA_PATH:-/home/connorlab/Documents/JulieData}/${MONKEY}"
 ##########################################
 
 cd "$PROJECT_ROOT"
@@ -55,8 +57,8 @@ if [[ ! -d "$INTAN_BASE" ]]; then
   log "PREFLIGHT ERROR: INTAN_BASE not found: $INTAN_BASE (is the SSD mounted?)"; preflight_ok=0
 fi
 # analyze_sorted_spikes needs the compiled trial pickles for its metadata merge.
-if [[ ! -d "${PROJECT_ROOT}/${MONKEY}/compiled" ]]; then
-  log "PREFLIGHT WARNING: ${PROJECT_ROOT}/${MONKEY}/compiled is missing."
+if [[ ! -d "${DATA_ROOT}/compiled" ]]; then
+  log "PREFLIGHT WARNING: ${DATA_ROOT}/compiled is missing."
   log "   analyze will fail with FileNotFoundError on every session. Restore it with:"
   log "   git restore --source=2975202^ -- ${MONKEY}/compiled/"
 fi
@@ -180,8 +182,8 @@ for combo in "${COMBOS[@]}"; do
   session_log="${LOG_DIR}/${date}_round${round}.log"
 
   # Outputs analyze_sorted_spikes writes on success:
-  cache_pkl="${PROJECT_ROOT}/${MONKEY}/sorted_spike_cache/${date}_round_${round}.pkl"
-  summary_txt="${PROJECT_ROOT}/${MONKEY}/sorted_spike_summary/${date_short}_round${round}_sorting_summary.txt"
+  cache_pkl="${DATA_ROOT}/sorted_spike_cache/${date}_round_${round}.pkl"
+  summary_txt="${DATA_ROOT}/sorted_spike_summary/${date_short}_round${round}_sorting_summary.txt"
 
   log "=== [${session_idx}/${total}] $date round $round ==="
 

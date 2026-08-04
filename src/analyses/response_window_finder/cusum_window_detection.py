@@ -181,7 +181,7 @@ if __name__ == '__main__':
     '''
     # Date Created: 2025-01-29
     # ANOVA for windows found from cusum algorithm
-    results_expanded = pd.read_excel("/home/connorlab/Documents/GitHub/Julie/Cortana/CUSUM and ANOVA/CUSUM_window_cells.xlsx")
+    results_expanded = pd.read_excel("/home/connorlab/Documents/JulieData/Cortana/CUSUM and ANOVA/CUSUM_window_cells.xlsx")
     results_expanded['Time Window'] = results_expanded['Time Window'].apply(
         lambda s: tuple(int(float(num) * 1000) for num in s.strip('()').split(',')))
     # results_expanded['Time Window'] = results_expanded['Time Window'].apply(

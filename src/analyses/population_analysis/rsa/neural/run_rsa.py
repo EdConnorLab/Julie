@@ -42,7 +42,7 @@ def main():
         peak_latency_filter=False,
         peak_latency_range=(0.200, 0.500),
         peak_latency_search_window=(0.0, 1.00),
-        # neuron_id_filter_pkl='/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
+        # neuron_id_filter_pkl='/home/connorlab/Documents/JulieData/Cortana/analysis_cache/si_sorted_Zombies_significant_windows_pKW_passed.pkl',
         save_plots=False,
         save_dir=f'rsa_results_after_updating_spike_cache',
     )

@@ -12,10 +12,10 @@ from analyses.plotting_util import extract_target_channel_data, raster_save_path
 from analyses.raster_plotting import plot_raster_by_group, plot_multiunit_raster_sidebyside, \
     plot_multiunit_raster_overlaid
 from data_access.spike_source import SpikeSource, MixedManualSpikeSource, SISortedSpikeSource, ThresholdMUASpikeSource
-from project_util import SUBJECT_MONKEY, PROJECT_BASE_PATH
+from project_util import SUBJECT_MONKEY, DATA_BASE_PATH
 
 RASTER_SAVE_DIR = "raster_plots"
-RASTER_BASE_PATH = Path(PROJECT_BASE_PATH) / SUBJECT_MONKEY / RASTER_SAVE_DIR
+RASTER_BASE_PATH = Path(DATA_BASE_PATH) / SUBJECT_MONKEY / RASTER_SAVE_DIR
 
 
 def _neuron_save_path(neuron_id):
@@ -107,7 +107,7 @@ def plot_rasters_for_round(date, round_no, channels=None, save=False):
     """Plot rasters for a round. If channels is None, uses curated channels from metadata."""
     metadata = RecordingMetadataReader()
     pkl_name = metadata.get_pickle_filename_for_specific_round(date, round_no)
-    file_path = (Path(__file__).parent / ".." / ".." / "Cortana" / "compiled" / pkl_name).resolve()
+    file_path = (Path(DATA_BASE_PATH) / SUBJECT_MONKEY / "compiled" / pkl_name).resolve()
     raw_data = pd.read_pickle(file_path)
 
     if channels is None:

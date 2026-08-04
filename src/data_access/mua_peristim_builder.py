@@ -38,9 +38,9 @@ from clat.intan.rhd import load_intan_rhd_format
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from data_access.data_loader import explode_spike_data
 from data_access.threshold_detection import detect_mad_spikes_for_recording, read_amplifier_data_robust
-from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
+from project_util import DATA_BASE_PATH, SUBJECT_MONKEY
 
-PROJECT_ROOT = Path(PROJECT_BASE_PATH)
+PROJECT_ROOT = Path(DATA_BASE_PATH)
 
 
 def mua_peristim_cache_subdir(pre_stimulus_time):

@@ -54,7 +54,7 @@ from social_rank_analysis import load_group_matrices, davids_score
 
 
 MONKEY_INFO_PATH = "/social_data/monkeyinfo.csv"
-PLOT_SAVE_DIR = ("/home/connorlab/Documents/GitHub/Julie/Cortana/"
+PLOT_SAVE_DIR = ("/home/connorlab/Documents/JulieData/Cortana/"
                  "analysis_results/tdr_rank")
 
 

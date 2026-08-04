@@ -30,9 +30,9 @@ from pathlib import Path
 import pandas as pd
 
 from data_access.data_loader import load_and_combine_data, explode_spike_data
-from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
+from project_util import DATA_BASE_PATH, SUBJECT_MONKEY
 
-PROJECT_ROOT = Path(PROJECT_BASE_PATH)
+PROJECT_ROOT = Path(DATA_BASE_PATH)
 
 
 def peristim_cache_subdir(pre_stimulus_time):

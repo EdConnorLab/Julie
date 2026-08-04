@@ -20,7 +20,7 @@ def main():
     experiment_names = [experiment_data_filename.split(".")[0] for experiment_data_filename in
                         experiment_data_filenames]
 
-    file_paths = ["/home/connorlab/Documents/GitHub/Julie/compiled/%s" % experiment_data_filename for
+    file_paths = ["/home/connorlab/Documents/JulieData/Cortana/compiled/%s" % experiment_data_filename for
                   experiment_data_filename in experiment_data_filenames]
 
     data = add_pickled_dataframes(file_paths)

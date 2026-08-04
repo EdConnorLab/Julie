@@ -15,7 +15,7 @@ import string
 import re
 import math
 
-trialresponses = pd.read_excel('/home/connorlab/Documents/GitHub/Julie/Cortana/Ed and ANOVA/used_for_R01/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx')
+trialresponses = pd.read_excel('/home/connorlab/Documents/JulieData/Cortana/old/Ed and ANOVA/used_for_R01/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx')
 
 responsestringarray = trialresponses.values
 

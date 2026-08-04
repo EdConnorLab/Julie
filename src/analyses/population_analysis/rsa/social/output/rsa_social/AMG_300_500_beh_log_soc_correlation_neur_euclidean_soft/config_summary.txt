@@ -8,7 +8,7 @@ Mode: pseudo-population
 
 Full config:
 between_group_permutations: 0
-data_path: /home/connorlab/Documents/GitHub/Julie/Cortana/sorted_spike_cache_filtered
+data_path: /home/connorlab/Documents/JulieData/Cortana/sorted_spike_cache_filtered
 exclude_groups: ['Stranger Things']
 exclude_identities: []
 group_colors: {'Zombies': '#9467bd', 'Best Frans': '#d62728', 'Instigators': '#2ca02c', 'Stranger Things': '#1f77b4'}

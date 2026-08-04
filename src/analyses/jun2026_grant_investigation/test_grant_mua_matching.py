@@ -27,8 +27,17 @@ from grant_mua_matching import (  # noqa: E402
 Cell = namedtuple('Cell', 'date round_no match_value window_ms')
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SI_KW_CSV = REPO_ROOT / 'Cortana' / 'cell_list_investigation' / \
+DATA_ROOT = Path(
+    os.environ.get('JULIE_DATA_PATH', '/home/connorlab/Documents/JulieData')
+) / 'Cortana'
+
+_SI_KW_REL = Path('cell_list_investigation') / \
     'si_sorted_Zombies_significant_windows_pKW_passed.csv'
+# cell_list_investigation/ is still tracked in git, so it may live in either
+# place; prefer the external data tree and fall back to the repo copy.
+SI_KW_CSV = DATA_ROOT / _SI_KW_REL
+if not SI_KW_CSV.exists():
+    SI_KW_CSV = REPO_ROOT / 'Cortana' / _SI_KW_REL
 
 
 def const_session(ids):

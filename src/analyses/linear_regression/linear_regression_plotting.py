@@ -10,7 +10,7 @@ import seaborn as sns
 
 def get_specific_monkey_behavior_pair_results_for_monkey_group(monkey_group: str, monkey_of_interest: str, behavior: str) -> pd.DataFrame:
     results = pd.read_pickle(
-        f'/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_results/{monkey_group}_dir_ols_on_single_neurons_with_xy_values.pkl')
+        f'/home/connorlab/Documents/JulieData/Cortana/analysis_results/{monkey_group}_dir_ols_on_single_neurons_with_xy_values.pkl')
     monkey_beh_pair_subset = results[(results['Behavior'] == behavior) & (results['Source_Monkey'] == monkey_of_interest)]
     return monkey_beh_pair_subset
 

@@ -28,7 +28,7 @@ from plotting import (compute_trajectories,
 
 
 MONKEY_INFO_PATH = "/social_data/monkeyinfo.csv"
-WINDOWS_PKL = "/home/connorlab/Documents/GitHub/Julie/Cortana/analysis_cache/si_sorted_Zombies_all_windows_pKW_tested.pkl"
+WINDOWS_PKL = "/home/connorlab/Documents/JulieData/Cortana/analysis_cache/si_sorted_Zombies_all_windows_pKW_tested.pkl"
 TRIAL_DURATION_S = 2.0
 
 
@@ -204,7 +204,7 @@ def main():
     SOFT_NORMALIZE = True
     MIN_REPS_PER_COND = 5
     SAVE = True
-    PLOT_SAVE_DIR = f'/Cortana/analysis_results/population_trajectory/{cfg.analysis}_padded_window'
+    PLOT_SAVE_DIR = f'/home/connorlab/Documents/JulieData/Cortana/analysis_results/population_trajectory/{cfg.analysis}_padded_window'
 
     # --- load + pad windows ---
     padded_windows, n_bins = load_and_pad_windows(WINDOWS_PKL, cfg.bin_width)

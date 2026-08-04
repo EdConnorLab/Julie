@@ -73,7 +73,7 @@ def load_behavior_matrices_cached() -> Dict[str, np.ndarray]:
     return out
 
 def main():
-    analysis_cache_dir = Path("/Cortana/analysis_cache/")
+    analysis_cache_dir = Path("/home/connorlab/Documents/JulieData/Cortana/analysis_cache/")
     analysis_results_dir = analysis_cache_dir.parent / "analysis_results"
     cfg = PreprocessConfig(
         group_name="Zombies",

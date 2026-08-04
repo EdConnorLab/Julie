@@ -27,19 +27,10 @@ src/analyses/zombies_raster_review/output
 # macOS
 .DS_Store
 
-# Cortana regeneratable caches and generated outputs (recomputable from source)
-../../JulieData/Cortana/threshold_mua_spike_cache/
-../../JulieData/Cortana/sorted_spike_cache_filtered/
-../../JulieData/Cortana/analysis_cache/
-../../JulieData/Cortana/analysis_results/
-../../JulieData/Cortana/behavior_matrix_cache/
-../../JulieData/Cortana/psth_heatmaps/
-../../JulieData/Cortana/sorted_spike_cache_pre1000ms
-../../JulieData/Cortana/threshold_mua_spike_cache_pre1000ms
-../../JulieData/Cortana/exploded_spike_cache_pre1000ms
-../../JulieData/Cortana/exploded_spike_cache_gitrecovered
-../../JulieData/Cortana/exploded_spike_cache
-
-# Cortana source data kept external, not in git (not regeneratable in-repo)
-../../JulieData/Cortana/compiled/
-../../JulieData/Cortana/sorted_spike_cache/
+# Subject data now lives outside the repo, at ~/Documents/JulieData/<Subject>/,
+# so it needs no ignore rules of its own -- git only sees inside this repo.
+# A gitignore pattern cannot reach outside the repository (a leading ../ never
+# matches), so these entries only guard against a data directory reappearing
+# in the working tree, e.g. after checking out a commit that predates 2975202.
+Cortana/
+Bixby/

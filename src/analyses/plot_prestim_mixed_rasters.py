@@ -22,7 +22,7 @@ from pathlib import Path
 from analyses.raster_plotting import plot_stacked_raster
 from data_access.exploded_peristim_builder import build_exploded_peristim_cache, peristim_cache_subdir
 from data_access.spike_source import MixedManualSpikeSource
-from project_util import PROJECT_BASE_PATH, SUBJECT_MONKEY
+from project_util import DATA_BASE_PATH, SUBJECT_MONKEY
 
 # ===== CONFIG — edit me =======================================================
 DATE = "2023-09-26"
@@ -61,7 +61,7 @@ def main():
     print(f"{DATE} round {ROUND_NO}: {len(neuron_ids)} channel(s)/unit(s) to plot "
           f"(pre-stimulus {int(PRE_STIMULUS_TIME * 1000)} ms)")
 
-    save_dir = Path(PROJECT_BASE_PATH) / SUBJECT_MONKEY / "raster_plots" / cache_subdir
+    save_dir = Path(DATA_BASE_PATH) / SUBJECT_MONKEY / "raster_plots" / cache_subdir
     for neuron_id in neuron_ids:
         neuron_df = df[df["NeuronID"] == neuron_id]
         if len(neuron_df) < MIN_TRIALS:

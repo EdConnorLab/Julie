@@ -88,7 +88,7 @@ from social_rank_analysis import (
 )
 
 
-PLOT_SAVE_DIR = ("/home/connorlab/Documents/GitHub/Julie/Cortana/"
+PLOT_SAVE_DIR = ("/home/connorlab/Documents/JulieData/Cortana/"
                  "analysis_results/tdr_multi")
 
 
