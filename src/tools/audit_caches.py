@@ -30,6 +30,9 @@ leakage       two sessions sharing task ids -- how 2023-10-27 round 4 ended up
 exploded      per trial, do the manually-sorted units and the unsorted channels
               cover the same trials? (they must; if not, the two compiled.pkl
               sources disagree and the merge silently became a concatenation)
+manual sorts  sorted_spikes.pkl / sorting_config.pkl against the manually
+              sorted units actually in the exploded cache -- nothing else compares
+              these, which is how two channels of hand sorting went missing
 freshness     each derived cache against its parent: session coverage, NeuronID
               containment, file mtimes, and spike-count direction for pre-caches
 summaries     sorted_spike_summary's 'Units in agreement: N' against the unit count
@@ -343,11 +346,13 @@ def report_layout(specs, rep: Report):
 # Expected session scope, read straight from the metadata workbook
 # ---------------------------------------------------------------------------
 def load_scope(repo: Path, rep: Report):
-    """(all_rounds, analysis_rounds, location_by_round) from the workbook.
+    """(all_rounds, analysis_rounds, folder_by_round) from the workbook.
 
     all_rounds      -- 'Channels' sheet: every recorded round
     analysis_rounds -- 'InitialRegression' sheet: the rounds the exploded cache and
                        the downstream analyses are scoped to
+    folder_by_round -- 'Channels' sheet 'Folder Name', so the manual-sort inventory
+                       can find each session in the Intan tree
     """
     xlsx = repo / "recording_metadata" / f"{SUBJECT_MONKEY}_Recording_Metadata.xlsx"
     if not xlsx.exists():
@@ -368,15 +373,15 @@ def load_scope(repo: Path, rep: Report):
                 continue          # sheet has a few '2+' style round labels
         return out, df
 
-    all_rounds, _ = rounds("Channels")
-    analysis_rounds, ir = rounds("InitialRegression")
-    loc = {}
-    for _, r in ir.iterrows():
+    all_rounds, ch = rounds("Channels")
+    analysis_rounds, _ = rounds("InitialRegression")
+    folders = {}
+    for _, r in ch.iterrows():
         try:
-            loc[(r["_d"], int(r["Round No."]))] = str(r["Location"])
-        except (TypeError, ValueError):
+            folders[(r["_d"], int(r["Round No."]))] = str(r["Folder Name"])
+        except (TypeError, ValueError, KeyError):
             continue
-    return all_rounds, analysis_rounds, loc
+    return all_rounds, analysis_rounds, folders
 
 
 def load_sorted_scope(repo: Path):
@@ -410,6 +415,7 @@ class FileStats:
     task_ids: set = field(default_factory=set)
     neuron_ids: set = field(default_factory=set)
     monkey_names: set = field(default_factory=set)
+    unit_bases: dict = field(default_factory=dict)   # 'C_020' -> n manually sorted units
     observed_pre_s: float = 0.0
     mtime: float = 0.0
 
@@ -564,6 +570,7 @@ def check_file(df: pd.DataFrame, spec: CacheSpec, label: str, rep: Report) -> Fi
             n = str(c).split("_Unit")[-1].strip()
             if n.isdigit():
                 per_base[base_channel(c)].add(int(n))
+    st.unit_bases = {b: len(v) for b, v in per_base.items()}
     gaps = {b: sorted(v) for b, v in per_base.items()
             if v and sorted(v) != list(range(1, max(v) + 1))}
     if gaps:
@@ -858,6 +865,103 @@ def check_analysis_cache(data_root: Path, all_stats, rep: Report):
                     f"{sorted(gone)[:3]} -- rebuild after the re-sort")
 
 
+def check_manual_sorts(intan_base: Path, scope, exploded_stats, rep: Report,
+                       cache_name=EXPLODED_CACHE_SUBDIR):
+    """Manual sorting on disk vs manual sorting in the exploded cache.
+
+    Nothing else in the pipeline compares these, which is how two channels' worth
+    of hand sorting went missing without a word. ``sorted_spikes.pkl`` and
+    ``sorting_config.pkl`` are both written by the same save, both keyed by
+    channel, and both only ever add or replace a key -- so a channel that vanishes
+    from them did not vanish through the sorter, and a channel present in one but
+    not the other is a save that only half happened.
+
+    Three ways this goes wrong, all of them silent until now:
+      * a channel in the cache but not in sorted_spikes.pkl -- the sort file was
+        replaced after the cache was built, and rebuilding will drop that unit
+      * a channel in sorted_spikes.pkl but not in the cache -- the cache predates
+        the sort and needs rebuilding
+      * a channel in sorting_config.pkl but not in sorted_spikes.pkl -- the sort
+        was set up but never exported
+    """
+    rep.say()
+    rep.say(f"--- manual sorting: sorted_spikes.pkl vs {cache_name} ---")
+    if not intan_base.exists():
+        rep.add("INFO", "sorted_spikes", "intan-absent",
+                f"{intan_base} not reachable; manual-sort inventory skipped")
+        return
+    _, _, folders = scope
+    if not folders:
+        return
+
+    import pickle
+
+    def base_of(ch):
+        return base_channel(ch)
+
+    checked = 0
+    for label, st in sorted(exploded_stats.items()):
+        m = SESSION_RE.match(label)
+        if not m:
+            continue
+        date, round_no = m.group(1), int(m.group(2))
+        folder = folders.get((date, round_no))
+        if not folder:
+            continue
+        sdir = intan_base / SUBJECT_MONKEY / date / folder
+        spath, cpath = sdir / "sorted_spikes.pkl", sdir / "sorting_config.pkl"
+        if not spath.exists():
+            if st.unit_channels:
+                rep.add("ERROR", "sorted_spikes", "sortfile-missing",
+                        f"{cache_name} holds {st.unit_channels} manually-sorted unit(s) "
+                        f"but {spath} does not exist -- a rebuild would silently drop "
+                        f"them", label)
+            continue
+        checked += 1
+        try:
+            with open(spath, "rb") as f:
+                on_disk = {base_of(k): len(v) for k, v in pickle.load(f).items()}
+        except Exception as exc:
+            rep.add("ERROR", "sorted_spikes", "sortfile-unreadable",
+                    f"{spath}: {type(exc).__name__}: {exc}", label)
+            continue
+
+        in_cache = {b: n for b, n in st.unit_bases.items()}
+        lost = {b: n for b, n in in_cache.items() if b not in on_disk}
+        gained = {b: n for b, n in on_disk.items() if b not in in_cache}
+        changed = {b: (in_cache[b], on_disk[b]) for b in set(in_cache) & set(on_disk)
+                   if in_cache[b] != on_disk[b]}
+
+        if lost:
+            rep.add("ERROR", "sorted_spikes", "manual-sort-lost",
+                    f"{', '.join(f'{b} ({n} unit(s))' for b, n in sorted(lost.items()))} "
+                    f"present in {cache_name} but NOT in {spath.name} -- the sort file "
+                    f"was replaced after that cache was built; anything rebuilt "
+                    f"from disk now drops them", label)
+        if gained:
+            rep.add("WARN", "sorted_spikes", "manual-sort-uncached",
+                    f"{', '.join(f'{b} ({n} unit(s))' for b, n in sorted(gained.items()))} "
+                    f"sorted on disk but absent from {cache_name} -- that cache "
+                    f"predates this sort", label)
+        for b, (a, d) in sorted(changed.items()):
+            rep.add("WARN", "sorted_spikes", "manual-unit-count-changed",
+                    f"{b}: {a} unit(s) in {cache_name}, {d} on disk", label)
+
+        if cpath.exists():
+            try:
+                with open(cpath, "rb") as f:
+                    cfg = {base_of(k) for k in pickle.load(f)}
+                unexported = cfg - set(on_disk)
+                if unexported:
+                    rep.add("WARN", "sorted_spikes", "sort-configured-not-exported",
+                            f"{', '.join(sorted(unexported))} appear in "
+                            f"{cpath.name} but were never saved to {spath.name}",
+                            label)
+            except Exception:
+                pass
+    rep.say(f"  compared {checked} session(s) against {intan_base}")
+
+
 def check_compiled_sources(data_root: Path, intan_base: Path, scope, rep: Report):
     """The two compiled.pkl trees the exploded cache merges.
 
@@ -990,6 +1094,12 @@ def main(argv=None):
             check_summaries(data_root, all_stats[name], name, rep)
             break
     check_analysis_cache(data_root, all_stats, rep)
+    for spec in specs:
+        # Archives too, deliberately: an old cache that still holds a manual sort the
+        # disk has lost is the only remaining record that the sort ever existed.
+        if spec.kind == "exploded" and all_stats.get(spec.name):
+            check_manual_sorts(Path(args.intan_base), scope, all_stats[spec.name],
+                               rep, cache_name=spec.name)
     check_compiled_sources(data_root, Path(args.intan_base), scope, rep)
 
     # ---- findings --------------------------------------------------------
