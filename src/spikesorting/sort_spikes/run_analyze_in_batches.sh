@@ -26,7 +26,20 @@ MONKEY="Cortana"
 LOG_BASE="${INTAN_BASE}/sorting_logs"
 # Data lives outside the repo so git checkouts cannot delete it.
 DATA_ROOT="${JULIE_DATA_PATH:-/home/connorlab/Documents/JulieData}/${MONKEY}"
+# Seconds of pre-stimulus baseline to keep. The caches are the single source of
+# truth for every window, so they are built once at the widest one we need and
+# analyses clip down to [onset, offset] at load time. 1.0 writes
+# sorted_spike_cache_pre1000ms; 0 would write the strict sorted_spike_cache.
+PRE_STIMULUS_TIME="${PRE_STIMULUS_TIME:-1.0}"
 ##########################################
+
+# Mirror analyze_sorted_spikes.default_cache_subdir so the success check below
+# looks for the file the run actually writes, not the strict-window one.
+if [[ "$PRE_STIMULUS_TIME" == "0" || "$PRE_STIMULUS_TIME" == "0.0" ]]; then
+  CACHE_SUBDIR="sorted_spike_cache"
+else
+  CACHE_SUBDIR="sorted_spike_cache_pre$(python3 -c "print(int(round(float('$PRE_STIMULUS_TIME')*1000)))")ms"
+fi
 
 cd "$PROJECT_ROOT"
 export PYTHONPATH="$PROJECT_ROOT/src:$PROJECT_ROOT:${PYTHONPATH:-}"
@@ -59,8 +72,8 @@ fi
 # analyze_sorted_spikes needs the compiled trial pickles for its metadata merge.
 if [[ ! -d "${DATA_ROOT}/compiled" ]]; then
   log "PREFLIGHT WARNING: ${DATA_ROOT}/compiled is missing."
-  log "   analyze will fail with FileNotFoundError on every session. Restore it with:"
-  log "   git restore --source=2975202^ -- ${MONKEY}/compiled/"
+  log "   analyze will fail with FileNotFoundError on every session."
+  log "   compiled/ lives in the data tree now; restore it there, not in the repo."
 fi
 if [[ $preflight_ok -ne 1 ]]; then
   log "Aborting before the batch run due to the preflight error(s) above."
@@ -169,7 +182,7 @@ INCOMPLETE=()   # analyze exited 0 but produced no cache pickle and no summary
 
 total="${#COMBOS[@]}"
 start_human="$(ts)"
-log "Starting ANALYZE-ONLY batch: ${total} sessions. Logs -> ${LOG_DIR}"
+log "Starting ANALYZE-ONLY batch: ${total} sessions, pre-stimulus ${PRE_STIMULUS_TIME}s -> ${CACHE_SUBDIR}. Logs -> ${LOG_DIR}"
 
 session_idx=0
 for combo in "${COMBOS[@]}"; do
@@ -182,7 +195,7 @@ for combo in "${COMBOS[@]}"; do
   session_log="${LOG_DIR}/${date}_round${round}.log"
 
   # Outputs analyze_sorted_spikes writes on success:
-  cache_pkl="${DATA_ROOT}/sorted_spike_cache/${date}_round_${round}.pkl"
+  cache_pkl="${DATA_ROOT}/${CACHE_SUBDIR}/${date}_round_${round}.pkl"
   summary_txt="${DATA_ROOT}/sorted_spike_summary/${date_short}_round${round}_sorting_summary.txt"
 
   log "=== [${session_idx}/${total}] $date round $round ==="
@@ -206,7 +219,8 @@ for combo in "${COMBOS[@]}"; do
 
   echo "===== analyze_sorted_spikes: $date round $round @ $(ts) =====" >>"$session_log"
   python3 "$PY2" --date "$date" --round "$round" \
-      --monkey "$MONKEY" --intan-base-path "$INTAN_BASE" >>"$session_log" 2>&1
+      --monkey "$MONKEY" --intan-base-path "$INTAN_BASE" \
+      --pre-stimulus-time "$PRE_STIMULUS_TIME" >>"$session_log" 2>&1
   rc=$?
   if [[ $rc -ne 0 ]]; then
     log "    FAILED (exit ${rc}). See ${session_log}"

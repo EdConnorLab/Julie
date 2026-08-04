@@ -74,18 +74,19 @@ def _sessions(cands: pd.DataFrame):
 
 
 def _make_source(source_key: str, cache_subdir: str):
+    # The benchmark needs the pre-stimulus baseline, and sources clip to the strict
+    # window unless asked otherwise, so read the window back out of the cache name.
+    from data_access.spike_window import cache_pre_stimulus_time
+    pre = cache_pre_stimulus_time(cache_subdir)
     if source_key == "si_prestim":
         from data_access.spike_source import SISortedSpikeSource
-        return SISortedSpikeSource(cache_subdir=cache_subdir)
+        return SISortedSpikeSource(cache_subdir=cache_subdir, pre_stimulus_time=pre)
     if source_key == "mixed_prestim":
         from data_access.spike_source import MixedManualSpikeSource
-        return MixedManualSpikeSource(cache_subdir=cache_subdir)
+        return MixedManualSpikeSource(cache_subdir=cache_subdir, pre_stimulus_time=pre)
     if source_key == "mua_prestim":
         from data_access.spike_source import ThresholdMUASpikeSource
-        try:
-            return ThresholdMUASpikeSource(cache_subdir=cache_subdir)  # if supported
-        except TypeError:
-            return ThresholdMUASpikeSource()
+        return ThresholdMUASpikeSource(cache_subdir=cache_subdir, pre_stimulus_time=pre)
     from analyses.jun2026_grant_investigation.raster_review_by_source import SOURCES
     return SOURCES[source_key].make_source()
 

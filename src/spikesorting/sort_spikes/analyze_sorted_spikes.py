@@ -15,6 +15,7 @@ from clat.intan.livenotes import map_task_id_to_epochs_with_livenotes
 from clat.intan.marker_channels import epoch_using_marker_channels
 
 from compile.compile_common import SUBJECT_MONKEY
+from project_util import canonical_monkey_name
 from data_access.cache_utils import ExplodedSpikeCacheManager, SortedSpikeCacheManager
 from spikesorting.sort_spikes.sort_spikes import (
     build_intan_session_path, get_recording_session_info, SORT_SPIKES_INTAN_BASE_PATH,
@@ -229,7 +230,7 @@ def fetch_trial_metadata_from_db(task_ids, date_str):
                 conn_photo,
                 f"SELECT monkey_id, monkey_name, jpg_id FROM photo_metadata.combined_view "
                 f"WHERE monkey_id IN ({holes})", real_ids):
-            name_by_monkey.setdefault(str(monkey_id), monkey_name)
+            name_by_monkey.setdefault(str(monkey_id), canonical_monkey_name(monkey_name))
             jpg_by_monkey.setdefault(str(monkey_id), jpg_id)
     group_by_jpg = {}
     jpg_ids = sorted({j for j in jpg_by_monkey.values() if j is not None})

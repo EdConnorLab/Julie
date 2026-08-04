@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from data_access.data_loader import load_and_combine_data, explode_spike_data
+from data_access.data_loader import (
+    load_and_combine_data, explode_spike_data, normalize_monkey_names,
+    normalize_trial_columns,
+)
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
 from project_util import DATA_BASE_PATH, SUBJECT_MONKEY
 
@@ -118,8 +121,10 @@ class ThresholdMUASpikeCacheManager(GenericCacheManager):
     """Cache for multi-unit activity (MUA) from OFFLINE MAD/RMS negative-crossing
     detection on amplifier.dat / preprocessed_data.dat, via
     detect_mad_spikes_for_recording. """
-    def __init__(self, monkey: str = SUBJECT_MONKEY):
-        cache_dir = PROJECT_ROOT / monkey / "threshold_mua_spike_cache"
+    def __init__(self, monkey: str = SUBJECT_MONKEY,
+                 cache_subdir: str = "threshold_mua_spike_cache"):
+        self.cache_subdir = cache_subdir
+        cache_dir = PROJECT_ROOT / monkey / cache_subdir
         super().__init__(cache_dir)
 
     def load_or_compute(self, date, round_no, *, noise_method='mad',
@@ -129,6 +134,16 @@ class ThresholdMUASpikeCacheManager(GenericCacheManager):
         path = self._get_cache_path(label)
         if path.exists() and not force_recompute:
             return pd.read_pickle(path)
+
+        # Only the strict-window cache is computed here. A pre-stimulus variant has
+        # to come from data_access.mua_peristim_builder, which re-epochs against the
+        # marker channels; computing here would write a STRICT cache into a
+        # pre-stimulus directory, which nothing downstream could tell apart.
+        if self.cache_subdir != "threshold_mua_spike_cache":
+            raise FileNotFoundError(
+                f"No MUA cache at {path}. Build the '{self.cache_subdir}' variant "
+                f"first (see data_access.mua_peristim_builder).")
+
         print(f"[ThresholdMUACache] Computing MUA spikes for {date} round {round_no} ...")
         df = self._compute(date, round_no, noise_method, threshold_multiplier, refractory_ms)
         if df is not None and not df.empty:
@@ -143,7 +158,11 @@ class ThresholdMUASpikeCacheManager(GenericCacheManager):
         reader = RecordingMetadataReader()
         pickle_filepath, _, round_dir_path = reader.get_metadata_for_spike_analysis(date, round_no)
 
-        raw_trials = pd.read_pickle(pickle_filepath)
+        # normalize_trial_columns: compiled.pkl calls the task-id column TaskId or
+        # TaskField depending on the clat it was built with, and the loop below keys
+        # on TaskField. This was the one compiled-reading path that skipped it.
+        raw_trials = normalize_monkey_names(
+            normalize_trial_columns(pd.read_pickle(pickle_filepath), pickle_filepath))
         if raw_trials is None or raw_trials.empty:
             return None
 

@@ -105,7 +105,11 @@ def build_si_prestim_candidates(
     session pkl in the cache is scanned. Returns META + RUNNER columns.
     """
     from data_access.spike_source import SISortedSpikeSource
-    src = SISortedSpikeSource(cache_subdir=cache_subdir)
+    # Sources clip to the strict window unless asked otherwise, so read the window
+    # this cache holds back out of its name and ask for all of it.
+    from data_access.spike_window import cache_pre_stimulus_time
+    src = SISortedSpikeSource(cache_subdir=cache_subdir,
+                              pre_stimulus_time=cache_pre_stimulus_time(cache_subdir))
     if sessions is None:
         sessions = scan_prestim_sessions(cache_subdir)
 

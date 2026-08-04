@@ -49,7 +49,9 @@ def main():
         build_exploded_peristim_cache(DATE, ROUND_NO, PRE_STIMULUS_TIME,
                                       cache_subdir=cache_subdir, force=FORCE_REBUILD)
 
-    source = MixedManualSpikeSource(cache_subdir=cache_subdir, curated_channels_only=CURATED_ONLY)
+    source = MixedManualSpikeSource(cache_subdir=cache_subdir,
+                                    curated_channels_only=CURATED_ONLY,
+                                    pre_stimulus_time=PRE_STIMULUS_TIME)
     df = source.load(DATE, ROUND_NO)
     if df is None:
         print(f"No exploded data in '{cache_subdir}' for {DATE} round {ROUND_NO}.")

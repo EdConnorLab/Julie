@@ -35,7 +35,8 @@ ONLY_NEURON = None     # set to a NeuronID string to plot just one; None = plot 
 
 
 def main():
-    source = SISortedSpikeSource(cache_subdir=CACHE_SUBDIR)
+    source = SISortedSpikeSource(cache_subdir=CACHE_SUBDIR,
+                                 pre_stimulus_time=PRE_STIMULUS_TIME)
     df = source.load(DATE, ROUND_NO)
     if df is None:
         print(f"No SI-sorted data in '{CACHE_SUBDIR}' for {DATE} round {ROUND_NO}. "

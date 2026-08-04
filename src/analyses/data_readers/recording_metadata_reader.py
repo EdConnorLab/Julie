@@ -7,7 +7,7 @@ from clat.intan.channels import Channel
 
 from analyses.data_readers.excel_data_reader import ExcelDataReader
 from compile.compile_common import INTAN_BASE_PATH
-from project_util import SUBJECT_MONKEY
+from project_util import DATA_BASE_PATH, SUBJECT_MONKEY
 
 def standardize_date(date_input):
     if isinstance(date_input, str):
@@ -86,7 +86,11 @@ class RecordingMetadataReader(ExcelDataReader):
         date = standardize_date(date)
         round_number = int(round_number)
         pickle_filename = self.get_pickle_filename_for_specific_round(date, round_number)
-        compiled_dir = (Path(__file__).resolve().parent.parent.parent.parent / monkey / 'compiled')
+        # compiled/ lives in the external data tree, not the repo. This resolved
+        # against the repo root until the data move; left that way it would either
+        # fail on every rebuild or, worse, keep reading a leftover in-repo copy
+        # while every other path read the real one.
+        compiled_dir = Path(DATA_BASE_PATH) / monkey / 'compiled'
         pickle_filepath = os.path.join(compiled_dir, pickle_filename)
         valid_channels = set(self.get_curated_channels(date, round_number))
 

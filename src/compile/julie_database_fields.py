@@ -4,6 +4,8 @@ from clat.compile.task.classic_database_task_fields import StimSpecIdField
 from clat.util.connection import Connection
 import re
 
+from project_util import canonical_monkey_name
+
 class StimSpecField(StimSpecIdField):
     def __init__(self, conn: Connection):
         super().__init__(conn)
@@ -95,7 +97,11 @@ class MonkeyNameField(MonkeyIdField):
         self.conn_photo.execute(query, params)
         monkey_name = self.conn_photo.fetch_one()
 
-        return monkey_name
+        # The database has started returning the trailing letter of seven monkeys
+        # in lower case ('114j'); monkeyinfo.csv and every social workbook say
+        # '114J'. Compile the canonical spelling so new compiled.pkl files agree
+        # with the old ones instead of quietly forking each monkey in two.
+        return canonical_monkey_name(monkey_name)
 
     def get_name(self):
         return "MonkeyName"

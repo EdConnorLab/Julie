@@ -119,7 +119,7 @@ if __name__ == '__main__':
     del instigators[-1]
     del bestfrans[-1]
     del zombies[-1]
-    social_data_reader = SocialDataReader(file_name="instigators_social_data/Instigators_Social_Data_20251021.xlsx")
+    social_data_reader = SocialDataReader(file_name="instigators_social_data/Instigators_Social_Data_20260804.xlsx")
     social_data = social_data_reader.social_data
 
     # Agonistic
