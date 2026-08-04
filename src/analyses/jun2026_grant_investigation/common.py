@@ -42,9 +42,11 @@ HIS_XLSX = resolve_path(
 
 # SI-sorted, KW-passed cell list: long-format pkl, mean spike RATES.
 KW_PKL = resolve_path(
-    '/home/connorlab/Documents/JulieData/Cortana/old/generated_for_ed_si_sorted/'
+    '/home/connorlab/Documents/JulieData/Cortana/old/'
+    'generated_for_ed_si_sorted_channels_not_remapped/'
     'si_sorted_Zombies_significant_windows_pKW_passed_mean_spike_rates.pkl',
-    REPO_ROOT / 'Cortana' / 'old' / 'generated_for_ed_si_sorted' /
+    REPO_ROOT / 'Cortana' / 'old' /
+    'generated_for_ed_si_sorted_channels_not_remapped' /
     'si_sorted_Zombies_significant_windows_pKW_passed_mean_spike_rates.pkl',
 )
 
