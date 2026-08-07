@@ -63,14 +63,27 @@ GRANT_NCELLS = 74                               # grant xlsx: first 74 rows (== 
 DETECT_BIN_SIZE = 0.05                           # in-house response-window detector params
 DETECT_THRESHOLD = 0.5                           # (match threshold_window_detection defaults / run_mua_preprocessing)
 
+# Offline MUA detection parameters. These pick which cache pkl gets loaded (its filename
+# carries them: '{date}_round_{n}_{method}{multiplier}_ref{refractory}.pkl'), so a set
+# with no cache built for it loads nothing at all. Change them together with a rebuild:
+#   from data_access.rebuild_peristim_caches import rebuild
+#   rebuild("mua", threshold_multiplier=MUA_THRESHOLD_MULTIPLIER)
+# To choose a multiplier that matches the online unsorted channels rather than guessing,
+# run data_access.mua_threshold_calibration first.
+MUA_NOISE_METHOD = 'mad'                         # 'mad' = median(|v|)/0.6745, or 'rms'
+MUA_THRESHOLD_MULTIPLIER = 4.0
+MUA_REFRACTORY_MS = 1.0
+
 # per-list spike sources (factories -> a fresh instance per use)
 def _si_sorted_source():
     return SISortedSpikeSource(cache_subdir=CACHE_SUBDIR, pre_filtered=True)
 
 
 def _mua_source():
-    # offline MAD/RMS negative-crossing MUA; tune params to match the offline analysis
-    return ThresholdMUASpikeSource(noise_method='mad', threshold_multiplier=4.0, refractory_ms=1.0)
+    # offline MAD/RMS negative-crossing MUA; params in the CONFIG block above
+    return ThresholdMUASpikeSource(noise_method=MUA_NOISE_METHOD,
+                                   threshold_multiplier=MUA_THRESHOLD_MULTIPLIER,
+                                   refractory_ms=MUA_REFRACTORY_MS)
 
 
 # name -> {significance-windows pkl (repo-relative), spike source factory}
