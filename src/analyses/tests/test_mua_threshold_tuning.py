@@ -151,6 +151,62 @@ def test_alignment_drops_trials_it_cannot_place():
 # --------------------------------------------------------------------------- #
 # Scoring
 # --------------------------------------------------------------------------- #
+def _session_df(channels, n_trials=3):
+    """A minimal exploded-cache session frame: one row per (trial, channel)."""
+    rows = []
+    for i in range(n_trials):
+        on = 3.0 + 6.0 * i
+        for ch in channels:
+            rows.append({"TaskField": i, "Channel": ch,
+                         "NeuronID": f"AMG_2023-09-26_2_{ch}",
+                         "EpochStartStop": (on, on + 1.5),
+                         "SpikeTimes": [on + 0.2, on + 0.4]})
+    return pd.DataFrame(rows)
+
+
+def test_answer_key_rows_resolve_like_the_pairs_figure():
+    """Cells must resolve through the same matcher lane A of --mode pairs uses.
+
+    An exact ``str(Channel) ==`` comparison misses the NeuronID-suffix fallback, which is
+    what absorbs enum-repr drift between cache vintages -- and missing it looks exactly
+    like an empty cache.
+    """
+    df = _session_df(["Channel.C_020", "Channel.C_026"])
+    rows = tuning.select_answer_key_rows(df, "Channel.C_020", "2023-09-26", 2)
+    assert rows is not None and len(rows) == 3
+
+    # Channel column spelled differently, NeuronID still carries the canonical name:
+    # the fallback must find it where an exact comparison would not.
+    drifted = df.copy()
+    drifted["Channel"] = drifted["Channel"].str.replace("Channel.C_", "C-", regex=False)
+    assert (drifted["Channel"].astype(str) == "Channel.C_020").sum() == 0
+    rows = tuning.select_answer_key_rows(drifted, "Channel.C_020", "2023-09-26", 2)
+    assert rows is not None and len(rows) == 3
+
+
+def test_manually_sorted_channel_is_reported_as_such(capsys=None):
+    """A channel that has since been sorted is gone from the unsorted rows by
+    construction. The message has to say that, not 'not in the exploded cache'."""
+    import contextlib
+    import io
+
+    df = _session_df(["Channel.C_020_Unit 1", "Channel.C_020_Unit 2", "Channel.C_026"])
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rows = tuning.select_answer_key_rows(df, "Channel.C_020", "2023-09-26", 2)
+    out = buf.getvalue()
+    assert rows is None
+    assert "MANUALLY SORTED" in out, out
+    assert "Channel.C_020_Unit 1" in out, out
+
+    # a channel that is simply absent gets the other message, listing what is there
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert tuning.select_answer_key_rows(df, "Channel.C_007", "2023-09-26", 2) is None
+    out = buf.getvalue()
+    assert "MANUALLY SORTED" not in out and "channel(s) in this session" in out, out
+
+
 def test_score_candidate():
     trial = Trial(task_id=0, key_times=np.array([0.1, 0.2, 0.3]),
                   mua_onset_s=10.0, duration_s=1.0)

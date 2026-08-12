@@ -104,6 +104,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -114,6 +115,7 @@ import pandas as pd
 from data_access.mua_threshold_calibration import (
     _parse_sessions, iter_filtered_channels, session_round_dir,
 )
+from data_access.spike_window import EXPLODED_CACHE_SUBDIR
 # The MUA builder's own marker-epoch reader. Private there, imported here rather than
 # copied or promoted: it is the ONE definition of "the epochs on the amplifier's clock",
 # and the tuner must window candidates exactly the way the cache does or it would tune
@@ -255,6 +257,49 @@ def load_answer_key_csv(path) -> List[AnswerCell]:
 # --------------------------------------------------------------------------- #
 # Trial alignment
 # --------------------------------------------------------------------------- #
+def select_answer_key_rows(session_df, channel, date, round_no):
+    """The answer key's rows for one channel, or ``None`` after saying why not.
+
+    Resolution is delegated to ``run_zombies_rasters._select_unit_rows`` -- the SAME
+    matcher ``raster_review_by_source --mode pairs`` uses for lane A -- so the cell this
+    tunes against is the cell that figure draws. It tries ``str(Channel)`` first and falls
+    back to a NeuronID suffix, which is what absorbs the enum-repr drift between cache
+    vintages; an exact string comparison here would miss cells the figure resolves.
+
+    When nothing matches, the reason matters and is printed. A channel that has been
+    MANUALLY SORTED since the grant list was made is gone from the unsorted rows by
+    construction -- ``combine_unsorted_with_sorted`` drops the whole-channel row once
+    ``sorted_spikes.pkl`` names that channel -- and no threshold can reproduce a row that
+    is not there. That is a different problem from a channel spelled differently, so the
+    message distinguishes them instead of saying "not in the cache" for both.
+    """
+    from analyses.zombies_raster_review.run_zombies_rasters import _select_unit_rows
+    from analyses.zombies_raster_review.unit_lists import RasterRequest
+
+    rows = _select_unit_rows(session_df, RasterRequest(
+        source_kind="mixed", date=str(date), round_no=int(round_no),
+        match_column="Channel", match_value=channel, label=channel))
+    if not rows.empty:
+        return rows
+
+    present = sorted(session_df["Channel"].astype(str).unique())
+    token = re.sub(r"\D", "", channel)                   # '020' from 'Channel.C_020'
+    near = [c for c in present if token and token in c]
+    unsorted_near = [c for c in near if "_Unit" not in c]
+    print(f"[tune] {date} r{round_no} {channel}: no rows in the exploded cache — skipped")
+    if near and not unsorted_near:
+        print(f"       present only as {near} — this channel has been MANUALLY SORTED since "
+              f"the grant list was made, so its unsorted whole-channel row no longer exists.")
+        print("       Nothing here to tune against: drop the cell, or point --exploded-cache "
+              "at a cache built before that sort.")
+    elif near:
+        print(f"       present as {near} — the answer key spells it differently; use one of "
+              f"those spellings in --answer-key.")
+    else:
+        print(f"       {len(present)} channel(s) in this session, e.g. {present[:8]}")
+    return None
+
+
 @dataclass
 class Trial:
     """One trial, with both clocks resolved to 'seconds since stimulus onset'."""
@@ -353,7 +398,9 @@ def score_candidate(trials: Sequence[Trial], mua_times: np.ndarray, *,
 def score_session(date, round_no, cells: Sequence[AnswerCell], *,
                   multipliers=DEFAULT_MULTIPLIERS, noise_methods=("mad",),
                   refractory_ms=(1.0,), monkey=SUBJECT_MONKEY,
-                  match_window_ms=MATCH_WINDOW_MS, verbose=True) -> pd.DataFrame:
+                  match_window_ms=MATCH_WINDOW_MS,
+                  exploded_cache_subdir=EXPLODED_CACHE_SUBDIR,
+                  verbose=True) -> pd.DataFrame:
     """Score every candidate against every answer-key cell of one session.
 
     One row per (cell, noise method, multiplier, refractory). Each channel's trace is
@@ -361,7 +408,8 @@ def score_session(date, round_no, cells: Sequence[AnswerCell], *,
     """
     date = str(date)
     channels = [c.channel for c in cells]
-    source = MixedManualSpikeSource()                 # strict [onset, offset] window
+    # strict [onset, offset] window -- the unsorted rows have no pre-stimulus baseline
+    source = MixedManualSpikeSource(cache_subdir=exploded_cache_subdir)
     session_df = source.load(date, round_no)
     if session_df is None or getattr(session_df, "empty", True):
         print(f"[tune] {date} r{round_no}: exploded cache empty/missing — session skipped")
@@ -385,9 +433,8 @@ def score_session(date, round_no, cells: Sequence[AnswerCell], *,
                 epochs_by_task = {}
         epochs = epochs_by_task or None
 
-        key_rows = session_df[session_df["Channel"].astype(str) == channel]
-        if key_rows.empty:
-            print(f"[tune] {date} r{round_no} {channel}: not in the exploded cache — skipped")
+        key_rows = select_answer_key_rows(session_df, channel, date, round_no)
+        if key_rows is None:
             continue
         trials, tstats = _align_trials(key_rows, epochs)
         if not trials:
@@ -436,6 +483,14 @@ def score_answer_key(cells: Sequence[AnswerCell], **kwargs) -> pd.DataFrame:
     by_session: Dict[Tuple[str, int], List[AnswerCell]] = {}
     for c in cells:
         by_session.setdefault(c.session, []).append(c)
+
+    # Say where the answer key is being read from. It is the first thing to check when
+    # cells come back unresolved, and it is not obvious: it comes from
+    # MixedManualSpikeSource's default, which is the pre-stimulus variant, under
+    # JULIE_DATA_PATH -- three defaults deep, none of them in this file.
+    cache_dir = (Path(DATA_BASE_PATH) / kwargs.get("monkey", SUBJECT_MONKEY)
+                 / kwargs.get("exploded_cache_subdir", EXPLODED_CACHE_SUBDIR))
+    print(f"[tune] answer-key spikes from {cache_dir}{os.sep}<date>_round_<n>.pkl")
 
     frames, failed = [], []
     for i, ((date, round_no), session_cells) in enumerate(sorted(by_session.items()), 1):
@@ -749,7 +804,8 @@ def tune(cells: Optional[Sequence[AnswerCell]] = None, *,
          monkey=SUBJECT_MONKEY, match_window_ms=MATCH_WINDOW_MS,
          all_grant_rows: bool = False, out_dir=None, label: str = "grant_unsorted",
          plots: bool = True, scores: Optional[pd.DataFrame] = None,
-         sessions=None, max_sessions: Optional[int] = None):
+         sessions=None, max_sessions: Optional[int] = None,
+         exploded_cache_subdir=EXPLODED_CACHE_SUBDIR):
     """Score, cross-validate, report, write. Returns ``(scores, cv, final)``.
 
     Pass ``scores`` to re-analyse a previous run's per-cell CSV without re-reading any
@@ -765,7 +821,8 @@ def tune(cells: Optional[Sequence[AnswerCell]] = None, *,
             return pd.DataFrame(), pd.DataFrame(), None
         scores = score_answer_key(cells, multipliers=multipliers, noise_methods=noise_methods,
                                   refractory_ms=refractory_ms, monkey=monkey,
-                                  match_window_ms=match_window_ms)
+                                  match_window_ms=match_window_ms,
+                                  exploded_cache_subdir=exploded_cache_subdir)
     if scores.empty:
         print("[tune] no cell could be scored — check the exploded cache and the recordings.")
         return scores, pd.DataFrame(), None
@@ -803,6 +860,10 @@ def _cli(argv=None):
     p.add_argument("--splits", type=int, default=None,
                    help="CV folds over sessions (default: leave-one-session-out)")
     p.add_argument("--match-window-ms", type=float, default=MATCH_WINDOW_MS)
+    p.add_argument("--exploded-cache", default=EXPLODED_CACHE_SUBDIR,
+                   help=f"exploded cache subdir the answer key is read from "
+                        f"(default {EXPLODED_CACHE_SUBDIR}); point at an older one if a "
+                        f"cell's channel has since been manually sorted")
     p.add_argument("--sessions", default=None,
                    help="restrict to these sessions, e.g. '2023-09-26:2,2023-10-03:4'")
     p.add_argument("--max-sessions", type=int, default=None,
@@ -828,7 +889,7 @@ def _cli(argv=None):
                 match_window_ms=a.match_window_ms, all_grant_rows=a.all_grant_rows,
                 out_dir=a.out, label=label, plots=a.plots, scores=scores,
                 sessions=_parse_sessions(a.sessions) if a.sessions else None,
-                max_sessions=a.max_sessions)
+                max_sessions=a.max_sessions, exploded_cache_subdir=a.exploded_cache)
 
 
 # ===== Run directly in PyCharm — edit this block and hit Run (no CLI) =========
@@ -850,6 +911,13 @@ if __name__ == "__main__":
     # cannot SELECT a multiplier, but they show you the shape of the curve.
     SESSIONS = None             # e.g. [("2023-09-26", 2), ("2023-10-03", 4)]; None = all
     MAX_SESSIONS = None         # e.g. 2 = the first two sessions in date order
+
+    # Where the answer key's spikes come from:
+    #   <JULIE_DATA_PATH>/<monkey>/<EXPLODED_CACHE>/<date>_round_<n>.pkl
+    # Point this at an older exploded cache if a cell's channel has since been manually
+    # sorted — the merge drops the unsorted whole-channel row once a channel is sorted,
+    # so the answer key for that cell only exists in a cache built before the sort.
+    EXPLODED_CACHE = EXPLODED_CACHE_SUBDIR      # e.g. "exploded_spike_cache"
 
     # --- the grid to try ------------------------------------------------------
     MULTIPLIERS = DEFAULT_MULTIPLIERS
@@ -874,7 +942,7 @@ if __name__ == "__main__":
     tune(_cells, multipliers=MULTIPLIERS, noise_methods=NOISE_METHODS,
          refractory_ms=REFRACTORY_MS, objective=OBJECTIVE, tie_break=TIE_BREAK,
          n_splits=N_SPLITS, all_grant_rows=ALL_GRANT_ROWS, plots=PLOTS, scores=_scores,
-         sessions=SESSIONS, max_sessions=MAX_SESSIONS)
+         sessions=SESSIONS, max_sessions=MAX_SESSIONS, exploded_cache_subdir=EXPLODED_CACHE)
 
     # NEXT STEPS once you have a multiplier M (nothing here writes a spike cache):
     #
