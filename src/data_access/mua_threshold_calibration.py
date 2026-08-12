@@ -96,14 +96,78 @@ import numpy as np
 import pandas as pd
 
 from analyses.data_readers.recording_metadata_reader import RecordingMetadataReader
-from data_access.threshold_detection import (
-    MICROVOLTS_PER_BIT, detect_mad_spikes, estimate_noise, highpass_filter,
-    open_amplifier_memmap,
-)
+from data_access.threshold_detection import detect_mad_spikes, estimate_noise, highpass_filter
 from project_util import DATA_BASE_PATH, SUBJECT_MONKEY
-from spikesorting.cross_channel_analysis.waveforms import (
-    DEFAULT_RADIUS, mean_waveform, peak_to_peak, trough_to_peak_ms,
-)
+from spikesorting.cross_channel_analysis.waveforms import DEFAULT_RADIUS, mean_waveform
+
+# ---------------------------------------------------------------------------
+# Local copies, so this module ADDS to the pipeline and changes nothing in it.
+#
+# Each mirrors a definition that already lives in a module the analyses import.
+# They are copies rather than shared helpers on purpose: the caches, rasters and
+# regressions that read those modules are in use, and a calibration tool is not a
+# reason to edit them. The cost is that a change over there does not reach here —
+# so each copy names its original, and the pairing is what to check if a number
+# printed here ever disagrees with the same number on a raster figure.
+# ---------------------------------------------------------------------------
+MICROVOLTS_PER_BIT = 0.195     # Intan int16 -> microvolts (threshold_detection)
+
+
+def _open_amplifier_memmap(file_path, amplifier_channels):
+    """(data, channels) for an Intan amplifier file, WITHOUT reading it.
+
+    ``data`` is a read-only int16 memmap shaped ``(n_samples, n_channels)`` (ADC units;
+    multiply by MICROVOLTS_PER_BIT for microvolts); ``channels`` is the Channel enum per
+    column, in file order.
+
+    Same reshape rule as ``threshold_detection.read_amplifier_data_robust``: info.rhd's
+    amplifier_channels is the authoritative channel count, and a trailing partial sample
+    is dropped. Memmapped rather than read, because the sweep wants one channel at a time
+    and a whole 32-channel round as float64 is tens of GB. (No digitalin.dat channel-count
+    warning here -- that check belongs to the cache builders, which is where it fires.)
+    """
+    from clat.intan.channels import Channel
+
+    nch = len(amplifier_channels)
+    n_samples = (os.path.getsize(file_path) // 2) // nch
+    mm = np.memmap(file_path, dtype=np.int16, mode='r')
+    data = mm[:n_samples * nch].reshape(n_samples, nch)
+    channels = [Channel(ch.get("native_channel_name", f"Channel_{i}"))
+                for i, ch in enumerate(amplifier_channels)]
+    return data, channels
+
+
+def peak_to_peak(wave) -> float:
+    """Peak-to-peak amplitude of one waveform, in the units of ``wave`` (µV)."""
+    wave = np.asarray(wave, dtype=float)
+    return float(wave.max() - wave.min()) if wave.size else 0.0
+
+
+def trough_to_peak_ms(wave, sample_rate):
+    """Trough-to-peak width (ms) for a clean biphasic negative spike, else ``None``.
+
+    Copy of ``zombies_raster._trough_to_peak_ms`` (which cannot be imported: that module
+    forces the Agg matplotlib backend at import), so the width printed here is the width
+    printed in the raster review's info panel. The gates are the point: a monophasic or
+    positive-going waveform, or one still rising at the window edge, returns ``None``
+    rather than an edge-pinned, meaningless number.
+    """
+    wave = np.asarray(wave, dtype=float)
+    n = wave.size
+    if n < 3:
+        return None
+    trough = int(np.argmin(wave))
+    if not (0 < trough < n - 1):                  # a real, interior trough
+        return None
+    if abs(wave[trough]) < wave.max():            # the negative deflection must dominate
+        return None
+    seg = wave[trough:]
+    pk_rel = int(np.argmax(seg))
+    if pk_rel == 0 or pk_rel == seg.size - 1:     # no interior rebound peak captured
+        return None
+    if wave[trough + pk_rel] <= 0:                # rebound must rise above baseline
+        return None
+    return pk_rel / sample_rate * 1000.0
 
 # Candidate multipliers to sweep. 4.0 is the current default; the online thresholds
 # usually land well above it, hence the long upper tail.
@@ -187,7 +251,7 @@ def iter_filtered_channels(round_dir, *, only_channels=None, max_seconds=None,
     if not os.path.exists(amp_path):
         raise FileNotFoundError(f"amplifier.dat missing in {round_dir}; needed for MUA.")
 
-    data, channels = open_amplifier_memmap(amp_path, rhd["amplifier_channels"])
+    data, channels = _open_amplifier_memmap(amp_path, rhd["amplifier_channels"])
     n_samples = data.shape[0] if max_seconds is None else min(
         data.shape[0], int(round(max_seconds * sample_rate)))
 
@@ -779,6 +843,7 @@ if __name__ == "__main__":
     #   3. compare against the unsorted lane on real figures. The side-by-side already
     #      exists: analyses.jun2026_grant_investigation.raster_review_by_source with
     #      MODE="pairs" draws lane A = unsorted (exploded cache) and lane B = threshold
-    #      MUA for the SAME channel, with the waveform panel. Set
-    #      spike_count_connector.MUA_THRESHOLD_MULTIPLIER = M first, or it keeps loading
-    #      the mad4.0 cache.
+    #      MUA for the SAME channel, with the waveform panel. Its threshold-MUA lane comes
+    #      from spike_count_connector._mua_source(), which hardcodes threshold_multiplier
+    #      =4.0 -- edit that to M first or it keeps loading the mad4.0 cache, and put it
+    #      back afterwards unless you mean to move the MUA_KW / MUA_ANOVA lists too.

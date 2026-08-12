@@ -41,7 +41,7 @@ session as pure noise and drag the whole fit.
 
 Every trial is therefore aligned to its own onset before scoring: the answer key by its
 ``EpochStartStop``, the candidate by the marker-derived epoch for the same task id
-(``mua_peristim_builder.continuous_epochs``). Both become "seconds since stimulus
+(``mua_peristim_builder._continuous_epochs``). Both become "seconds since stimulus
 onset", so the clocks cancel, and spikes can only match WITHIN a trial. The per-session
 report prints the median onset difference, so a session whose two clocks disagree is
 visible rather than silently down-weighted.
@@ -114,7 +114,11 @@ import pandas as pd
 from data_access.mua_threshold_calibration import (
     _parse_sessions, iter_filtered_channels, session_round_dir,
 )
-from data_access.mua_peristim_builder import continuous_epochs
+# The MUA builder's own marker-epoch reader. Private there, imported here rather than
+# copied or promoted: it is the ONE definition of "the epochs on the amplifier's clock",
+# and the tuner must window candidates exactly the way the cache does or it would tune
+# against something the cache will not reproduce.
+from data_access.mua_peristim_builder import _continuous_epochs as continuous_epochs
 from data_access.spike_source import MixedManualSpikeSource
 from data_access.threshold_detection import detect_mad_spikes, estimate_noise
 from project_util import DATA_BASE_PATH, SUBJECT_MONKEY
@@ -881,9 +885,15 @@ if __name__ == "__main__":
     #        rebuild("mua", threshold_multiplier=M)
     #
     #   2. point the answer-key figure at it and LOOK, which is what the score is a proxy
-    #      for: set spike_count_connector.MUA_THRESHOLD_MULTIPLIER = M, then run
-    #      analyses.jun2026_grant_investigation.raster_review_by_source with MODE="pairs".
-    #      Lane A is the answer key, lane B the retuned MUA, same channel, same axes.
+    #      for. In spike_count_connector.py, _mua_source() hardcodes the parameters:
+    #
+    #        return ThresholdMUASpikeSource(noise_method='mad', threshold_multiplier=M,
+    #                                       refractory_ms=1.0)
+    #
+    #      then run analyses.jun2026_grant_investigation.raster_review_by_source with
+    #      MODE="pairs". Lane A is the answer key, lane B the retuned MUA, same channel,
+    #      same axes. Put the 4.0 back afterwards unless you mean to move everything that
+    #      reads that connector -- the MUA_KW / MUA_ANOVA lists included -- onto M.
     #
     #   3. only then rerun the analyses that read the cache
     #      (run_mua_preprocessing.py -> the MUA_KW / MUA_ANOVA lists).

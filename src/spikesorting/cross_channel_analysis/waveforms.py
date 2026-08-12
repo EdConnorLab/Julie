@@ -73,44 +73,6 @@ def mean_waveform(voltages, spike_indices, *, radius=DEFAULT_RADIUS,
     return w.mean(axis=0)
 
 
-def peak_to_peak(wave) -> float:
-    """Peak-to-peak amplitude of one waveform, in the units of ``wave`` (µV)."""
-    wave = np.asarray(wave, dtype=float)
-    return float(wave.max() - wave.min()) if wave.size else 0.0
-
-
-def trough_to_peak_ms(wave, sample_rate: float) -> Optional[float]:
-    """Trough-to-peak width (ms), but ONLY for a biphasic, negative-going spike
-    with a clear positive rebound after the trough; otherwise ``None``.
-
-    The trough-to-peak time is only meaningful for that canonical shape, so it is
-    gated: the trough must be an interior minimum AND the dominant excursion
-    (negative-going), and the post-trough maximum must be an interior peak the
-    waveform actually turns back down from AND rises above baseline. A monophasic
-    or positive-going waveform (or one still rising at the window edge) returns
-    ``None`` rather than an edge-pinned, meaningless number.
-
-    Lives here, next to the waveform cutting, so the raster info panel and the MUA
-    threshold calibration report the same number for the same waveform.
-    """
-    wave = np.asarray(wave, dtype=float)
-    n = wave.size
-    if n < 3:
-        return None
-    trough = int(np.argmin(wave))
-    if not (0 < trough < n - 1):                  # a real, interior trough
-        return None
-    if abs(wave[trough]) < wave.max():            # the negative deflection must dominate
-        return None
-    seg = wave[trough:]
-    pk_rel = int(np.argmax(seg))
-    if pk_rel == 0 or pk_rel == seg.size - 1:     # no interior rebound peak captured
-        return None
-    if wave[trough + pk_rel] <= 0:                # rebound must rise above baseline
-        return None
-    return pk_rel / sample_rate * 1000.0
-
-
 @dataclass
 class Footprint:
     """Spatial footprint of a unit: its mean waveform on every channel."""

@@ -144,74 +144,49 @@ def detect_mad_spikes(voltage, threshold, refractory_samples):
     return np.array(kept, dtype=int)
 
 
-MICROVOLTS_PER_BIT = 0.195     # Intan int16 -> microvolts
-
-
-def open_amplifier_memmap(file_path, amplifier_channels):
-    """(data, channels) for an Intan one-file-per-type amplifier file, without reading it.
-
-    ``data`` is a read-only int16 memmap shaped ``(n_samples, n_channels)`` (still in
-    ADC units -- multiply by MICROVOLTS_PER_BIT for microvolts); ``channels`` is the
-    Channel enum for each column, in file order.
-
-    This is the ONE place the reshape rule lives, so every reader applies it
-    identically. info.rhd's amplifier_channels is the AUTHORITATIVE channel count: the
-    file is reshaped by it and a trailing partial sample is dropped. (This is what
-    clat.intan.amplifiers.read_amplifier_data_with_mmap gets wrong -- it infers the
-    sample count as filesize // (nchannels*2) and so crashes on any trailing bytes.)
-
-    Memmapped rather than read, so a caller that only wants one channel at a time --
-    the calibration sweep in data_access.mua_threshold_calibration -- never has to
-    hold the whole recording as float64.
-    """
-    import os
-    from clat.intan.channels import Channel
-
-    nch = len(amplifier_channels)                     # trust info.rhd's saved-channel list
-    n_samples = (os.path.getsize(file_path) // 2) // nch   # drop trailing partial sample
-    mm = np.memmap(file_path, dtype=np.int16, mode='r')
-    data = mm[:n_samples * nch].reshape(n_samples, nch)
-    channels = [Channel(ch.get("native_channel_name", f"Channel_{i}"))
-                for i, ch in enumerate(amplifier_channels)]
-    return data, channels
-
-
-def _warn_if_digitalin_disagrees(file_path, round_dir_path, nch):
-    """Soft, non-blocking channel-count sanity check against digitalin.dat.
-
-    We do NOT require or hard-validate against time.dat / digitalin.dat -- neither is a
-    reliable length reference here: time.dat is not re-written by the stitcher (stale on
-    stitched sessions), and digitalin.dat can be legitimately altered by marker-flicker
-    preprocessing on later sessions. So digitalin.dat only ever warns: if it *cleanly*
-    implies a different integer channel count, that is a possible info.rhd error worth
-    eyeballing, but info.rhd is still trusted.
-    """
-    import os
-
-    digin = os.path.join(round_dir_path, "digitalin.dat")
-    if not os.path.exists(digin):
-        return
-    n_din = os.path.getsize(digin) // 2
-    if not n_din:
-        return
-    implied = (os.path.getsize(file_path) // 2) / n_din
-    if abs(implied - round(implied)) < 0.02 and round(implied) != nch:
-        print(f"[warn] {os.path.basename(file_path)}: digitalin.dat cleanly implies "
-              f"{round(implied)} channels but info.rhd names {nch}. Trusting info.rhd; "
-              f"verify this session's header if the MUA looks off.")
-
-
 def read_amplifier_data_robust(file_path, amplifier_channels, round_dir_path=None):
     """Read an Intan one-file-per-type amplifier file (amplifier.dat /
     preprocessed_data.dat) into {Channel: np.ndarray microvolts}.
 
-    Sizing and column->channel mapping come from open_amplifier_memmap; passing
-    ``round_dir_path`` adds the soft digitalin.dat channel-count warning."""
-    data, channels = open_amplifier_memmap(file_path, amplifier_channels)
+    Fixes clat.intan.amplifiers.read_amplifier_data_with_mmap, which infers the
+    sample count as filesize // (nchannels*2) and so crashes on any trailing bytes.
+
+    info.rhd's amplifier_channels is the AUTHORITATIVE channel count: the file is
+    reshaped by it and a trailing partial sample is dropped. We do NOT require or hard-
+    validate against time.dat / digitalin.dat -- neither is a reliable length reference
+    here: time.dat is not re-written by the stitcher (stale on stitched sessions), and
+    digitalin.dat can be legitimately altered by marker-flicker preprocessing on later
+    sessions. digitalin.dat is used only as a SOFT, non-blocking warning: if it *cleanly*
+    implies a different integer channel count, we warn (possible header error) but still
+    trust info.rhd. Columns map to channels in list order: column i -> amplifier_channels[i]."""
+    import os
+    from clat.intan.channels import Channel
+
+    nch = len(amplifier_channels)                     # trust info.rhd's saved-channel list
+    total_i16 = os.path.getsize(file_path) // 2
+    n_samples = total_i16 // nch                       # reshape by nch; drop trailing partial
+
+    # Soft, non-blocking sanity check. digitalin.dat's length is unreliable on some
+    # sessions (marker preprocessing), so only warn when it CLEANLY implies a
+    # different integer channel count -- a possible info.rhd error worth eyeballing.
     if round_dir_path is not None:
-        _warn_if_digitalin_disagrees(file_path, round_dir_path, len(channels))
-    return {ch: data[:, i].astype(np.float64) * MICROVOLTS_PER_BIT
-            for i, ch in enumerate(channels)}
+        digin = os.path.join(round_dir_path, "digitalin.dat")
+        if os.path.exists(digin):
+            n_din = os.path.getsize(digin) // 2
+            if n_din:
+                implied = total_i16 / n_din
+                if abs(implied - round(implied)) < 0.02 and round(implied) != nch:
+                    print(f"[warn] {os.path.basename(file_path)}: digitalin.dat cleanly implies "
+                          f"{round(implied)} channels but info.rhd names {nch}. Trusting info.rhd; "
+                          f"verify this session's header if the MUA looks off.")
+
+    mm = np.memmap(file_path, dtype=np.int16, mode='r')
+    data = mm[:n_samples * nch].reshape(n_samples, nch)
+    out = {}
+    for i, ch in enumerate(amplifier_channels):
+        name = ch.get("native_channel_name", f"Channel_{i}")
+        out[Channel(name)] = data[:, i].astype(np.float64) * 0.195
+    return out
 
 
 def detect_mad_spikes_for_recording(voltages_by_channel, sample_rate, *,
