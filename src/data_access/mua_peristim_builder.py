@@ -69,9 +69,14 @@ def _detect_mua(round_dir, noise_method, threshold_multiplier, refractory_ms):
     return spike_times_by_channel, sample_rate
 
 
-def _continuous_epochs(round_dir, sample_rate, fnc=2):
+def continuous_epochs(round_dir, sample_rate, fnc=2):
     """{task_id: (onset_s, offset_s)} from this folder's own digitalin/notes (continuous
-    clock, matching the amplifier the MUA was detected on)."""
+    clock, matching the amplifier the MUA was detected on).
+
+    Public because anything comparing amplifier-derived spikes against compiled.pkl
+    needs it: on a STITCHED session compiled.pkl's epochs are on per-sub-folder reset
+    clocks, and these are the epochs that put both on one clock (see the module
+    docstring, and analyses.mua_threshold_tuning, which aligns the two by task id)."""
     stim_epochs = epoch_using_marker_channels(
         os.path.join(round_dir, "digitalin.dat"), false_negative_correction_duration=fnc)
     epochs_for_task = map_task_id_to_epochs_with_livenotes(
@@ -125,7 +130,7 @@ def build_mua_peristim_cache(date, round_no, pre_stimulus_time, *,
         return None, path
 
     spikes_by_ch, sample_rate = _detect_mua(round_dir, noise_method, threshold_multiplier, refractory_ms)
-    epochs_by_task = _continuous_epochs(round_dir, sample_rate, fnc=fnc)
+    epochs_by_task = continuous_epochs(round_dir, sample_rate, fnc=fnc)
     combined = _windowed_mua_data(compiled, spikes_by_ch, epochs_by_task, pre_stimulus_time)
     if combined.empty:
         print(f"  [skip] no trials for {date} round {round_no}")

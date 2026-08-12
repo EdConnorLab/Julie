@@ -2,6 +2,15 @@
 mua_threshold_calibration.py — pick the MUA detection parameters that make the offline
 threshold-MUA cache look like the ONLINE unsorted channels of the exploded cache.
 
+WHICH TOOL: this one reads ``spike.dat`` and measures EVERY channel, which is only
+meaningful where the online threshold on that channel is one you stand behind. If the
+hand-set thresholds were not tracked across all 32 channels, or the session was
+interrupted and its spike.dat has to be stitched first, use
+``analyses.mua_threshold_tuning`` instead: it scores against a curated answer key of
+unsorted cells read from the exploded cache, opens no raw online file, and
+cross-validates the choice. This module remains the way to see, per channel, what
+threshold the online detector was actually using.
+
 THE TWO STREAMS, AND WHY THEY DON'T LOOK ALIKE
 ----------------------------------------------
 An unsorted channel appears twice in this project, detected two different ways:
