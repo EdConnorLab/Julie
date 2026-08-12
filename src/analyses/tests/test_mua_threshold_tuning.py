@@ -207,6 +207,29 @@ def test_manually_sorted_channel_is_reported_as_such(capsys=None):
     assert "MANUALLY SORTED" not in out and "channel(s) in this session" in out, out
 
 
+def test_cache_list_is_tried_in_order_per_cell():
+    """A cell resolves from the newest cache that still has it as an unsorted row.
+
+    This is the manually-sorted case end to end: C_020 survives only in the old cache,
+    C_026 is in both, and each must come from the right one.
+    """
+    new = _session_df(["Channel.C_020_Unit 1", "Channel.C_026"])     # C_020 since sorted
+    old = _session_df(["Channel.C_020", "Channel.C_026"])            # pre-sort vintage
+    frames = {"current": new, "gitrecovered": old}
+
+    resolved = {}
+    for channel in ("Channel.C_020", "Channel.C_026"):
+        for sub, df in frames.items():
+            hit = tuning._match_rows(df, channel, "2023-09-26", 2)
+            if not hit.empty:
+                resolved[channel] = sub
+                break
+    assert resolved == {"Channel.C_020": "gitrecovered", "Channel.C_026": "current"}
+
+    assert tuning._as_cache_list("a") == ["a"]
+    assert tuning._as_cache_list(["a", "b"]) == ["a", "b"]
+
+
 def test_score_candidate():
     trial = Trial(task_id=0, key_times=np.array([0.1, 0.2, 0.3]),
                   mua_onset_s=10.0, duration_s=1.0)
