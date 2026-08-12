@@ -321,6 +321,32 @@ def test_cross_validation_is_grouped_by_session():
     assert cv["picked_multiplier"].nunique() == 1          # stable choice
 
 
+def test_oracle_gap_is_attributed_to_the_tie_break_not_to_overfitting():
+    """When every fold's oracle is DEEPER than the pick, the gap is the shallow
+    tie-break's doing. Reporting that as overfitting sends you hunting a setting."""
+    import contextlib
+    import io
+
+    scores = _fake_scores()
+    cv = tuning.cross_validate(scores)
+    # the shoulder at x7 makes the held-out oracle land deeper than the x6 pick
+    cv["test_oracle_multiplier"] = cv["picked_multiplier"] + 1.0
+    cv["test_objective"] = cv["test_oracle_objective"] - 0.05
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        tuning.print_report(scores, cv, tuning.select_params(scores))
+    out = buf.getvalue()
+    assert "is the 'shallow' tie-break, not overfitting" in out, out
+    assert "--tie-break none" in out
+
+    # an oracle SHALLOWER than the pick is not that pattern, and must not claim it is
+    cv["test_oracle_multiplier"] = cv["picked_multiplier"] - 1.0
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        tuning.print_report(scores, cv, tuning.select_params(scores))
+    assert "not overfitting" not in buf.getvalue()
+
+
 def test_unusable_cells_are_excluded_from_the_fit():
     scores = _fake_scores()
     scores.loc[scores["cell"] == "s0_c0", "usable"] = False
@@ -332,6 +358,45 @@ def test_session_folds():
     many = tuning._session_folds([(f"s{i}", 1) for i in range(20)], None)
     assert len(many) == 5 and sum(len(f) for f in many) == 20                      # k-fold
     assert len(tuning._session_folds([("a", 1), ("b", 2)], 5)) == 2                # clamped
+
+
+def test_review_lanes_land_on_the_amplifier_clock():
+    """Both raster lanes must carry AMPLIFIER-clock times and epochs.
+
+    The raster alone would work on either clock (it re-zeroes by each row's
+    EpochStartStop), but the footprint panel cuts snippets from the continuous recording
+    at raw spike times -- so compiled-clock times on a stitched session would silently
+    produce a waveform made of noise.
+    """
+    from analyses import mua_threshold_review as review
+
+    offset = 37.4                                  # compiled clock = amplifier - offset
+    onsets = [3.0, 10.0, 17.0]
+    rows = pd.DataFrame([
+        {"TaskField": i, "Channel": "Channel.C_005", "MonkeyName": f"M{i}",
+         "MonkeyGroup": "Zombies",
+         "EpochStartStop": (on - offset, on + 1.5 - offset),
+         "SpikeTimes": [on - offset + 0.2, on - offset + 0.9]}
+        for i, on in enumerate(onsets)])
+    epochs = {i: (on, on + 1.5) for i, on in enumerate(onsets)}
+    trials, stats = tuning._align_trials(rows, epochs)
+    assert abs(stats["median_clock_offset_s"] - offset) < 1e-9
+
+    mua = np.array([on + d for on in onsets for d in (0.2, 0.5, 0.9)])
+    lane_a, lane_b = review._lane_frames(rows, trials, mua)
+    for lane in (lane_a, lane_b):
+        for (start, stop), on in zip(lane["EpochStartStop"], onsets):
+            assert (start, stop) == (on, on + 1.5)
+        for spikes, on in zip(lane["SpikeTimes"], onsets):
+            assert all(on <= s < on + 1.5 for s in spikes), spikes
+    # trial identity is shared, so the overlay matches lanes by task id, not row order
+    assert list(lane_a["TaskField"]) == list(lane_b["TaskField"])
+    assert list(lane_a["MonkeyName"]) == list(lane_b["MonkeyName"])
+    # lane B is tagged multiunit, not "(unsorted)" -- it is not a second copy of lane A
+    from analyses.zombies_raster_review.run_zombies_rasters import _lane_label
+    assert _lane_label(review.lane_b_prefix("mad", 5.5), "Channel.C_005").endswith("(MU)")
+    # the folder name is the MUA cache filename's parameter token, verbatim
+    assert review.param_dirname("mad", 5.5, 1.0) == "mad5.5_ref1.0"
 
 
 def test_filter_sessions():

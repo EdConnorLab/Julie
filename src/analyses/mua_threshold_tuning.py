@@ -361,6 +361,11 @@ class Trial:
     key_times: np.ndarray      # answer-key spikes, aligned (s from onset)
     mua_onset_s: float         # trial onset on the amplifier clock
     duration_s: float
+    # position of this trial in the answer-key rows it came from, so a caller that wants
+    # the trial's METADATA (stimulus monkey, group) can get it back -- mua_threshold_review
+    # rebuilds both raster lanes from these, and a raster grouped by the wrong monkey
+    # would be worse than no raster.
+    row_index: int = -1
 
 
 def _align_trials(rows: pd.DataFrame, epochs_by_task: Optional[Dict[int, Tuple[float, float]]],
@@ -373,7 +378,7 @@ def _align_trials(rows: pd.DataFrame, epochs_by_task: Optional[Dict[int, Tuple[f
     """
     trials: List[Trial] = []
     offsets, dropped_no_epoch, dropped_duration = [], 0, 0
-    for _, row in rows.iterrows():
+    for position, (_, row) in enumerate(rows.iterrows()):
         on_c, off_c = (float(x) for x in row["EpochStartStop"])
         duration = off_c - on_c
         if epochs_by_task is None:
@@ -391,7 +396,7 @@ def _align_trials(rows: pd.DataFrame, epochs_by_task: Optional[Dict[int, Tuple[f
         spikes = np.asarray(list(row[spike_col]), dtype=float)
         trials.append(Trial(task_id=int(row["TaskField"]),
                             key_times=np.sort(spikes - on_c) if spikes.size else spikes,
-                            mua_onset_s=on_m, duration_s=duration))
+                            mua_onset_s=on_m, duration_s=duration, row_index=position))
     stats = {
         "n_trials": len(trials),
         "dropped_no_epoch": dropped_no_epoch,
@@ -739,8 +744,27 @@ def print_report(scores: pd.DataFrame, cv: pd.DataFrame, final: Optional[dict], 
             print(f"\n  folds disagreed: picked {sorted(picks)}. The objective is flat or a few "
                   f"cells drive it;\n  widen the answer key (--all-grant-rows, or --answer-key "
                   f"with more curated cells) before trusting one value.")
-        print(f"  mean gap to the held-out oracle: {gap:.3f} "
-              f"({'small — generalises' if gap < 0.02 else 'large — treat the winner as provisional'})")
+        # A gap to the oracle is normally the overfitting signal. It is NOT when every
+        # fold's oracle sits DEEPER than the pick: that is the shallow tie-break doing
+        # exactly what it was asked to, and calling it overfitting would send you looking
+        # for a problem that is a setting.
+        oracles = cv["test_oracle_multiplier"].dropna()
+        picks = cv["picked_multiplier"]
+        biased_shallow = len(oracles) == len(picks) and bool((oracles >= picks).all()) \
+            and bool((oracles > picks).any())
+        if gap < 0.02:
+            print(f"  mean gap to the held-out oracle: {gap:.3f} (small — generalises)")
+        elif biased_shallow:
+            print(f"  mean gap to the held-out oracle: {gap:.3f} — but every fold's oracle "
+                  f"({sorted(oracles.unique())}) is DEEPER than the pick "
+                  f"({sorted(picks.unique())}).")
+            print("  That gap is the 'shallow' tie-break, not overfitting: it is trading "
+                  "agreement for multiunit inclusiveness\n  on purpose. --tie-break none "
+                  "picks the raw argmax instead. Draw both and decide by eye "
+                  "(analyses.mua_threshold_review).")
+        else:
+            print(f"  mean gap to the held-out oracle: {gap:.3f} "
+                  f"(large — treat the winner as provisional)")
 
     # Is the answer key big enough? The honest answer is not a cell count -- it is
     # whether the folds agree and the peak is separated from its neighbours.
