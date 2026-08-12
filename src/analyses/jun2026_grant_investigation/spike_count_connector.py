@@ -68,8 +68,8 @@ DETECT_THRESHOLD = 0.5                           # (match threshold_window_detec
 # with no cache built for it loads nothing at all. Change them together with a rebuild:
 #   from data_access.rebuild_peristim_caches import rebuild
 #   rebuild("mua", threshold_multiplier=MUA_THRESHOLD_MULTIPLIER)
-# To choose a multiplier that matches the online unsorted channels rather than guessing,
-# run data_access.mua_threshold_calibration first.
+# To choose a multiplier that matches the curated unsorted cells rather than guessing,
+# run analyses.mua_threshold_tuning first.
 MUA_NOISE_METHOD = 'mad'                         # 'mad' = median(|v|)/0.6745, or 'rms'
 MUA_THRESHOLD_MULTIPLIER = 4.0
 MUA_REFRACTORY_MS = 1.0

@@ -111,7 +111,9 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from data_access.mua_threshold_calibration import iter_filtered_channels, session_round_dir
+from data_access.mua_threshold_calibration import (
+    _parse_sessions, iter_filtered_channels, session_round_dir,
+)
 from data_access.mua_peristim_builder import continuous_epochs
 from data_access.spike_source import MixedManualSpikeSource
 from data_access.threshold_detection import detect_mad_spikes, estimate_noise
@@ -190,6 +192,31 @@ def load_grant_answer_key(xlsx_path=None, n_rows: Optional[int] = GRANT_NCELLS) 
           + f" -> {len(cells)} unique unsorted cell(s) "
             f"in {len({c.session for c in cells})} session(s)")
     return cells
+
+
+def filter_sessions(cells: Sequence[AnswerCell], *, sessions=None,
+                    max_sessions: Optional[int] = None) -> List[AnswerCell]:
+    """Narrow an answer key to some sessions -- for a quick first run.
+
+    The full pass reads and filters one channel of every session's amplifier.dat, so it
+    is worth confirming on two sessions that the answer key resolves and the clocks line
+    up before waiting for all of them. Two sessions cannot SELECT a multiplier (the folds
+    would be two), but they will show you the shape of the curve.
+
+    ``sessions`` is an explicit ``[(date, round), ...]``; ``max_sessions`` takes the first
+    N in date order.
+    """
+    out = list(cells)
+    if sessions:
+        wanted = {(str(d), int(r)) for d, r in sessions}
+        out = [c for c in out if c.session in wanted]
+    if max_sessions:
+        keep = sorted({c.session for c in out})[:max_sessions]
+        out = [c for c in out if c.session in set(keep)]
+    if len(out) != len(cells):
+        print(f"[answer-key] narrowed to {len(out)} cell(s) in "
+              f"{len({c.session for c in out})} session(s)")
+    return out
 
 
 def load_answer_key_csv(path) -> List[AnswerCell]:
@@ -717,7 +744,8 @@ def tune(cells: Optional[Sequence[AnswerCell]] = None, *,
          objective: str = "f1", tie_break: str = "shallow", n_splits: Optional[int] = None,
          monkey=SUBJECT_MONKEY, match_window_ms=MATCH_WINDOW_MS,
          all_grant_rows: bool = False, out_dir=None, label: str = "grant_unsorted",
-         plots: bool = True, scores: Optional[pd.DataFrame] = None):
+         plots: bool = True, scores: Optional[pd.DataFrame] = None,
+         sessions=None, max_sessions: Optional[int] = None):
     """Score, cross-validate, report, write. Returns ``(scores, cv, final)``.
 
     Pass ``scores`` to re-analyse a previous run's per-cell CSV without re-reading any
@@ -727,6 +755,7 @@ def tune(cells: Optional[Sequence[AnswerCell]] = None, *,
     if scores is None:
         cells = cells if cells is not None else load_grant_answer_key(
             n_rows=None if all_grant_rows else GRANT_NCELLS)
+        cells = filter_sessions(cells, sessions=sessions, max_sessions=max_sessions)
         if not cells:
             print("[tune] answer key is empty — nothing to tune against.")
             return pd.DataFrame(), pd.DataFrame(), None
@@ -770,6 +799,10 @@ def _cli(argv=None):
     p.add_argument("--splits", type=int, default=None,
                    help="CV folds over sessions (default: leave-one-session-out)")
     p.add_argument("--match-window-ms", type=float, default=MATCH_WINDOW_MS)
+    p.add_argument("--sessions", default=None,
+                   help="restrict to these sessions, e.g. '2023-09-26:2,2023-10-03:4'")
+    p.add_argument("--max-sessions", type=int, default=None,
+                   help="restrict to the first N sessions — for a quick first run")
     p.add_argument("--rescore", default=None,
                    help="re-analyse a previous *_per_cell_scores.csv (no recording read)")
     p.add_argument("--label", default=None)
@@ -789,7 +822,9 @@ def _cli(argv=None):
                 refractory_ms=tuple(float(r) for r in a.refractory_ms.split(",")),
                 objective=a.objective, tie_break=a.tie_break, n_splits=a.splits,
                 match_window_ms=a.match_window_ms, all_grant_rows=a.all_grant_rows,
-                out_dir=a.out, label=label, plots=a.plots, scores=scores)
+                out_dir=a.out, label=label, plots=a.plots, scores=scores,
+                sessions=_parse_sessions(a.sessions) if a.sessions else None,
+                max_sessions=a.max_sessions)
 
 
 # ===== Run directly in PyCharm — edit this block and hit Run (no CLI) =========
@@ -805,6 +840,12 @@ if __name__ == "__main__":
     ALL_GRANT_ROWS = False      # True = every row of the grant sheet, not just the first 74.
     #                             The cheapest way to enlarge the answer key — try this first
     #                             if the CV folds disagree.
+
+    # For a quick first run: narrow to a couple of sessions to confirm the answer key
+    # resolves and the clocks line up, before waiting for the whole set. Two sessions
+    # cannot SELECT a multiplier, but they show you the shape of the curve.
+    SESSIONS = None             # e.g. [("2023-09-26", 2), ("2023-10-03", 4)]; None = all
+    MAX_SESSIONS = None         # e.g. 2 = the first two sessions in date order
 
     # --- the grid to try ------------------------------------------------------
     MULTIPLIERS = DEFAULT_MULTIPLIERS
@@ -828,7 +869,8 @@ if __name__ == "__main__":
     _cells = load_answer_key_csv(ANSWER_KEY_CSV) if (ANSWER_KEY_CSV and not RESCORE_CSV) else None
     tune(_cells, multipliers=MULTIPLIERS, noise_methods=NOISE_METHODS,
          refractory_ms=REFRACTORY_MS, objective=OBJECTIVE, tie_break=TIE_BREAK,
-         n_splits=N_SPLITS, all_grant_rows=ALL_GRANT_ROWS, plots=PLOTS, scores=_scores)
+         n_splits=N_SPLITS, all_grant_rows=ALL_GRANT_ROWS, plots=PLOTS, scores=_scores,
+         sessions=SESSIONS, max_sessions=MAX_SESSIONS)
 
     # NEXT STEPS once you have a multiplier M (nothing here writes a spike cache):
     #
