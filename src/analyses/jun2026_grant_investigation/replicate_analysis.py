@@ -5,6 +5,9 @@ Reproduces his Table 1 to 4 decimal places when run on the
 '_old--usedforgrant.xlsx' file with DATA_SOURCE='grant_xlsx', NCELLS=74.
 Every statistic and the permutation scheme below is faithful to his script.
 
+DATA_SOURCE='grant_cleaned' runs the identical analysis on the cleaned (shorter)
+grant cell list; CELL_SUBSET then picks all / sorted / unsorted cells within it.
+
 In PyCharm: edit the CONFIG block below, then just hit Run.
 
 
@@ -71,12 +74,14 @@ unit under this null is the monkey axis within a regression, not the cell.
 """
 
 import time
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from common import (
-    load_data, build_valid_k_per_source, build_y_per, vec_r2, scalar_r2,
+    load_data, load_grant_cleaned, build_valid_k_per_source, build_y_per,
+    vec_r2, scalar_r2,
     NMONKEYS, SUBJECT, MONKEY_NAME, BEH_NAMES, AFF_TO, AFF_FROM,
-    HIS_XLSX,
+    HIS_XLSX, GRANT_CLEANED_XLSX,
 )
 
 
@@ -85,6 +90,14 @@ from common import (
 # =====================================================================
 # Where the neural data comes from:
 #   'grant_xlsx'      - Ed's original 74/75-cell xlsx (mean spike counts)  -> load_data
+#   'grant_cleaned'   - same analysis as 'grant_xlsx' on the CLEANED (shorter) grant cell
+#                     list, common.GRANT_CLEANED_XLSX
+#                     ('...cell_list_investigation/zombies_all_anova_passed_cells--used
+#                     for grant_cleaned.xlsx'). Spike counts come from the very same grant
+#                     xlsx rows, matched on (Date, Round No., Cell, Time Window), so the
+#                     only difference from 'grant_xlsx' is which cells are in. Uses ALL rows
+#                     of the cleaned file (NCELLS is ignored). CELL_SUBSET works exactly as
+#                     it does for 'grant_xlsx': 'all' | 'sorted' | 'multiunit'.
 #   'cache_kw'        - SI-sorted KW list, rebuilt from analysis_cache      -> connector
 #   'cache_anova'     - SI-sorted ANOVA list, rebuilt from analysis_cache   -> connector
 #   'cache_mua_kw'    - threshold-MUA KW list (MAD/RMS offline detection)   -> connector
@@ -105,8 +118,9 @@ from common import (
 DATA_SOURCE = 'cache_kw'
 NCELLS      = 74             # 'grant_xlsx' only: his hardcoded value; None/0 for all rows
 CELL_SUBSET = 'all'          # 'all' | 'sorted' (Cell name has 'Unit') | 'multiunit' (no 'Unit')
-DROP_OVERLAPPING_WINDOWS = False  # 'grant_xlsx' & 'cache_mua_grantcells' only: when a cell has
-#                            overlapping time windows, keep only the WIDEST (drops narrower dups)
+DROP_OVERLAPPING_WINDOWS = False  # 'grant_xlsx', 'grant_cleaned' & 'cache_mua_grantcells' only:
+#                            when a cell has overlapping time windows, keep only the WIDEST
+#                            (drops narrower dups)
 SAME_UNIT_GROUPS = [             # channels that are the SAME physical unit within a session ->
     #                            collapsed together by DROP_OVERLAPPING_WINDOWS. Each inner list
     #                            = one unit's (date, round, channel) aliases.
@@ -147,8 +161,15 @@ def _drop_overlapping_grant_windows(X_mean, df):
 
 def load_neural_data():
     """Dispatch on DATA_SOURCE. Returns (X_mean (ncells,9), df with 'Cell')."""
-    if DATA_SOURCE == 'grant_xlsx':
-        X_mean, df = load_data(HIS_XLSX, ncells=NCELLS)
+    if DATA_SOURCE in ('grant_xlsx', 'grant_cleaned'):
+        if DATA_SOURCE == 'grant_xlsx':
+            X_mean, df = load_data(HIS_XLSX, ncells=NCELLS)
+            print(f"  {Path(HIS_XLSX).name}: {len(df)} rows (NCELLS={NCELLS})")
+        else:
+            # Same pipeline, shorter cell list; spike counts still come from the grant xlsx.
+            X_mean, df = load_grant_cleaned()
+            print(f"  {Path(GRANT_CLEANED_XLSX).name}: {len(df)} rows "
+                  f"(all of them - NCELLS is ignored for grant_cleaned)")
         if DROP_OVERLAPPING_WINDOWS:
             X_mean, df = _drop_overlapping_grant_windows(X_mean, df)
         return X_mean, df

@@ -11,6 +11,7 @@ Contains:
 - Helper builders for valid sinks and y vectors per (behavior, source)
 """
 
+import ast
 import numpy as np
 import pandas as pd
 import re
@@ -38,6 +39,18 @@ HIS_XLSX = resolve_path(
     'used_for_R01/zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx',
     REPO_ROOT / 'Cortana' / 'old' / 'Ed and ANOVA' / 'used_for_R01' /
     'zombies_spike_counts_for_all_anova_passed_time_windowed_cells_old--usedforgrant.xlsx',
+)
+
+# The "cleaned" version of the same grant list: identical investigation, just a
+# shorter set of cells. Either format works (see load_grant_cleaned):
+#   - the cell-list layout (Date / Round No. / Time Window / Cell [/ P Value]),
+#     in which case the spike counts are pulled from HIS_XLSX row by row, or
+#   - the wide spike-count layout of HIS_XLSX itself.
+GRANT_CLEANED_XLSX = resolve_path(
+    '/home/connorlab/Documents/JulieData/Cortana/cell_list_investigation/'
+    'zombies_all_anova_passed_cells--used for grant_cleaned.xlsx',
+    REPO_ROOT / 'Cortana' / 'cell_list_investigation' /
+    'zombies_all_anova_passed_cells--used for grant_cleaned.xlsx',
 )
 
 # SI-sorted, KW-passed cell list: long-format pkl, mean spike RATES.
@@ -146,6 +159,95 @@ def load_data(path=None, ncells=74):
             nums = [int(t) for t in re.findall(r'\b\d+\b', str(s))]
             X_mean[i, k] = sum(nums) / len(nums) if nums else 0.0
     return X_mean, df.iloc[:ncells]
+
+
+GRANT_KEY_COLS = ('Date', 'Round No.', 'Cell', 'Time Window')
+
+
+def has_spike_count_columns(df):
+    """True if df carries the 9 non-subject monkey columns load_data() needs."""
+    return all(m in df.columns for i, m in enumerate(MONKEY_NAME) if i != SUBJECT)
+
+
+def _window_key(v):
+    """'(0.0, 300.0)' -> (0.0, 300.0). Unparseable values fall back to a string,
+    so rows still compare equal as long as both files spell them the same way."""
+    try:
+        lo, hi = ast.literal_eval(str(v))
+        return float(lo), float(hi)
+    except Exception:
+        return str(v).strip()
+
+
+def _grant_row_keys(df):
+    """(date, round, cell, window) identity for each row of a grant-format table.
+    Normalized so the cell-list xlsx and the spike-count xlsx key identically."""
+    return [(pd.to_datetime(d).strftime('%Y-%m-%d'), int(r), str(c).strip(), _window_key(w))
+            for d, r, c, w in zip(df['Date'], df['Round No.'],
+                                  df['Cell'], df['Time Window'])]
+
+
+def load_grant_cleaned(path=None, spike_xlsx=None):
+    """Load the cleaned grant cell list in the same shape as load_data().
+
+    The cleaned xlsx is the grant list with cells removed, so the neural values
+    must stay bit-for-bit the ones the grant analysis used. Two layouts are
+    accepted:
+
+    * wide spike-count layout (has the 9 monkey columns) -> read directly, same
+      as load_data() does for HIS_XLSX;
+    * cell-list layout (Date / Round No. / Time Window / Cell) -> each row is
+      looked up in spike_xlsx (default HIS_XLSX) by that 4-part key and that
+      row's mean spike counts are used. Every cleaned row must be present in
+      the grant xlsx; a miss raises rather than silently shrinking the list.
+
+    All rows are used (no NCELLS truncation - the list is already the selection).
+
+    Returns:
+        X_mean: (nrows, 9) mean spike counts, columns ordered by k
+        df:     the matching grant-xlsx metadata rows, index reset
+    """
+    if path is None:
+        path = GRANT_CLEANED_XLSX
+    if spike_xlsx is None:
+        spike_xlsx = HIS_XLSX
+    if not Path(path).exists():
+        raise FileNotFoundError(
+            f"cleaned grant xlsx not found: {path}\n"
+            f"  Set common.GRANT_CLEANED_XLSX to wherever the file lives.")
+
+    cleaned = pd.read_excel(path)
+    if has_spike_count_columns(cleaned):
+        return load_data(path, ncells=None)
+
+    missing = [c for c in GRANT_KEY_COLS if c not in cleaned.columns]
+    if missing:
+        raise ValueError(
+            f"{Path(path).name} has neither the 9 monkey spike-count columns nor the "
+            f"cell-list columns {list(GRANT_KEY_COLS)} (missing {missing}). "
+            f"Found: {list(cleaned.columns)}")
+
+    X_all, df_all = load_data(spike_xlsx, ncells=None)
+    index = {}
+    for i, k in enumerate(_grant_row_keys(df_all)):
+        index.setdefault(k, []).append(i)
+
+    rows, unmatched, seen = [], [], {}
+    for k in _grant_row_keys(cleaned):
+        hits = index.get(k)
+        if not hits:
+            unmatched.append(k)
+            continue
+        n = seen.get(k, 0)                    # duplicate keys consume hits in order
+        rows.append(hits[min(n, len(hits) - 1)])
+        seen[k] = n + 1
+    if unmatched:
+        raise KeyError(
+            f"{len(unmatched)} row(s) of {Path(path).name} are not in "
+            f"{Path(spike_xlsx).name}, so they have no grant spike counts:\n  " +
+            "\n  ".join(str(u) for u in unmatched))
+
+    return X_all[rows], df_all.iloc[rows].reset_index(drop=True)
 
 
 def load_data_kw(path=None):
