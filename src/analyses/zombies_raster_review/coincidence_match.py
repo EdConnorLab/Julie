@@ -97,6 +97,20 @@ def session_units(session_df: pd.DataFrame, id_col: str) -> Dict[str, pd.DataFra
     return out
 
 
+# Within-source defaults. A neuron straddling two contacts is recorded twice by
+# the SAME sort — most often among the unsorted whole-channel cells, where every
+# threshold crossing on a contact is kept, a neighbour's spikes included. Two
+# such cells are one neuron, so a list built from them double-counts it.
+# Stricter than the cross-sort floor: both copies come from one sort of one
+# recording, so a genuine duplicate agrees far more than a manual-vs-SI pair.
+DEFAULT_WITHIN_COINCIDENCE_THRESHOLD = 0.5
+# Near-silent units coincide with everything (their handful of spikes all fall
+# inside some dense partner's train → coincidence ≈ 1.0 against any channel, even
+# a distant one), so they are dropped before pairing. Same guard and default as
+# ``cross_channel_analysis.exploded_analysis.analyze_exploded_session``.
+DEFAULT_MIN_SPIKES = 50
+
+
 # --------------------------------------------------------------------------- #
 # Cross-source matching
 # --------------------------------------------------------------------------- #
@@ -153,6 +167,94 @@ def match_units_across_sources(
 # --------------------------------------------------------------------------- #
 # Grouping matched pairs into overlay groups
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# Within-source matching — one sort's own duplicates
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class WithinSortMatch:
+    """Two units of the *same* sort that look like one neuron recorded twice."""
+    id_a: str
+    id_b: str
+    n_a: int
+    n_b: int
+    coincidence: float
+    ratio_over_chance: float
+
+
+def match_units_within_source(
+    units: Dict[str, pd.DataFrame],
+    *,
+    spike_col: str = "SpikeTimes",
+    window_ms: float = DEFAULT_WINDOW_MS,
+    coincidence_threshold: float = DEFAULT_WITHIN_COINCIDENCE_THRESHOLD,
+    ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
+    sample_rate: float = NOMINAL_SAMPLE_RATE,
+    min_spikes: int = DEFAULT_MIN_SPIKES,
+) -> List[WithinSortMatch]:
+    """Every pair *within one sort* whose spike trains are coincident above chance.
+
+    The within-source counterpart of :func:`match_units_across_sources`: it finds
+    one neuron that a single sort recorded on two (usually adjacent) channels,
+    which is what makes a channel-named list double-count neurons. Each unordered
+    pair is tested once, never against itself. Units with fewer than
+    ``min_spikes`` spikes are dropped first (see :data:`DEFAULT_MIN_SPIKES`).
+
+    Returns matches sorted by coincidence, most duplicate-like first.
+    """
+    trains: Dict[str, np.ndarray] = {}
+    for uid, df in units.items():
+        train = _to_samples(unit_spike_train(df, spike_col=spike_col), sample_rate=sample_rate)
+        if train.size >= min_spikes:
+            trains[uid] = train
+
+    ids = sorted(trains)
+    matches: List[WithinSortMatch] = []
+    for i, id_a in enumerate(ids):
+        for id_b in ids[i + 1:]:
+            cr = coincidence(trains[id_a], trains[id_b],
+                             sample_rate=sample_rate, window_ms=window_ms)
+            if cr.coincidence >= coincidence_threshold and cr.ratio_over_chance >= ratio_threshold:
+                matches.append(WithinSortMatch(
+                    id_a=id_a, id_b=id_b, n_a=cr.n_a, n_b=cr.n_b,
+                    coincidence=cr.coincidence, ratio_over_chance=cr.ratio_over_chance,
+                ))
+    matches.sort(key=lambda m: m.coincidence, reverse=True)
+    return matches
+
+
+def group_within_matches(matches: List["WithinSortMatch"]) -> List[List[str]]:
+    """Collapse within-sort matches into connected components of ≥2 unit ids.
+
+    One neuron can straddle three contacts, so the component — not the bare pair
+    — is the unit of "these are all one neuron". Components are returned sorted
+    by size (largest first); singletons are omitted since they are not duplicates.
+    """
+    parent: Dict[str, str] = {}
+
+    def find(x: str) -> str:
+        parent.setdefault(x, x)
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:  # path compression
+            parent[x], x = root, parent[x]
+        return root
+
+    def union(a: str, b: str):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for m in matches:
+        union(m.id_a, m.id_b)
+
+    comps: Dict[str, List[str]] = {}
+    for node in list(parent.keys()):
+        comps.setdefault(find(node), []).append(node)
+    return sorted((sorted(v) for v in comps.values() if len(v) >= 2),
+                  key=len, reverse=True)
+
+
 # A node is a ("mixed"|"si", unit_id) tuple.
 Node = Tuple[str, str]
 

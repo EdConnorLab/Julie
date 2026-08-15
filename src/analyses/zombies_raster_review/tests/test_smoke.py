@@ -271,6 +271,52 @@ def test_overlay_with_footprints_renders():
         assert fig2 is not None and os.path.getsize(path2) > 0
 
 
+def test_within_source_duplicates_found_and_grouped():
+    # one neuron recorded on two contacts of the SAME sort must be matched to
+    # itself; an independent neuron on a third contact must not be.
+    import numpy as np
+    import pandas as pd
+    from analyses.zombies_raster_review.coincidence_match import (
+        match_units_within_source, group_within_matches,
+    )
+    rng = np.random.default_rng(0)
+    base = np.sort(rng.uniform(0, 100, 800))                 # the neuron (seconds)
+    bleed = np.sort(base + rng.normal(0, 5e-5, base.size))   # same neuron, next contact
+    other = np.sort(rng.uniform(0, 100, 800))                # a different neuron
+
+    def _df(train):                       # one row is enough; trains are concatenated
+        return pd.DataFrame({"SpikeTimes": [train]})
+
+    units = {"Channel.C_010": _df(base),
+             "Channel.C_011": _df(bleed),
+             "Channel.C_020": _df(other)}
+    matches = match_units_within_source(units)
+    pairs = {(m.id_a, m.id_b) for m in matches}
+    assert ("Channel.C_010", "Channel.C_011") in pairs, "planted duplicate not found"
+    assert not any("C_020" in a or "C_020" in b for a, b in pairs), "independent unit matched"
+
+    groups = group_within_matches(matches)
+    assert groups == [["Channel.C_010", "Channel.C_011"]]
+
+    # near-silent units coincide with everything, so they're dropped before pairing
+    units["Channel.C_005"] = _df(base[:5])
+    quiet = match_units_within_source(units, min_spikes=50)
+    assert not any("C_005" in m.id_a or "C_005" in m.id_b for m in quiet)
+
+
+def test_within_source_matching_is_symmetric_and_selfless():
+    # each unordered pair tested once, never a unit against itself
+    import numpy as np
+    import pandas as pd
+    from analyses.zombies_raster_review.coincidence_match import match_units_within_source
+    rng = np.random.default_rng(1)
+    t = np.sort(rng.uniform(0, 100, 600))
+    units = {f"Channel.C_{i:03d}": pd.DataFrame({"SpikeTimes": [t.copy()]}) for i in (1, 2, 3)}
+    matches = match_units_within_source(units)
+    assert all(m.id_a != m.id_b for m in matches), "unit paired with itself"
+    assert len(matches) == 3, f"expected 3 unordered pairs, got {len(matches)}"
+
+
 if __name__ == "__main__":
     test_parse_mixed_list()
     test_parse_si_list()
