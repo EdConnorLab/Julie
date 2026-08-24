@@ -10,8 +10,8 @@ Each value selects a different *cell list* and the spike source behind it. This
 module bridges those five lists into the plotting engine of
 ``analyses.zombies_raster_review`` so you can see the units, not just the numbers.
 
-Three products
---------------
+Two products
+------------
 * **Singles** (``run_singles``) — for every unit in a source's list, one figure:
   raster + PSTH (left) and probe map + cross-channel waveform footprint (right),
   rendered by :func:`zombies_raster.plot_overlay_raster` used single-lane. One
@@ -20,11 +20,6 @@ Three products
   two sorts of each neuron per session and overlay them on one figure (raster +
   PSTH + probe + footprint). Drives the three requested pairs:
   ``grant_xlsx`` vs ``cache_kw`` / ``cache_anova`` / ``cache_mua_anova``.
-* **Pairs** (``run_pairs``) — for each matched grant MUA channel, the SAME channel
-  from both spike sources overlaid on one figure: lane A = ``original`` unsorted
-  (``grant_xlsx``/``MixedManualSpikeSource``), lane B = ``grant_mua`` threshold-MUA
-  (``cache_mua_grantcells``/``ThresholdMUASpikeSource``). Paired directly by channel
-  (no coincidence match), so both lanes are the same electrode by construction.
 
 How each DATA_SOURCE maps to plottable data
 -------------------------------------------
@@ -86,7 +81,7 @@ if _SRC not in sys.path:
 from data_access.spike_source import MixedManualSpikeSource                    # noqa: E402
 from analyses.zombies_raster_review.zombies_raster import plot_overlay_raster  # noqa: E402
 from analyses.zombies_raster_review.run_zombies_rasters import (               # noqa: E402
-    _select_unit_rows, _cell_token, _lane_label, _unit_location,
+    _select_unit_rows, _cell_token, _lane_label, _unit_location, _as_window_list,
     render_overlays_for_units,
 )
 from analyses.zombies_raster_review.unit_lists import (                        # noqa: E402
@@ -94,7 +89,8 @@ from analyses.zombies_raster_review.unit_lists import (                        #
 )
 from analyses.zombies_raster_review.coincidence_match import (                 # noqa: E402
     session_units, DEFAULT_COINCIDENCE_THRESHOLD, DEFAULT_RATIO_THRESHOLD,
-    DEFAULT_WINDOW_MS,
+    DEFAULT_WINDOW_MS, DEFAULT_WITHIN_COINCIDENCE_THRESHOLD, DEFAULT_MIN_SPIKES,
+    match_units_within_source, group_within_matches,
 )
 from analyses.zombies_raster_review.waveform_footprint import extract_footprints  # noqa: E402
 from analyses.jun2026_grant_investigation import common                        # noqa: E402
@@ -135,29 +131,6 @@ def _cache_requests(list_name: str, source_key: str) -> List[RasterRequest]:
             match_value=neuron_id,
             label=neuron_id,
             window_ms=window,
-            p_value=None,
-        ))
-    return reqs
-
-
-def _grant_mua_matched_requests() -> List[RasterRequest]:
-    """The grant MUA (unsorted) cells matched to their threshold-MUA NeuronIDs, as
-    NeuronID-matched requests. Spike times come from the threshold-MUA cache. Same matching
-    (hence the same unique neurons) that DATA_SOURCE='cache_mua_grantcells' / replicate_analysis
-    use; ``dedup_by_unit`` collapses the grant cell x window rows to one figure per neuron.
-    """
-    reqs: List[RasterRequest] = []
-    for m in scc.grant_mua_matched_neurons():
-        c = m["cell"]
-        neuron_id = str(m["neuron_id"]).strip()
-        reqs.append(RasterRequest(
-            source_kind="cache_mua_grantcells",
-            date=c.date,
-            round_no=int(c.round_no),
-            match_column="NeuronID",
-            match_value=neuron_id,
-            label=neuron_id,
-            window_ms=m.get("window_ms"),
             p_value=None,
         ))
     return reqs
@@ -206,13 +179,6 @@ SOURCES: Dict[str, SourceSpec] = {
         "cache_mua_anova", "updated_mua_anova", "NeuronID",
         scc._mua_source,
         lambda: _cache_requests("MUA_ANOVA", "cache_mua_anova"),
-    ),
-    # the grant MUA cells matched to threshold-MUA NeuronIDs (not a significance list);
-    # spikes from threshold_mua_spike_cache. Singles-only view of the cache_mua_grantcells set.
-    "cache_mua_grantcells": SourceSpec(
-        "cache_mua_grantcells", "grant_mua", "NeuronID",
-        scc._mua_source,
-        _grant_mua_matched_requests,
     ),
 }
 
@@ -419,111 +385,148 @@ def run_overlay(
 
 
 # --------------------------------------------------------------------------- #
-# Pairs — original (unsorted) vs grant_mua (threshold-MUA), same channel, one figure
+# Duplicates — one sort's OWN units that are the same neuron on two channels
 # --------------------------------------------------------------------------- #
-def run_pairs(
+def run_duplicates(
+    source_key: str,
     out_dir: str,
     *,
+    listed_only: bool = True,
     show_waveforms: bool = True,
+    only_date: Optional[str] = None,
+    only_round: Optional[int] = None,
+    coincidence_threshold: float = DEFAULT_WITHIN_COINCIDENCE_THRESHOLD,
+    ratio_threshold: float = DEFAULT_RATIO_THRESHOLD,
+    footprint_similarity_threshold: float = 0.7,
+    min_spikes: int = DEFAULT_MIN_SPIKES,
+    window_ms: float = DEFAULT_WINDOW_MS,
     xlim: float = 2.4,
     psth_bin_ms: float = 50.0,
-) -> Dict[str, int]:
-    """One two-lane figure per matched grant MUA channel: the SAME channel drawn from both
-    spike sources and overlaid by ``plot_overlay_raster`` on shared axes.
+) -> List[str]:
+    """Find units *within one* source that are the same neuron, and overlay each set.
 
-    * lane A — ``original`` unsorted spikes (``grant_xlsx`` / ``MixedManualSpikeSource``,
-      matched by ``Channel``);
-    * lane B — ``grant_mua`` threshold-MUA spikes (``cache_mua_grantcells`` /
-      ``ThresholdMUASpikeSource``, matched by ``NeuronID``).
+    The within-source counterpart of :func:`run_overlay`. A neuron sitting between
+    two contacts is recorded twice by the same sort — especially among the
+    unsorted whole-channel cells, which keep every threshold crossing on a
+    contact, a neighbour's spikes included. Two such cells are one neuron, so a
+    channel-named list double-counts it. Each set of same-neuron units is drawn on
+    one figure (raster + PSTH + probe + footprint), exactly like an overlay, and a
+    per-source tally reports how many *unique* neurons the list really covers.
 
-    Cells are paired DIRECTLY by channel (the matched NeuronID carries the channel), so no
-    coincidence matching is needed -- the two lanes are the same electrode by construction.
-    One figure per neuron (windows deduped; the grant window is shaded). Sessions load once
-    and footprints are cut once per session.
+    Same two gates as the cross-sort overlay, but stricter by default: spike-time
+    coincidence ≥ ``coincidence_threshold`` (0.5) AND — when ``show_waveforms`` is
+    on — footprint cosine ≥ ``footprint_similarity_threshold`` (0.7). Both copies
+    come from one sort of one recording, so a real duplicate agrees more than a
+    manual-vs-SI pair does. Units with < ``min_spikes`` spikes are excluded first;
+    their coincidence against a dense partner is meaninglessly high.
+
+    ``listed_only`` (default True) restricts to the cells on this source's list,
+    answering "does *my list* double-count neurons?". Set it False to test each
+    listed cell against every unit in the session, which also catches a duplicate
+    that is not itself on the list.
     """
-    a, b = SOURCES["grant_xlsx"], SOURCES["cache_mua_grantcells"]
-    requests = dedup_by_unit(b.load_requests())      # matched grant-MUA cells, one per neuron
+    spec = SOURCES[source_key]
     os.makedirs(out_dir, exist_ok=True)
-    print(f"[pairs {a.display} x {b.display}] {len(requests)} unit(s) → {out_dir}")
 
-    by_session: Dict[tuple, List[RasterRequest]] = defaultdict(list)
-    for r in requests:
-        by_session[(r.date, r.round_no)].append(r)
+    # (date, round) -> {unit_id: [window_s, ...]}, keyed as session_units keys them
+    windows_by_session: Dict[tuple, dict] = defaultdict(dict)
+    for r in spec.load_requests():
+        wl = windows_by_session[(r.date, r.round_no)].setdefault(r.match_value, [])
+        if r.window_s is not None:
+            wl.append(r.window_s)
 
-    stats = {"plotted": 0, "skipped_no_rows": 0, "skipped_no_trials": 0, "sessions_failed": 0}
-    for (date, round_no), reqs in sorted(by_session.items()):
+    sessions = sorted(windows_by_session)
+    if only_date is not None:
+        sessions = [s for s in sessions
+                    if s[0] == only_date and (only_round is None or s[1] == only_round)]
+    print(f"[duplicates {spec.display}] {len(sessions)} session(s) → {out_dir}")
+
+    written: List[str] = []
+    n_considered = n_dup_units = n_groups = 0
+    for date, round_no in sessions:
         try:
-            a_session = a.make_source().load(date, round_no)
-            b_session = b.make_source().load(date, round_no)
-        except Exception as e:                        # missing cache / recording / DB
-            print(f"[pairs {date} r{round_no}] load failed: {e}")
-            stats["sessions_failed"] += 1
+            df = spec.make_source().load(date, round_no)
+        except Exception as e:
+            print(f"[duplicates {spec.display} {date} r{round_no}] load failed: {e}")
             continue
-        if (a_session is None or getattr(a_session, "empty", True)
-                or b_session is None or getattr(b_session, "empty", True)):
-            print(f"[pairs {date} r{round_no}] need both sources; one is missing/empty")
-            stats["sessions_failed"] += 1
+        if df is None or getattr(df, "empty", True):
+            print(f"[duplicates {spec.display} {date} r{round_no}] no data")
             continue
 
-        # pass 1: resolve each unit's two lanes; gather all lanes for one-shot footprints
-        resolved: List[tuple] = []
-        all_lanes: Dict[str, "object"] = {}
-        for rb in reqs:
-            nid = rb.match_value
-            channel = "Channel." + _cell_token(nid)   # NeuronID -> "Channel.C_020"
-            ra = RasterRequest(
-                source_kind="mixed", date=date, round_no=round_no,
-                match_column="Channel", match_value=channel, label=channel,
-                window_ms=rb.window_ms, p_value=None)
-            rows_a = _select_unit_rows(a_session, ra)
-            rows_b = _select_unit_rows(b_session, rb)
-            if rows_a.empty and rows_b.empty:
-                print(f"[{nid}] no rows in either source")
-                stats["skipped_no_rows"] += 1
-                continue
-            lab_a = _lane_label(a.prefix, channel)    # "original: C_020 (unsorted)"
-            lab_b = _lane_label(b.prefix, nid)        # "grant_mua: C_020 (MU)"
-            resolved.append((nid, lab_a, rows_a, lab_b, rows_b, rb.window_s))
-            if not rows_a.empty:
-                all_lanes[lab_a] = rows_a
-            if not rows_b.empty:
-                all_lanes[lab_b] = rows_b
+        units = session_units(df, spec.id_col)
+        listed = windows_by_session.get((date, round_no), {})
+        if listed_only:
+            units = {k: v for k, v in units.items() if k in listed}
+        if len(units) < 2:
+            continue                      # nothing to pair against
+        n_considered += len(units)
 
-        footprints: dict = {}
-        if show_waveforms and all_lanes:
-            footprints = extract_footprints(all_lanes, date, round_no)
+        footprints_by_id = None
+        if show_waveforms:
+            footprints_by_id = extract_footprints(units, date, round_no)
 
-        # pass 2: one figure per neuron, both lanes overlaid
-        for nid, lab_a, rows_a, lab_b, rows_b, window_s in resolved:
-            lanes, locations = {}, {}
-            if not rows_a.empty:
-                lanes[lab_a] = rows_a
-                locations[lab_a] = _unit_location(rows_a)
-            if not rows_b.empty:
-                lanes[lab_b] = rows_b
-                locations[lab_b] = _unit_location(rows_b)
-            loc = next((v for v in locations.values() if v), None)
-            token = _cell_token(nid)
-            title = f"{a.display} vs {b.display}  ·  {token}  ·  {date}_r{round_no}"
-            if loc:
-                title += f"   ·   {loc}"
-            save_path = os.path.join(out_dir, f"pair_{date}_{round_no}_{_safe(token)}.png")
+        matches = match_units_within_source(
+            units, window_ms=window_ms, coincidence_threshold=coincidence_threshold,
+            ratio_threshold=ratio_threshold, min_spikes=min_spikes,
+        )
+        # same-neuron gate: drop coincident pairs whose footprints disagree
+        if footprint_similarity_threshold > 0 and footprints_by_id:
+            from spikesorting.cross_channel_analysis.waveforms import footprint_similarity
+            kept = []
+            for m in matches:
+                fa, fb = footprints_by_id.get(m.id_a), footprints_by_id.get(m.id_b)
+                if fa is None or fb is None:
+                    kept.append(m)                   # can't gate without both
+                elif footprint_similarity(fa, fb) >= footprint_similarity_threshold:
+                    kept.append(m)
+            if len(kept) != len(matches):
+                print(f"[duplicates {spec.display} {date} r{round_no}] footprint gate "
+                      f"(≥{footprint_similarity_threshold}): kept {len(kept)}/{len(matches)} pair(s)")
+            matches = kept
+
+        groups = group_within_matches(matches)
+        coinc_by_pair = {(m.id_a, m.id_b): m.coincidence for m in matches}
+        for i, uids in enumerate(groups, start=1):
+            unit_dfs: Dict[str, "pd.DataFrame"] = {}
+            group_footprints: Dict[str, object] = {}
+            locations: Dict[str, Optional[str]] = {}
+            for uid in uids:
+                lab = _lane_label(spec.prefix, uid)
+                unit_dfs[lab] = units[uid]
+                locations[lab] = _unit_location(units[uid])
+                if footprints_by_id is not None:
+                    group_footprints[lab] = footprints_by_id.get(uid)
+            uid_set = set(uids)
+            pair_coincidences = [
+                (_lane_label(spec.prefix, a), _lane_label(spec.prefix, b), c)
+                for (a, b), c in coinc_by_pair.items() if a in uid_set and b in uid_set
+            ]
+            wins = [(lo, hi, "mixed", _cell_token(uid))
+                    for uid in uids for lo, hi in _as_window_list(listed.get(uid))]
+
+            title = (f"{spec.display} duplicate set #{i} — {date}_round{round_no}"
+                     f"   ·   {len(uids)} units = 1 neuron")
+            save_path = os.path.join(
+                out_dir, f"duplicates_{spec.display}_{date}_{round_no}_set{i:02d}.png")
             fig = plot_overlay_raster(
-                lanes,
-                title=title,
-                window_s=window_s,
-                footprints=({lab: footprints.get(lab) for lab in lanes}
-                            if show_waveforms else None),
-                locations=locations,
-                show_probe=True,
-                xlim=xlim,
-                psth_bin_ms=psth_bin_ms,
-                save_path=save_path,
+                unit_dfs, title=title, windows=wins,
+                pair_coincidences=pair_coincidences,
+                footprints=(group_footprints or None), locations=locations,
+                xlim=xlim, psth_bin_ms=psth_bin_ms, save_path=save_path,
             )
-            stats["plotted" if fig is not None else "skipped_no_trials"] += 1
+            if fig is not None:
+                written.append(save_path)
+                n_groups += 1
+                n_dup_units += len(uids)
 
-    print(f"[pairs {a.display} x {b.display}] done: {stats}")
-    return stats
+    # the headline: how much a channel-named list over-counts neurons
+    redundant = n_dup_units - n_groups          # extra copies beyond one per neuron
+    unique = n_considered - redundant
+    print(f"[duplicates {spec.display}] {n_groups} duplicate set(s) covering "
+          f"{n_dup_units} unit(s) → {len(written)} figure(s)")
+    print(f"[duplicates {spec.display}] {n_considered} unit(s) considered ≈ {unique} unique "
+          f"neuron(s) ({redundant} redundant cop{'y' if redundant == 1 else 'ies'})")
+    return written
 
 
 # --------------------------------------------------------------------------- #
@@ -537,9 +540,8 @@ def _overlay_dir(out_dir: str, a: str, b: str) -> str:
     return os.path.join(out_dir, "overlay", f"{SOURCES[a].display}_vs_{SOURCES[b].display}")
 
 
-def _pairs_dir(out_dir: str) -> str:
-    return os.path.join(out_dir, "pairs",
-                        f"{SOURCES['grant_xlsx'].display}_vs_{SOURCES['cache_mua_grantcells'].display}")
+def _duplicates_dir(out_dir: str, key: str) -> str:
+    return os.path.join(out_dir, "duplicates", SOURCES[key].display)
 
 
 def run_all_singles(out_dir: str, **kw) -> None:
@@ -557,16 +559,25 @@ def run_all_overlays(out_dir: str, **kw) -> None:
 def _cli(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--mode", choices=["singles", "overlay", "pairs", "all"], default="singles")
-    p.add_argument("--source", choices=list(SOURCES), help="singles: which DATA_SOURCE")
+    p.add_argument("--mode", choices=["singles", "overlay", "duplicates", "all"],
+                   default="singles")
+    p.add_argument("--source", choices=list(SOURCES),
+                   help="singles/duplicates: which DATA_SOURCE")
     p.add_argument("--pair", nargs=2, metavar=("A", "B"), help="overlay: two DATA_SOURCE keys")
     p.add_argument("--out", default=os.path.join(_HERE, "output"))
     p.add_argument("--no-waveforms", action="store_true", help="skip the footprint panel")
     p.add_argument("--listed-only", action="store_true", help="overlay: cells in both lists only")
+    p.add_argument("--all-units", action="store_true",
+                   help="duplicates: test listed cells against every unit in the session "
+                        "(default: listed cells only)")
     p.add_argument("--coincidence", type=float, default=0.4,
                    help="overlay: spike-time coincidence floor for a cross-sort match")
     p.add_argument("--footprint-sim", type=float, default=0.6,
                    help="overlay: waveform-footprint cosine floor (0 = off)")
+    p.add_argument("--dup-coincidence", type=float, default=DEFAULT_WITHIN_COINCIDENCE_THRESHOLD,
+                   help="duplicates: coincidence floor for two units of ONE sort")
+    p.add_argument("--dup-footprint-sim", type=float, default=0.7,
+                   help="duplicates: waveform-footprint cosine floor (0 = off)")
     p.add_argument("--xlim", type=float, default=2.4)
     p.add_argument("--psth-bin-ms", type=float, default=50.0)
     args = p.parse_args(argv)
@@ -582,9 +593,13 @@ def _cli(argv=None):
         src = args.source or "grant_xlsx"
         run_singles(src, _singles_dir(args.out, src),
                     show_waveforms=show_wf, xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
-    elif args.mode == "pairs":
-        run_pairs(_pairs_dir(args.out),
-                  show_waveforms=show_wf, xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
+    elif args.mode == "duplicates":
+        src = args.source or "grant_xlsx"
+        run_duplicates(src, _duplicates_dir(args.out, src),
+                       listed_only=not args.all_units, show_waveforms=show_wf,
+                       coincidence_threshold=args.dup_coincidence,
+                       footprint_similarity_threshold=args.dup_footprint_sim,
+                       xlim=args.xlim, psth_bin_ms=args.psth_bin_ms)
     else:  # overlay
         a, b = tuple(args.pair) if args.pair else OVERLAY_PAIRS[0]
         run_overlay(a, b, _overlay_dir(args.out, a, b),
@@ -599,21 +614,20 @@ if __name__ == "__main__":
     #  MODE options:
     #    "singles"  one raster+PSTH+probe+footprint figure per unit in ONE list.
     #    "overlay"  overlay ONE pair of sources, coincidence-matched per session.
-    #    "pairs"    original (unsorted) vs grant_mua (threshold-MUA) for the SAME channel,
-    #               two lanes on one figure (direct channel pairing, no coincidence match).
+    #    "duplicates"  units WITHIN ONE list that are the same neuron on two channels,
+    #               overlaid on one figure + a tally of how many unique neurons the list has.
     #    "all"      every source's singles + all three overlay pairs.
     # ========================================================================
-    MODE = "singles"                       # "singles" | "overlay" | "pairs" | "all"
+    MODE = "singles"                       # "singles" | "overlay" | "duplicates" | "all"
 
     OUT_DIR = os.path.join(_HERE, "output")
 
     # -- MODE == "singles" --  (one of SOURCES)
-    SINGLES_SOURCE = "cache_anova"            # grant_xlsx | cache_kw | cache_anova
+    SINGLES_SOURCE = "cache_kw"            # grant_xlsx | cache_kw | cache_anova
     #                                       | cache_mua_kw | cache_mua_anova
-    #                                       | cache_mua_grantcells  (grant MUA cells, threshold-MUA spikes)
 
     # -- MODE == "overlay" --  (side A = grant, side B = a cache list)
-    OVERLAY_PAIR = ("grant_xlsx", "cache_anova")   # or (.., "cache_anova"),
+    OVERLAY_PAIR = ("grant_xlsx", "cache_kw")   # or (.., "cache_anova"),
     #                                             (.., "cache_mua_anova")
     LISTED_ONLY = False                    # True → only cells in BOTH lists
     #  Same-neuron matching gates (overlay only). A cross-sort pair is drawn only
@@ -622,6 +636,18 @@ if __name__ == "__main__":
     #  Watch the console: it prints how many pairs each gate keeps.
     COINCIDENCE_THRESHOLD = 0.4            # spike-time coincidence floor (was 0.2)
     FOOTPRINT_SIM_THRESHOLD = 0.6          # waveform-footprint cosine floor (0 = off)
+
+    # -- MODE == "duplicates" --  (one source, its OWN same-neuron units)
+    DUP_SOURCE = "grant_xlsx"              # any of SOURCES; grant_xlsx is the one whose
+    #                                        unsorted whole-channel cells double-count most
+    DUP_LISTED_ONLY = True                 # True → only cells on this source's list
+    #                                        ("does MY LIST double-count?"); False → also
+    #                                        test each listed cell against every unit in the
+    #                                        session (catches an unlisted duplicate)
+    #  Stricter than the cross-sort gates: both copies come from ONE sort of ONE
+    #  recording, so a genuine duplicate agrees much more than a manual-vs-SI pair.
+    DUP_COINCIDENCE_THRESHOLD = 0.5        # spike-time coincidence floor
+    DUP_FOOTPRINT_SIM_THRESHOLD = 0.7      # waveform-footprint cosine floor (0 = off)
 
     # -- applies to all modes --
     SHOW_WAVEFORMS = True                  # False → drop the footprint panel (faster);
@@ -645,9 +671,13 @@ if __name__ == "__main__":
                     listed_only=LISTED_ONLY, show_waveforms=SHOW_WAVEFORMS,
                     only_date=ONLY_DATE, only_round=ONLY_ROUND,
                     xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS, **_overlay_kw)
-    elif MODE == "pairs":
-        run_pairs(_pairs_dir(OUT_DIR),
-                  show_waveforms=SHOW_WAVEFORMS, xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
+    elif MODE == "duplicates":
+        run_duplicates(DUP_SOURCE, _duplicates_dir(OUT_DIR, DUP_SOURCE),
+                       listed_only=DUP_LISTED_ONLY, show_waveforms=SHOW_WAVEFORMS,
+                       only_date=ONLY_DATE, only_round=ONLY_ROUND,
+                       coincidence_threshold=DUP_COINCIDENCE_THRESHOLD,
+                       footprint_similarity_threshold=DUP_FOOTPRINT_SIM_THRESHOLD,
+                       xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
     elif MODE == "all":
         run_all_singles(OUT_DIR, show_waveforms=SHOW_WAVEFORMS,
                         xlim=XLIM_S, psth_bin_ms=PSTH_BIN_MS)
