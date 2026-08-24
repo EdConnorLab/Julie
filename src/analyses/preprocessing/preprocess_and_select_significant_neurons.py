@@ -293,16 +293,16 @@ if __name__ == "__main__":
     cfg = PreprocessConfig(group_name="Zombies", bin_size=0.05, analysis_cache_dir=Path(analysis_cache_dir), save=True)
 
     # pick ONE source for the whole run
-    source: SpikeSource = SISortedSpikeSource(cache_subdir="sorted_spike_cache_filtered", pre_filtered=True)
+    source: SpikeSource = SISortedSpikeSource(cache_subdir="sorted_spike_cache_pre1000ms", pre_filtered=True)
     # source: SpikeSource = MixedManualSpikeSource(curated_channels_only=True)
 
     # # 1) significant neurons
-    # all_neurons, sig_neurons = select_all_significant_neurons_using_pKW(metadata, cfg, source=source)
-    all_neurons, sig_neurons = select_all_significant_neurons_using_pANOVA(metadata, cfg, source=source)
+    all_neurons, sig_neurons = select_all_significant_neurons_using_pKW(metadata, cfg, source=source)
+    # all_neurons, sig_neurons = select_all_significant_neurons_using_pANOVA(metadata, cfg, source=source)
 
     #2) detect windows
     windows = detect_all_response_windows_for_all_neurons(metadata, cfg, source=source)
 
     # 3) significant windows
     res_window_kw, sig_windows_kw = detect_significant_windows_using_pKW(windows, cfg, source=source)
-    res_window_panova, sig_windows_panova = detect_significant_windows_using_pANOVA(windows, cfg, source=source)
+    # res_window_panova, sig_windows_panova = detect_significant_windows_using_pANOVA(windows, cfg, source=source)
